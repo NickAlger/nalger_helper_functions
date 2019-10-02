@@ -2,7 +2,7 @@
 from scipy.special import *
 
 
-run_test = True
+run_test = True # requires numpy
 
 
 def rational_inverse_square_root_weights_and_poles(interval_min_m, interval_max_M, number_of_rational_terms_N):
@@ -29,6 +29,7 @@ def rational_inverse_square_root_weights_and_poles(interval_min_m, interval_max_
 
 
 if run_test:
+    import numpy as np
     m = 1e-1
     M = 1e3
     num_test_pts = 1e5
