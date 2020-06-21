@@ -8,6 +8,10 @@ def convert_fenics_csr_matrix_to_scipy_csr_matrix(A_fenics):
     A_scipy = sps.csr_matrix((av, aj, ai))
     return A_scipy
 
+def vec2fct(u_vec, Vh):
+    u_fct = fenics.Function(Vh)
+    u_fct.vector()[:] = u_vec.copy()
+    return u_fct
 
 from petsc4py import PETSc
 
