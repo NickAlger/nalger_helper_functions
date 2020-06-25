@@ -1,7 +1,7 @@
 import numpy as np
 import fenics
 
-run_test = True
+run_test = False
 
 class FenicsFunctionSmoother:
     def __init__(me, function_space_V, smoothing_time=1e-2, num_timesteps=10):
