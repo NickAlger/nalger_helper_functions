@@ -1,6 +1,5 @@
 import numpy as np
 import fenics
-import matplotlib.pyplot as plt
 
 run_test = True
 
@@ -25,6 +24,8 @@ class FenicsFunctionSmoother:
             me.Z_solver.solve(function_f.vector(), me.M * function_f.vector())
 
 if run_test:
+    import matplotlib.pyplot as plt
+
     n=40
     smoothing_times = [1e-4, 1e-3, 1e-2]
 
