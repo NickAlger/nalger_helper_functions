@@ -1,7 +1,6 @@
 import numpy as np
 from time import time
 
-run_test = False
 
 def build_dense_matrix_from_matvecs(apply_A, ncol_A, display=False, display_delay=1):
     e0 = np.zeros(ncol_A)
@@ -24,19 +23,3 @@ def build_dense_matrix_from_matvecs(apply_A, ncol_A, display=False, display_dela
                 t_prev = t_cur
     return A_dense
 
-if run_test:
-    # Real matrix test
-    ncol_A = 2000
-    nrow_A = 2830
-    A = np.random.randn(nrow_A, ncol_A)
-    apply_A = lambda x: np.dot(A, x)
-    A2 = build_dense_matrix_from_matvecs(apply_A, ncol_A, display=True)
-    real_err = np.linalg.norm(A2 - A)/np.linalg.norm(A)
-    print('real_err=', real_err)
-
-    # Complex matrix test
-    A = np.random.randn(nrow_A, ncol_A) + 1j * np.random.randn(nrow_A, ncol_A)
-    apply_A = lambda x: np.dot(A, x)
-    A2 = build_dense_matrix_from_matvecs(apply_A, ncol_A, display=True)
-    complex_err = np.linalg.norm(A2 - A)/np.linalg.norm(A)
-    print('complex_err=', complex_err)
