@@ -1,10 +1,8 @@
 import numpy as np
 import dolfin as dl
 
-# https://github.com/NickAlger/helper_functions/blob/master/make_regular_grid.py
+# https://github.com/NickAlger/helper_functions/
 from make_regular_grid import make_regular_grid
-
-# https://github.com/NickAlger/helper_functions/blob/master/point_is_in_ellipsoid.py
 from point_is_in_ellipsoid import point_is_in_ellipsoid
 
 
