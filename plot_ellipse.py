@@ -1,8 +1,13 @@
 import numpy as np
+import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
 
-def plot_ellipse(ax, mu, Sigma, n_std_tau):
+def plot_ellipse(mu, Sigma, n_std_tau, ax=None):
+    # https://github.com/NickAlger/helper_functions/blob/master/plot_ellipse.ipynb
+    if ax is None:
+        ax = plt.gca()
+
     ee, V = np.linalg.eigh(Sigma)
     e_big = ee[1]
     e_small = ee[0]
