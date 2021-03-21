@@ -5,6 +5,9 @@ import dolfin as dl
 from make_regular_grid import make_regular_grid
 from point_is_in_ellipsoid import point_is_in_ellipsoid
 
+from time import time
+
+
 
 class FenicsFunctionToRegularGridInterpolator:
     # https://github.com/NickAlger/helper_functions/blob/master/fenics_function_to_regular_grid_interpolator.ipynb
