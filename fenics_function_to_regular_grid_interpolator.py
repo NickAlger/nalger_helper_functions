@@ -7,9 +7,6 @@ from point_is_in_ellipsoid import point_is_in_ellipsoid
 from box_mesh_nd import box_mesh_nd
 from box_mesh_lexsort import box_mesh_lexsort
 
-from time import time
-
-
 
 class FenicsFunctionToRegularGridInterpolator:
     # https://github.com/NickAlger/helper_functions/blob/master/fenics_function_to_regular_grid_interpolator.ipynb

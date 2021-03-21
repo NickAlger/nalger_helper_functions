@@ -1,9 +1,9 @@
 import fenics
 import numpy as np
 
-run_test = False
 
 class NeumannPoissonSolver:
+    # https://github.com/NickAlger/helper_functions/blob/master/neumann_poisson_solver.ipynb
     def __init__(me, function_space_V):
         me.V = function_space_V
         me.dof_coords = me.V.tabulate_dof_coordinates()
@@ -55,28 +55,3 @@ class NeumannPoissonSolver:
         ps.apply(me.b)
 
         return me.solve(me.b, atol=atol, rtol=rtol, maxiter=maxiter, verbose=verbose)
-
-
-if run_test:
-    import matplotlib.pyplot as plt
-    mesh = fenics.UnitSquareMesh(20, 20)
-    V = fenics.FunctionSpace(mesh, 'CG', 1)
-
-    NPPSS = NeumannPoissonSolver(V)
-
-    u = NPPSS.solve_point_source(np.array([0.5,0.5]), point_type='coords')
-    plt.figure()
-    fenics.plot(u)
-
-    u = NPPSS.solve_point_source(31, point_type='ind')
-    plt.figure()
-    fenics.plot(u)
-
-    u = NPPSS.solve_point_source(fenics.Point(np.array([0.5,0.5])), point_type='fenics')
-    plt.figure()
-    fenics.plot(u)
-
-    b = fenics.assemble(fenics.Expression('sin(x[0])*cos(x[1])', degree=2)*fenics.TestFunction(V)*fenics.dx)
-    u = NPPSS.solve(b)
-    plt.figure()
-    fenics.plot(u)
