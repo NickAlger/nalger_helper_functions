@@ -4,6 +4,8 @@ import dolfin as dl
 # https://github.com/NickAlger/helper_functions/
 from make_regular_grid import make_regular_grid
 from point_is_in_ellipsoid import point_is_in_ellipsoid
+from box_mesh_nd import box_mesh_nd
+from box_mesh_lexsort import box_mesh_lexsort
 
 from time import time
 
@@ -17,13 +19,30 @@ class FenicsFunctionToRegularGridInterpolator:
         me.grid_max = grid_max
         me.grid_shape = grid_shape
 
+        me.N_grid = np.prod(me.grid_shape)
+
         mesh = me.V.mesh()
         me.d = mesh.geometric_dimension()
+
+        me.grid_mesh = box_mesh_nd(me.grid_min, me.grid_max, me.grid_shape)
+        me.V_grid = dl.FunctionSpace(me.grid_mesh, 'CG', 1)
+        me.lexsort_inds = box_mesh_lexsort(me.V_grid)
+
+        # Get masks for gridpoints inside and outside the domain
         me.bbt = mesh.bounding_box_tree()
         pt_outside_mesh = dl.Point(np.inf * np.ones(mesh.geometric_dimension()))
         me.bad_bbt_entity = me.bbt.compute_first_entity_collision(pt_outside_mesh)
 
-        _, me.all_XX = make_regular_grid(grid_min, grid_max, grid_shape)
+        me.lexsorted_grid_coords = me.V_grid.tabulate_dof_coordinates()[me.lexsort_inds, :]
+
+        me.inside_domain = np.zeros(me.N_grid, dtype=bool)
+        for ii in range(me.N_grid):
+            p = me.lexsorted_grid_coords[ii,:]
+            if me.point_is_in_mesh(p):
+                me.inside_domain[ii] = True
+        me.inside_domain = me.inside_domain.reshape(me.grid_shape)
+        me.outside_domain = np.logical_not(me.inside_domain)
+
 
     def point_is_in_mesh(me, p_numpy):
         p_fenics = dl.Point(p_numpy)
@@ -33,52 +52,28 @@ class FenicsFunctionToRegularGridInterpolator:
             return True
 
     def interpolate(me, u_fenics,
-                    outside_domain_default_value=0.0, use_extrapolation=False):
-        if use_extrapolation:
-            u_fenics.set_allow_extrapolation(True)
+                    outside_domain_default_value=0.0,
+                    inside_domain_default_value=0.0,
+                    use_extrapolation=False,
+                    mu=None, Sigma=None, tau=None):
+        u_fenics.set_allow_extrapolation(True)
+        u_fenics_grid = dl.Function(me.V_grid)
 
-        U = np.zeros(me.grid_shape)
-        for ii in range(np.prod(me.grid_shape)):
-            nd_ind = np.unravel_index(ii, me.grid_shape)
-            p = np.array([me.all_XX[k][nd_ind] for k in range(me.d)])
+        dl.LagrangeInterpolator.interpolate(u_fenics_grid, u_fenics)
 
-            if use_extrapolation:
-                U[nd_ind] = u_fenics(dl.Point(p))
+        if mu is not None:
+            inside_ellipse = point_is_in_ellipsoid(me.lexsorted_grid_coords, mu, Sigma, tau)
+        else:
+            inside_ellipse = np.ones(me.N_grid, dtype=bool)
+        inside_ellipse = inside_ellipse.reshape(me.grid_shape)
+        outside_ellipse = np.logical_not(inside_ellipse)
 
-            elif me.point_is_in_mesh(p):
-                U[nd_ind] = u_fenics(dl.Point(p))
+        U = u_fenics_grid.vector()[me.lexsort_inds].reshape(me.grid_shape)
 
-            else:
-                U[nd_ind] = outside_domain_default_value
-
-        return U
-
-    def interpolate_within_ellipsoid(me, u_fenics,
-                                     mu, Sigma, tau,
-                                     outside_domain_default_value=0.0,
-                                     inside_domain_default_value=0.0,
-                                     use_extrapolation=False):
-        if use_extrapolation:
-            u_fenics.set_allow_extrapolation(True)
-
-        U = np.zeros(me.grid_shape)
-        for ii in range(np.prod(me.grid_shape)):
-            nd_ind = np.unravel_index(ii, me.grid_shape)
-            p = np.array([me.all_XX[k][nd_ind] for k in range(me.d)])
-
-            if me.point_is_in_mesh(p):
-                if point_is_in_ellipsoid(p, mu, Sigma, tau):  # inside mesh, inside ellipsoid
-                    U[nd_ind] = u_fenics(dl.Point(p))
-                else:  # inside mesh, outside ellipsoid
-                    U[nd_ind] = inside_domain_default_value
-
-            elif (not point_is_in_ellipsoid(p, mu, Sigma, tau)):  # outside mesh, outside ellipsoid
-                U[nd_ind] = outside_domain_default_value
-
-            else:  # outside mesh, inside ellipsoid
-                if use_extrapolation:
-                    U[nd_ind] = u_fenics(dl.Point(p))
-                else:
-                    U[nd_ind] = outside_domain_default_value
+        U[np.logical_and(me.inside_domain, outside_ellipse)] = inside_domain_default_value
+        U[np.logical_and(me.outside_domain, outside_ellipse)] = outside_domain_default_value
+        if (not use_extrapolation):
+            U[np.logical_and(me.outside_domain, inside_ellipse)] = outside_domain_default_value
 
         return U
+
