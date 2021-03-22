@@ -25,8 +25,3 @@ def fenics_interactive_impulse_response_plot(apply_A, function_space_V):
     cid = fig.canvas.mpl_connect('button_press_event', onclick)
     return fig, cid
 
-
-def vec2fct(u_vec, Vh):
-    u_fct = fenics.Function(Vh)
-    u_fct.vector()[:] = u_vec.copy()
-    return u_fct

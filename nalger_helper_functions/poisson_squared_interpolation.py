@@ -1,7 +1,7 @@
 import numpy as np
 import fenics
 import scipy.linalg as sla
-from neumann_poisson_solver import NeumannPoissonSolver
+from nalger_helper_functions import NeumannPoissonSolver
 
 
 class PoissonSquaredInterpolation:

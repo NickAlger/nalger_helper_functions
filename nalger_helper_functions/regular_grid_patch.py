@@ -1,13 +1,8 @@
 import numpy as np
 import dolfin as dl
-
-# https://github.com/NickAlger/helper_functions/
-from point_is_in_box import point_is_in_box
-from pointcloud_nearest_neighbor import pointcloud_nearest_neighbor
-from fenics_function_to_regular_grid_interpolator import FenicsFunctionToRegularGridInterpolator
-from grid_interpolator import GridInterpolator
-from conforming_box import conforming_box
-from make_regular_grid import make_regular_grid
+from nalger_helper_functions import point_is_in_box, \
+    pointcloud_nearest_neighbor, FenicsFunctionToRegularGridInterpolator, \
+    GridInterpolator, conforming_box, make_regular_grid
 
 
 class RegularGridPatch:

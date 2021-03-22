@@ -1,11 +1,6 @@
 import numpy as np
 import dolfin as dl
-
-# https://github.com/NickAlger/helper_functions/
-from make_regular_grid import make_regular_grid
-from point_is_in_ellipsoid import point_is_in_ellipsoid
-from box_mesh_nd import box_mesh_nd
-from box_mesh_lexsort import box_mesh_lexsort
+from nalger_helper_functions import point_is_in_ellipsoid, box_mesh_nd, box_mesh_lexsort
 
 
 class FenicsFunctionToRegularGridInterpolator:
