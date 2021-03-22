@@ -10,7 +10,7 @@ def rational_inverse_square_root_weights_and_poles(interval_min_m, interval_max_
     # Adaptation of Method 3 from Hale, Higham, and Trefethen, Computing f(A)b by contour integrals. SIAM 2008
     #
     # Usage:
-    #   https://github.com/NickAlger/helper_functions/blob/master/rational_inverse_square_root.ipynb
+    #   https://github.com/NickAlger/nalger_helper_functions/tree/master/jupyter_notebooks/rational_inverse_square_root.ipynb
     m = interval_min_m
     M = interval_max_M
     N = number_of_rational_terms_N

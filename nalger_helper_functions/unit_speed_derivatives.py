@@ -3,7 +3,8 @@ from math import factorial
 
 
 def unit_speed_derivatives(YY):
-    # # https://github.com/NickAlger/helper_functions/blob/master/unit_speed_derivatives.py
+    # Usage:
+    #   https://github.com/NickAlger/nalger_helper_functions/tree/master/jupyter_notebooks/unit_speed_derivatives.py
     # Let y(t) be the curve solving the following variable speed ODE:
     #     /y'(t) = v(y(t))
     #     \y(0)  = y0

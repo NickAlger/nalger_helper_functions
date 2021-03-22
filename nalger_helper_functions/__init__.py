@@ -1,4 +1,4 @@
-__all__ = []
+# Ordering matters! Must import dependencies before dependents
 
 try:
     from .vec2fct import vec2fct
@@ -56,11 +56,6 @@ except ImportError:
     print('FenicsFunctionSupportBoxGetter not loaded')
 
 try:
-    from .fenics_function_to_regular_grid_interpolator import FenicsFunctionToRegularGridInterpolator
-except ImportError:
-    print('FenicsFunctionToRegularGridInterpolator not loaded')
-
-try:
     from .interactive_impulse_response_plot import interactive_impulse_response_plot
 except ImportError:
     print('fenics_interactive_impulse_response_plot not loaded')
@@ -106,22 +101,26 @@ except ImportError:
     print('pointcloud_nearest_neighbor not loaded')
 
 try:
-    from .poisson_squared_interpolation import PoissonSquaredInterpolation
-except ImportError:
-    print('PoissonSquaredInterpolation not loaded')
-
-try:
     from .rational_inverse_square_root_weights_and_poles import rational_inverse_square_root_weights_and_poles
 except ImportError:
     print('rational_inverse_square_root_weights_and_poles not loaded')
-
-try:
-    from .regular_grid_patch import RegularGridPatch
-except ImportError:
-    print('RegularGridPatch not loaded')
 
 try:
     from .unit_speed_derivatives import unit_speed_derivatives
 except ImportError:
     print('unit_speed_derivatives not loaded')
 
+try:
+    from .poisson_squared_interpolation import PoissonSquaredInterpolation
+except ImportError:
+    print('PoissonSquaredInterpolation not loaded')
+
+try:
+    from .fenics_function_to_regular_grid_interpolator import FenicsFunctionToRegularGridInterpolator
+except ImportError:
+    print('FenicsFunctionToRegularGridInterpolator not loaded')
+
+try:
+    from .regular_grid_patch import RegularGridPatch
+except ImportError:
+    print('RegularGridPatch not loaded')

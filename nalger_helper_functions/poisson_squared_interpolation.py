@@ -45,7 +45,6 @@ class PoissonSquaredInterpolation:
         for i in range(me.num_pts):
             for j in range(me.num_pts):
                 S[i, j] = me.impulse_responses[i].inner(me.M * me.impulse_responses[j])
-        print(make_dense_lu_solver)
         me.solve_S = make_dense_lu_solver(S)
         me.eta = me.solve_S(np.ones(me.num_pts))
         me.mu = np.dot(np.ones(me.num_pts), me.eta)

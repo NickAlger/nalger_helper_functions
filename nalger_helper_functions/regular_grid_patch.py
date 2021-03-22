@@ -6,7 +6,8 @@ from nalger_helper_functions import point_is_in_box, \
 
 
 class RegularGridPatch:
-    # https://github.com/NickAlger/helper_functions/blob/master/regular_grid_patch.ipynb
+    # Usage:
+    #   https://github.com/NickAlger/nalger_helper_functions/tree/master/jupyter_notebooks/regular_grid_patch.ipynb
     def __init__(me, function_space_V, approximate_box_min, approximate_box_max,
                  anchor_point_p, grid_density_multiplier=1.0):
         me.V = function_space_V
