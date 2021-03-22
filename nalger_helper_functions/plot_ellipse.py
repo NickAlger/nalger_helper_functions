@@ -4,7 +4,8 @@ from matplotlib.patches import Ellipse
 
 
 def plot_ellipse(mu, Sigma, n_std_tau, ax=None):
-    # https://github.com/NickAlger/helper_functions/blob/master/plot_ellipse.ipynb
+    # Usage:
+    #   https://github.com/NickAlger/nalger_helper_functions/tree/master/jupyter_notebooks/plot_ellipse.ipynb
     if ax is None:
         ax = plt.gca()
 

@@ -3,7 +3,8 @@ from scipy.interpolate import interpn
 
 
 class GridInterpolator:
-    # https://github.com/NickAlger/helper_functions/blob/master/grid_interpolator.ipynb
+    # Usage:
+    #   https://github.com/NickAlger/nalger_helper_functions/tree/master/jupyter_notebooks/grid_interpolator.ipynb
     def __init__(me, grid_min, grid_max, grid_shape):
         me.grid_min = grid_min
         me.grid_max = grid_max

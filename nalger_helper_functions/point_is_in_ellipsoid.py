@@ -2,6 +2,8 @@ import numpy as np
 
 
 def point_is_in_ellipsoid(p, mu, Sigma, tau):
+    # Usage:
+    #   https://github.com/NickAlger/nalger_helper_functions/tree/master/jupyter_notebooks/jupyter_notebooks
     # True if (p-mu)^T Sigma^-1 (p-mu) <= tau^2
     # p.shape = (N,d) for N points OR p.shape = (d) for one point
     # mu.shape = (d)

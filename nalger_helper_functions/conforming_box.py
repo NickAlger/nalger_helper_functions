@@ -2,7 +2,8 @@ import numpy as np
 
 
 def conforming_box(min_point, max_point, grid_zero_point, grid_h):
-    # https://github.com/NickAlger/helper_functions/blob/master/conforming_rectangle.ipynb
+    # Usage:
+    #   https://github.com/NickAlger/nalger_helper_functions/blob/master/jupyter_notebooks/conforming_rectangle.ipynb
     h = grid_h
     p = grid_zero_point
 

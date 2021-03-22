@@ -3,7 +3,8 @@ from scipy.signal import convolve
 
 
 def conforming_grid_convolution(F1, min1, max1, F2, min2, max2, p1=None, p2=None, run_checks=True, method='auto'):
-    # https://github.com/NickAlger/helper_functions/blob/master/conforming_grid_convolution.ipynb
+    # Usage:
+    #   https://github.com/NickAlger/nalger_helper_functions/blob/master/jupyter_notebooks/conforming_grid_convolution.ipynb
     d = len(F1.shape)
 
     if p1 is None:

@@ -2,7 +2,8 @@ import numpy as np
 
 
 def point_is_in_box(p, box_min, box_max):
-    # https://github.com/NickAlger/helper_functions/blob/master/point_is_in_box.ipynb
+    # Usage:
+    #   https://github.com/NickAlger/nalger_helper_functions/tree/master/jupyter_notebooks/point_is_in_box.ipynb
     # p.shape = (N,d) for N points, OR p.shape = (d) for one point
     # box_min.shape = (d)
     # box_max.shape = (d)

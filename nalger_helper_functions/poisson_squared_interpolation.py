@@ -1,21 +1,22 @@
 import numpy as np
-import fenics
-import scipy.linalg as sla
-from nalger_helper_functions import NeumannPoissonSolver
+import dolfin as dl
+from nalger_helper_functions import NeumannPoissonSolver, make_dense_lu_solver
 
 
 class PoissonSquaredInterpolation:
+    # Usage:
+    #   https://github.com/NickAlger/nalger_helper_functions/tree/master/jupyter_notebooks/poisson_squared_interpolation.ipynb
     def __init__(me, function_space_V, initial_points=None):
         me.V = function_space_V
         me.N = me.V.dim()
 
-        u_trial = fenics.TrialFunction(me.V)
-        v_test = fenics.TestFunction(me.V)
+        u_trial = dl.TrialFunction(me.V)
+        v_test = dl.TestFunction(me.V)
 
-        mass_form = u_trial * v_test * fenics.dx
-        me.M = fenics.assemble(mass_form)
+        mass_form = u_trial * v_test * dl.dx
+        me.M = dl.assemble(mass_form)
 
-        me.constant_one_function = fenics.interpolate(fenics.Constant(1.0), me.V)
+        me.constant_one_function = dl.interpolate(dl.Constant(1.0), me.V)
 
         me.NPPSS = NeumannPoissonSolver(me.V)
         me.solve_neumann_poisson = me.NPPSS.solve
@@ -44,6 +45,7 @@ class PoissonSquaredInterpolation:
         for i in range(me.num_pts):
             for j in range(me.num_pts):
                 S[i, j] = me.impulse_responses[i].inner(me.M * me.impulse_responses[j])
+        print(make_dense_lu_solver)
         me.solve_S = make_dense_lu_solver(S)
         me.eta = me.solve_S(np.ones(me.num_pts))
         me.mu = np.dot(np.ones(me.num_pts), me.eta)
@@ -75,8 +77,3 @@ class PoissonSquaredInterpolation:
             u = u + me.smooth_basis[k] * p[k]
         return u
 
-
-def make_dense_lu_solver(M):
-    M_lu, M_pivot = sla.lu_factor(M)
-    solve_M = lambda b: sla.lu_solve((M_lu, M_pivot), b)
-    return solve_M

@@ -4,7 +4,8 @@ from nalger_helper_functions import point_is_in_ellipsoid, box_mesh_nd, box_mesh
 
 
 class FenicsFunctionToRegularGridInterpolator:
-    # https://github.com/NickAlger/helper_functions/blob/master/fenics_function_to_regular_grid_interpolator.ipynb
+    # Usage:
+    #   https://github.com/NickAlger/nalger_helper_functions/blob/master/jupyter_notebooks/fenics_function_to_regular_grid_interpolator.ipynb
     def __init__(me, function_space_V, grid_min, grid_max, grid_shape):
         me.V = function_space_V
         me.grid_min = grid_min

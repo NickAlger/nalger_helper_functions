@@ -2,7 +2,8 @@ import numpy as np
 
 
 class FenicsFunctionSupportBoxGetter:
-    # https://github.com/NickAlger/helper_functions/blob/master/fenics_function_support_box_getter.ipynb
+    # Usage:
+    #   https://github.com/NickAlger/nalger_helper_functions/blob/master/jupyter_notebooks/fenics_function_support_box_getter.ipynb
     def __init__(me, function_space_V):
         me.V = function_space_V
         me.X = me.V.tabulate_dof_coordinates()

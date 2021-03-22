@@ -3,7 +3,8 @@ import numpy as np
 
 def pointcloud_nearest_neighbor(pp, return_min_distances=False):
     # Using "dumb" algorithm. Probably slow for large numbers of points
-    # https://github.com/NickAlger/helper_functions/blob/master/pointcloud_nearest_neighbor.ipynb
+    # Usage:
+    #   https://github.com/NickAlger/nalger_helper_functions/tree/master/jupyter_notebooks/pointcloud_nearest_neighbor.ipynb
     N, d = pp.shape
 
     nearest_neighbor_inds = np.zeros(N, dtype=int)

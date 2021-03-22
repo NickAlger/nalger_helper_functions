@@ -3,7 +3,8 @@ import numpy as np
 
 
 class NeumannPoissonSolver:
-    # https://github.com/NickAlger/helper_functions/blob/master/neumann_poisson_solver.ipynb
+    # Usage:
+    #   https://github.com/NickAlger/nalger_helper_functions/tree/master/jupyter_notebooks/neumann_poisson_solver.ipynb
     def __init__(me, function_space_V):
         me.V = function_space_V
         me.dof_coords = me.V.tabulate_dof_coordinates()
