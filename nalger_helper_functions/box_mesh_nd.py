@@ -4,7 +4,7 @@ import dolfin as dl
 
 def box_mesh_nd(box_min, box_max, grid_shape):
     # Usage:
-    #   https://github.com/NickAlger/nalger_helper_functions/blob/master/jupyter_notebooks/box_mesh.ipynb
+    #   https://github.com/NickAlger/nalger_helper_functions/blob/master/jupyter_notebooks/box_mesh_nd.ipynb
     d = len(box_min)
     if d == 1:
         mesh = dl.IntervalMesh(grid_shape[0] - 1, box_min[0], box_max[0])
