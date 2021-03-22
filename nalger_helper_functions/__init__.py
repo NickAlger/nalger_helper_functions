@@ -1,6 +1,11 @@
 # Ordering matters! Must import dependencies before dependents
 
 try:
+    from .ind2sub_batches import ind2sub_batches, sub2ind_batches
+except ImportError:
+    print('ind2sub_batches, sub2ind_batches not loaded')
+
+try:
     from .build_dense_matrix_from_matvecs import build_dense_matrix_from_matvecs
 except ImportError:
     print('build_dense_matrix_from_matvecs not loaded')
