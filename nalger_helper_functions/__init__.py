@@ -76,9 +76,9 @@ except ImportError:
     print('fenics_interactive_impulse_response_plot not loaded')
 
 try:
-    from .grid_interpolator import GridInterpolator
+    from .grid_interpolate import grid_interpolate
 except ImportError:
-    print('GridInterpolator not loaded')
+    print('grid_interpolate not loaded')
 
 try:
     from .make_regular_grid import make_regular_grid

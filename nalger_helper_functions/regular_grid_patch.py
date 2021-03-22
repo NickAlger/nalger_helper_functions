@@ -2,7 +2,7 @@ import numpy as np
 import dolfin as dl
 from nalger_helper_functions import point_is_in_box, \
     pointcloud_nearest_neighbor, FenicsFunctionToRegularGridInterpolator, \
-    GridInterpolator, conforming_box, make_regular_grid
+    grid_interpolate, conforming_box, make_regular_grid
 
 
 class RegularGridPatch:
@@ -38,9 +38,6 @@ class RegularGridPatch:
                                                                              me.box_min,
                                                                              me.box_max,
                                                                              me.grid_shape)
-        me.grid_to_points_object = GridInterpolator(me.box_min,
-                                                    me.box_max,
-                                                    me.grid_shape)
 
         me.all_xx, me.all_XX = make_regular_grid(me.box_min, me.box_max, me.grid_shape)
 
@@ -56,6 +53,5 @@ class RegularGridPatch:
 
     def grid_to_function(me, U_array):
         u = dl.Function(me.V)
-        u.vector()[me.inds_of_points_in_box] = me.grid_to_points_object.interpolate(U_array,
-                                                                                    me.points_in_box)
+        u.vector()[me.inds_of_points_in_box] = grid_interpolate(me.box_min, me.box_max, U_array, me.points_in_box)
         return u
