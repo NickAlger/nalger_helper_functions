@@ -1,6 +1,16 @@
 # Ordering matters! Must import dependencies before dependents
 
 try:
+    from .build_dense_matrix_from_matvecs import build_dense_matrix_from_matvecs
+except ImportError:
+    print('build_dense_matrix_from_matvecs not loaded')
+
+try:
+    from .invert_dictionary import invert_dictionary
+except ImportError:
+    print('invert_dictionary not loaded')
+
+try:
     from .vec2fct import vec2fct
 except ImportError:
     print('vec2fct not loaded')
@@ -51,9 +61,9 @@ except ImportError:
     print('ellipsoid_bounding_box not loaded')
 
 try:
-    from .fenics_function_support_box_getter import FenicsFunctionSupportBoxGetter
+    from .function_support_box import function_support_box
 except ImportError:
-    print('FenicsFunctionSupportBoxGetter not loaded')
+    print('function_support_box')
 
 try:
     from .interactive_impulse_response_plot import interactive_impulse_response_plot
