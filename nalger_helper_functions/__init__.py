@@ -111,11 +111,6 @@ except ImportError:
     print('point_is_in_ellipsoid not loaded')
 
 try:
-    from .pointcloud_nearest_neighbor import pointcloud_nearest_neighbor
-except ImportError:
-    print('pointcloud_nearest_neighbor not loaded')
-
-try:
     from .rational_inverse_square_root_weights_and_poles import rational_inverse_square_root_weights_and_poles
 except ImportError:
     print('rational_inverse_square_root_weights_and_poles not loaded')

@@ -1,7 +1,8 @@
 import numpy as np
 import dolfin as dl
-from nalger_helper_functions import point_is_in_box, \
-    pointcloud_nearest_neighbor, FenicsFunctionToRegularGridInterpolator, \
+from scipy.spatial import cKDTree
+from nalger_helper_functions import point_is_in_box,\
+    FenicsFunctionToRegularGridInterpolator, \
     grid_interpolate, conforming_box, make_regular_grid
 
 
@@ -21,8 +22,9 @@ class RegularGridPatch:
                                                approximate_box_max)
         points_in_approximate_box = dof_coords[approximate_box_mask, :]
 
-        h0 = np.min(pointcloud_nearest_neighbor(points_in_approximate_box,
-                                                return_min_distances=True)[1])
+        T = cKDTree(points_in_approximate_box)
+        dd, _ = T.query(points_in_approximate_box, k=2)
+        h0 = np.min(dd[:, 1])
 
         me.h = h0 / grid_density_multiplier
 
