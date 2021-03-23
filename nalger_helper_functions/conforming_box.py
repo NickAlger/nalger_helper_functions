@@ -1,10 +1,10 @@
 import numpy as np
 
 
-def conforming_box(min_point, max_point, grid_zero_point, grid_h):
+def conforming_box(min_point, max_point, grid_zero_point, grid_hh):
     # Usage:
     #   https://github.com/NickAlger/nalger_helper_functions/blob/master/jupyter_notebooks/conforming_box.ipynb
-    h = grid_h
+    h = grid_hh
     p = grid_zero_point
 
     min_point_conforming = np.floor((min_point - p) / h) * h + p
