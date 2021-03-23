@@ -134,3 +134,8 @@ try:
     from .regular_grid_patch import RegularGridPatch
 except ImportError:
     print('RegularGridPatch not loaded')
+
+try:
+    from .combine_grid_functions import combine_grid_functions
+except ImportError:
+    print('combine_grid_functions not loaded')
