@@ -2,7 +2,7 @@ import numpy as np
 from nalger_helper_functions import grid_interpolate, make_regular_grid, conforming_box
 
 
-def combine_grid_functions(mins, maxes, AA):
+def combine_grid_functions(mins, maxes, AA, expand_box=True):
     # Usage:
     #   https://github.com/NickAlger/nalger_helper_functions/tree/master/jupyter_notebooks/combine_grid_functions.ipynb
     mins = np.array(mins)
@@ -19,7 +19,13 @@ def combine_grid_functions(mins, maxes, AA):
     B_min0 = np.min(mins, axis=0)
     B_max0 = np.max(maxes, axis=0)
 
-    B_min, B_max, B_shape = conforming_box(B_min0, B_max0, anchor_point, grid_hh)
+    if expand_box:
+        B_min, B_max, B_shape = conforming_box(B_min0, B_max0, anchor_point, grid_hh)
+    else:
+        B_min = mins[0,:]
+        B_max = maxes[0,:]
+        B_shape = AA[0].shape
+
     _, (X, Y) = make_regular_grid(B_min, B_max, B_shape)
 
     B_points = np.vstack([X.reshape(-1), Y.reshape(-1)]).T
