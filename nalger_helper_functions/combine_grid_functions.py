@@ -28,8 +28,10 @@ def combine_grid_functions(mins, maxes, AA, expand_box=True):
 
     B_points = np.vstack([X.reshape(-1), Y.reshape(-1)]).T
 
-    B = AA[0].copy()
-    for k in range(1,N): # Earlier functions overwrite later functions
+    # B = AA[0].copy()
+    B = np.nan * np.ones(B_shape)
+    # for k in range(1,N): # Earlier functions overwrite later functions
+    for k in range(N):  # Earlier functions overwrite later functions
         B_nan_locations = np.isnan(B)
         if not np.any(B_nan_locations):
             break
