@@ -14,12 +14,10 @@ def combine_grid_functions(mins, maxes, AA, expand_box=True):
     maxes = maxes.reshape((-1,d))
     anchor_point = mins[0,:]
 
-    grid_hh = (maxes[0,:] - mins[0,:]) / (np.array(AA[0].shape) - 1.)
-
-    B_min0 = np.min(mins, axis=0)
-    B_max0 = np.max(maxes, axis=0)
-
     if expand_box:
+        grid_hh = (maxes[0, :] - mins[0, :]) / (np.array(AA[0].shape) - 1.)
+        B_min0 = np.min(mins, axis=0)
+        B_max0 = np.max(maxes, axis=0)
         B_min, B_max, B_shape = conforming_box(B_min0, B_max0, anchor_point, grid_hh)
     else:
         B_min = mins[0,:]
@@ -30,14 +28,17 @@ def combine_grid_functions(mins, maxes, AA, expand_box=True):
 
     B_points = np.vstack([X.reshape(-1), Y.reshape(-1)]).T
 
-    B = np.nan * np.ones(B_shape)
-    for k in list(range(N))[::-1]: # Earlier functions overwrite later functions
-        Ak_min = mins[k,:]
-        Ak_max = maxes[k,:]
-        Ak = AA[k]
+    B = AA[0].copy()
+    for k in range(1,N): # Earlier functions overwrite later functions
+        B_nan_locations = np.isnan(B)
+        if not np.any(B_nan_locations):
+            break
 
+        Ak_min = mins[k,:] - 1e-12
+        Ak_max = maxes[k,:] + 1e-12
+        Ak = AA[k]
         Ak_on_Bgrid = grid_interpolate(Ak_min, Ak_max, Ak, B_points, fill_value=np.nan).reshape(B_shape)
-        good_locations = np.logical_not(np.isnan(Ak_on_Bgrid))
-        B[good_locations] = Ak_on_Bgrid[good_locations]
+
+        B[B_nan_locations] = Ak_on_Bgrid[B_nan_locations]
 
     return B_min, B_max, B
