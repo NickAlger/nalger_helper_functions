@@ -31,8 +31,9 @@ def least_squares_directional_derivative_matrix(points, derivative_direction,
     mesh_diameter = np.linalg.norm(np.max(points, axis=0) - np.min(points, axis=0))
     print('min_h=', min_h, ', mesh_diameter=', mesh_diameter)
 
-    min_L = min_points_per_wavelength * min_h
     max_L = mesh_diameter
+    # min_L = min_points_per_wavelength * min_h
+    min_L = max_L / 2.
 
     uhat = derivative_direction / np.linalg.norm(derivative_direction)
 
