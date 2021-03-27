@@ -139,3 +139,13 @@ try:
     from .combine_grid_functions import combine_grid_functions
 except ImportError:
     print('combine_grid_functions not loaded')
+
+try:
+    from .factorized import factorized
+except ImportError:
+    print('factorized not loaded')
+
+try:
+    from .least_squares_derivative_matrix import least_squares_directional_derivative_matrix
+except ImportError:
+    print('least_squares_directional_derivative_matrix not loaded')
