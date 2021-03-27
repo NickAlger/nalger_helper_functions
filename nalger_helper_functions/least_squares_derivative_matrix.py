@@ -10,7 +10,7 @@ _shared_vars = dict()
 
 def least_squares_directional_derivative_matrix(points, derivative_direction,
                                                 a_reg=1e-6, num_neighbors=10,
-                                                num_angles=5, num_frequencies=4, orthtol=0.2,
+                                                num_angles=5, num_frequencies=4,
                                                 min_points_per_wavelength=30,
                                                 plot_probing_functions=False,
                                                 apply_D_true=None,
