@@ -149,3 +149,8 @@ try:
     from .least_squares_derivative_matrix import least_squares_directional_derivative_matrix
 except ImportError:
     print('least_squares_directional_derivative_matrix not loaded')
+
+try:
+    from .box_function import BoxFunction
+except ImportError:
+    print('BoxFunction not loaded')
