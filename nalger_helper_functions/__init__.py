@@ -151,6 +151,6 @@ except ImportError:
     print('least_squares_directional_derivative_matrix not loaded')
 
 try:
-    from .box_function import BoxFunction
+    from .box_function import BoxFunction, convolve_box_functions
 except ImportError:
-    print('BoxFunction not loaded')
+    print('BoxFunction, convolve_box_functions not loaded')

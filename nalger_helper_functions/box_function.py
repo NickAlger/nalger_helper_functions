@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.interpolate import interpn
+from scipy.signal import convolve
 from dataclasses import dataclass
+from functools import cached_property
 import matplotlib.pyplot as plt
 
 
@@ -18,31 +20,21 @@ class BoxFunction:
         me.hh = (me.box_max - me.box_min) / (np.array(me.shape) - 1.)
         me.element_volume = np.prod(me.hh)
 
-        me._lingrid = None
-        me._meshgrid = None
-        me._gridpoints = None
-
-    @property
+    @cached_property
     def lingrid(me):
-        if me._lingrid is None:
-            me._lingrid = list(np.linspace(me.box_min[k], me.box_max[k], me.shape[k]) for k in range(me.ndim))
-        return me._lingrid
+        return list(np.linspace(me.box_min[k], me.box_max[k], me.shape[k]) for k in range(me.ndim))
 
-    @property
+    @cached_property
     def _slightly_bigger_lingrid(me):
         return list(np.linspace(me.box_min[k]-1e-14, me.box_max[k]+1e-14, me.shape[k]) for k in range(me.ndim))
 
-    @property
+    @cached_property
     def meshgrid(me):
-        if me._meshgrid is None:
-            me._meshgrid = np.meshgrid(*me._lingrid, indexing='ij')
-        return me._meshgrid
+        return np.meshgrid(*me.lingrid, indexing='ij')
 
-    @property
+    @cached_property
     def gridpoints(me):
-        if me._gridpoints is None:
-            me._gridpoints = np.array([X.reshape(-1) for X in me.meshgrid]).T
-        return me._gridpoints
+        return np.array([X.reshape(-1) for X in me.meshgrid]).T
 
     @property
     def shape(me):
@@ -57,15 +49,15 @@ class BoxFunction:
 
     def __mul__(me, other):
         if isinstance(other, BoxFunction):
-            if box_functions_are_conforming(me, other):
-                new_min = np.max([me.box_min, other.box_min], axis=0)
-                new_max = np.min([me.box_max, other.box_max], axis=0)
-                F = me.restrict_to_another_box(new_min, new_max)
-                G = other.restrict_to_another_box(new_min, new_max)
-                new_data = F.data * G.data
-                return BoxFunction(new_min, new_max, new_data)
-            else:
+            if not box_functions_are_conforming(me, other):
                 raise RuntimeError('BoxFunctions are not conforming')
+
+            new_min = np.max([me.box_min, other.box_min], axis=0)
+            new_max = np.min([me.box_max, other.box_max], axis=0)
+            F = me.restrict_to_another_box(new_min, new_max)
+            G = other.restrict_to_another_box(new_min, new_max)
+            new_data = F.data * G.data
+            return BoxFunction(new_min, new_max, new_data)
         else:
             return BoxFunction(me.box_min, me.box_max, other * me.data)
 
@@ -74,15 +66,15 @@ class BoxFunction:
 
     def __add__(me, other):
         if isinstance(other, BoxFunction):
-            if box_functions_are_conforming(me, other):
-                new_min = np.min([me.box_min, other.box_min], axis=0)
-                new_max = np.max([me.box_max, other.box_max], axis=0)
-                F = me.restrict_to_another_box(new_min, new_max)
-                G = other.restrict_to_another_box(new_min, new_max)
-                new_data = F.data + G.data
-                return BoxFunction(new_min, new_max, new_data)
-            else:
+            if not box_functions_are_conforming(me, other):
                 raise RuntimeError('BoxFunctions are not conforming')
+
+            new_min = np.min([me.box_min, other.box_min], axis=0)
+            new_max = np.max([me.box_max, other.box_max], axis=0)
+            F = me.restrict_to_another_box(new_min, new_max)
+            G = other.restrict_to_another_box(new_min, new_max)
+            new_data = F.data + G.data
+            return BoxFunction(new_min, new_max, new_data)
         else:
             raise RuntimeError('currently BoxFunction can only be added to BoxFunction')
 
@@ -104,17 +96,31 @@ class BoxFunction:
         else:
             raise RuntimeError('currently BoxFunction can only be subtracted from BoxFunction')
 
+    @property
+    def real(me):
+        return BoxFunction(me.box_min, me.box_max, me.data.real)
+
+    @property
+    def imag(me):
+        return BoxFunction(me.box_min, me.box_max, me.data.imag)
+
+    def copy(me):
+        return BoxFunction(me.box_min, me.box_max, me.data.copy())
+
     def norm(me):
         return np.linalg.norm(me.data) * np.sqrt(me.element_volume)
 
     def restrict_to_another_box(me, new_min, new_max):
-        if box_conforms_to_grid(new_min, new_max, me.box_min, me.hh):
-            new_shape = tuple(np.round(new_max - new_min / me.hh).astype(int) + 1)
-            new_F = BoxFunction(new_min, new_max, np.zeros(new_shape))
-            new_F.data = me(new_F.gridpoints).reshape(new_shape)
-        else:
+        if not box_conforms_to_grid(new_min, new_max, me.box_min, me.hh):
             raise RuntimeError('other box not conforming with BoxFunction grid')
+
+        new_shape = tuple(np.round((new_max - new_min) / me.hh).astype(int) + 1)
+        new_F = BoxFunction(new_min, new_max, np.zeros(new_shape))
+        new_F.data = me(new_F.gridpoints).reshape(new_shape)
         return new_F
+
+    def translate(me, p):
+        return BoxFunction(me.box_min + p, me.box_max + p, me.data)
 
     def plot(me, title=None):
         plt.figure()
@@ -123,6 +129,14 @@ class BoxFunction:
         plt.colorbar()
         if title is not None:
             plt.title(title)
+
+
+def convolve_box_functions(F, G, method='auto'):
+    if not box_functions_are_conforming(F, G):
+        raise RuntimeError('BoxFunctions are not conforming')
+
+    F_star_G_data = convolve(F.data, G.data, mode='full', method=method) * F.element_volume
+    return BoxFunction(F.box_min + G.box_min, F.box_max + G.box_max, F_star_G_data)
 
 
 def box_conforms_to_grid(box_min, box_max, anchor_point, hh):
