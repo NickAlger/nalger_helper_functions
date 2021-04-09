@@ -20,13 +20,15 @@ class BoxFunction:
         me.hh = (me.box_max - me.box_min) / (np.array(me.shape) - 1.)
         me.element_volume = np.prod(me.hh)
 
+        me.zeropoint_index = me.nearest_gridpoint_index(np.zeros(me.ndim))
+
     @cached_property
     def lingrid(me):
         return list(np.linspace(me.box_min[k], me.box_max[k], me.shape[k]) for k in range(me.ndim))
 
     @cached_property
     def _slightly_bigger_lingrid(me):
-        return list(np.linspace(me.box_min[k]-1e-14, me.box_max[k]+1e-14, me.shape[k]) for k in range(me.ndim))
+        return list(np.linspace(me.box_min[k]-1e-12, me.box_max[k]+1e-12, me.shape[k]) for k in range(me.ndim))
 
     @cached_property
     def meshgrid(me):
@@ -104,11 +106,30 @@ class BoxFunction:
     def imag(me):
         return BoxFunction(me.box_min, me.box_max, me.data.imag)
 
+    def angle(me):
+        return BoxFunction(me.box_min, me.box_max, np.angle(me.data))
+
+    def abs(me):
+        return BoxFunction(me.box_min, me.box_max, np.abs(me.data))
+
+    def conj(me):
+        return BoxFunction(me.box_min, me.box_max, me.data.conj())
+
+    @property
+    def dtype(me):
+        return me.data.dtype
+
+    def astype(me, *args, **kwargs):
+        return BoxFunction(me.box_min, me.box_max, me.data.astype(*args, **kwargs))
+
     def copy(me):
         return BoxFunction(me.box_min, me.box_max, me.data.copy())
 
     def norm(me):
         return np.linalg.norm(me.data) * np.sqrt(me.element_volume)
+
+    def flip(me):
+        return BoxFunction(-me.box_max, -me.box_min, flip_array(me.data))
 
     def restrict_to_another_box(me, new_min, new_max):
         if not box_conforms_to_grid(new_min, new_max, me.box_min, me.hh):
@@ -121,6 +142,9 @@ class BoxFunction:
 
     def translate(me, p):
         return BoxFunction(me.box_min + p, me.box_max + p, me.data)
+
+    def nearest_gridpoint_index(me, pp):
+        return np.round(pp-me.box_min / me.hh).astype(int)
 
     def plot(me, title=None):
         plt.figure()
@@ -169,3 +193,7 @@ def box_functions_are_conforming(F, G):
 
 def is_divisible_by(xx, yy, tol=1e-10):
     return np.linalg.norm(xx / yy - np.rint(xx / yy)) < tol
+
+
+def flip_array(X):
+    return X[tuple([slice(None, None, -1) for _ in range(X.ndim)])]
