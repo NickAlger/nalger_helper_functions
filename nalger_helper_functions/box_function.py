@@ -134,6 +134,9 @@ class BoxFunction:
     def norm(me):
         return np.linalg.norm(me.data) * np.sqrt(me.element_volume)
 
+    def inner(me, other):
+        return np.sum((me * other.conj()).data * me.element_volume)
+
     def flip(me):
         return BoxFunction(-me.box_max, -me.box_min, flip_array(me.data))
 
