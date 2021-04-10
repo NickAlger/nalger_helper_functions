@@ -28,7 +28,7 @@ class BoxFunction:
 
     @cached_property
     def _slightly_bigger_lingrid(me):
-        return list(np.linspace(me.box_min[k]-1e-12, me.box_max[k]+1e-12, me.shape[k]) for k in range(me.ndim))
+        return list(np.linspace(me.box_min[k]-1e-15, me.box_max[k]+1e-15, me.shape[k]) for k in range(me.ndim))
 
     @cached_property
     def meshgrid(me):
@@ -65,6 +65,12 @@ class BoxFunction:
 
     def __rmul__(me, other):
         return me.__mul__(other)
+
+    def __truediv__(me, scalar):
+        if isinstance(scalar, BoxFunction):
+            raise RuntimeError('BoxFunction can only be divided by scalar')
+
+        return BoxFunction(me.box_min, me.box_max, me.data / scalar)
 
     def __add__(me, other):
         if isinstance(other, BoxFunction):
