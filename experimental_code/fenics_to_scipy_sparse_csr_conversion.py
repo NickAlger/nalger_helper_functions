@@ -16,7 +16,7 @@ def vec2fct(u_vec, Vh):
 from petsc4py import PETSc
 
 def convert_scipy_csr_matrix_to_fenics_csr_matrix(A_scipy):
-    A_petsc = PETSc.Mat().createAIJ(size=A_scipy.shape, csr=(A_scipy.indptr, A_scipy.indices, A_scipy.data))
+    A_petsc = PETSc.Mat().createAIJ(size=A_scipy.shape, csr=(A_scipy.indptr, A_scipy.indices, A_scipy.array))
     A_fenics = fenics.PETScMatrix(A_petsc)
     return A_fenics
 
