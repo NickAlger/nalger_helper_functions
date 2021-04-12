@@ -157,13 +157,36 @@ class BoxFunction:
     def nearest_gridpoint_index(me, pp):
         return np.round(pp - me.min / me.h).astype(int)
 
-    def plot(me, title=None):
-        plt.figure()
+    def plot(me, title=None, figsize=None):
         X, Y = me.meshgrid
-        plt.pcolor(X, Y, me.array)
-        plt.colorbar()
-        if title is not None:
-            plt.title(title)
+
+        if me.dtype == 'complex128':
+            if figsize is None:
+                figsize = (12, 4)
+            plt.figure(figsize=figsize)
+
+            plt.subplot(121)
+            plt.pcolor(X, Y, me.array.real)
+            plt.colorbar()
+            if title is not None:
+                plt.title(title + ' real')
+
+            plt.subplot(122)
+            plt.pcolor(X, Y, me.array.imag)
+            plt.colorbar()
+            if title is not None:
+                plt.title(title + ' imag')
+        else:
+            if figsize is None:
+                figsize = (6, 4)
+            plt.figure(figsize=figsize)
+
+            plt.pcolor(X, Y, me.array)
+            plt.colorbar()
+            if title is not None:
+                plt.title(title)
+
+
 
 
 def boxconv(F, G, method='auto'):
