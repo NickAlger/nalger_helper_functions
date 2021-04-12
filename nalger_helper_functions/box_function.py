@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.interpolate import interpn
 from scipy.signal import convolve
+from scipy import fft
 from dataclasses import dataclass
 from functools import cached_property
 import matplotlib.pyplot as plt
@@ -57,8 +58,8 @@ class BoxFunction:
 
             new_min = np.max([me.min, other.min], axis=0)
             new_max = np.min([me.max, other.max], axis=0)
-            F = me.restrict_to_box(new_min, new_max)
-            G = other.restrict_to_box(new_min, new_max)
+            F = me.restrict_to_new_box(new_min, new_max)
+            G = other.restrict_to_new_box(new_min, new_max)
             new_data = F.array * G.array
             return BoxFunction(new_min, new_max, new_data)
         else:
@@ -80,8 +81,8 @@ class BoxFunction:
 
             new_min = np.min([me.min, other.min], axis=0)
             new_max = np.max([me.max, other.max], axis=0)
-            F = me.restrict_to_box(new_min, new_max)
-            G = other.restrict_to_box(new_min, new_max)
+            F = me.restrict_to_new_box(new_min, new_max)
+            G = other.restrict_to_new_box(new_min, new_max)
             new_data = F.array + G.array
             return BoxFunction(new_min, new_max, new_data)
         else:
@@ -141,7 +142,7 @@ class BoxFunction:
     def flip(me):
         return BoxFunction(-me.max, -me.min, flip_array(me.array))
 
-    def restrict_to_box(me, new_min, new_max):
+    def restrict_to_new_box(me, new_min, new_max):
         if not box_conforms_to_grid(new_min, new_max, me.min, me.h):
             raise RuntimeError('other box not conforming with BoxFunction grid')
 
@@ -207,6 +208,41 @@ def box_functions_are_conforming(F, G):
         print('BoxFunctions not conforming (one grid is shifted relative to the other)')
 
     return conforming
+
+
+def convolution_square_root(PSI, pre_expansion=0, post_contraction=0,
+                            positive_real_branch_cut=np.pi, negative_real_branch_cut=0.0):
+    # Input PSI and output Z are BoxFunction convolution kernels
+    # Z is the convolution kernel for the square root of the operator that does convolution with PSI
+    initial_width = PSI.width
+    s = pre_expansion
+    PSI = PSI.restrict_to_new_box(PSI.min - s*PSI.width, PSI.max + s*PSI.width)  # expand PSI box by zero
+
+    PSI_shifted_array = np.roll(PSI.array, -PSI.zeropoint_index, axis=np.arange(PSI.ndim))
+
+    fft_PSI = fft.fftn(PSI_shifted_array)
+    sqrt_fft_PSI = np.zeros(fft_PSI.shape, dtype=complex)
+    sqrt_fft_PSI[fft_PSI.real >= 0] = square_root(fft_PSI[fft_PSI.real >= 0], positive_real_branch_cut)
+    sqrt_fft_PSI[fft_PSI.real < 0] = square_root(fft_PSI[fft_PSI.real < 0], negative_real_branch_cut)
+
+    Z_shifted_array = fft.ifftn(sqrt_fft_PSI)
+
+    Z_array = np.roll(Z_shifted_array, PSI.zeropoint_index, axis=np.arange(PSI.ndim)) / np.sqrt(PSI.dV)
+
+    Z = BoxFunction(PSI.min, PSI.max, Z_array)
+
+    t = post_contraction
+    Z = Z.restrict_to_new_box(Z.min + t*initial_width, Z.max - t*initial_width)  # contract Z box
+    return Z
+
+
+def square_root(z, branch_cut_theta):
+    "Square root with different branch cut defined by theta parameter."
+    # https://flothesof.github.io/branch-cuts-with-square-roots.html
+    argument = np.angle(z)  # between -pi and +pi
+    modulus = np.abs(z)
+    argument = np.mod(argument + branch_cut_theta, 2 * np.pi) - branch_cut_theta
+    return np.sqrt(modulus) * np.exp(1j * argument / 2)
 
 
 def is_divisible_by(xx, yy, tol=1e-10):
