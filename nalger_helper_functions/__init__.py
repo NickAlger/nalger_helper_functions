@@ -154,3 +154,8 @@ try:
     from .box_function import BoxFunction, boxconv, boxinner, boxnorm, boxintegrate, convolution_square_root
 except ImportError:
     print('BoxFunction, boxconv, boxinner, boxnorm, boxintegrate, convolution_square_root, not loaded')
+
+try:
+    from .pointwise_observation_matrix import pointwise_observation_matrix
+except ImportError:
+    print('pointwise_observation_matrix not loaded')
