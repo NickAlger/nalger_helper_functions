@@ -142,20 +142,40 @@ class BoxFunction:
     def flip(me):
         return BoxFunction(-me.max, -me.min, flip_array(me.array))
 
-    def restrict_to_new_box(me, new_min, new_max):
+    def restrict_to_new_box(me, new_min, new_max, check_error=False):
         if not box_conforms_to_grid(new_min, new_max, me.min, me.h):
             raise RuntimeError('other box not conforming with BoxFunction grid')
 
         new_shape = tuple(np.round((new_max - new_min) / me.h).astype(int) + 1)
-        new_F = BoxFunction(new_min, new_max, np.zeros(new_shape))
-        new_F.array = me(new_F.gridpoints).reshape(new_shape)
+        new_F = BoxFunction(new_min, new_max, np.zeros(new_shape, dtype=me.dtype))
+
+        intersection_min = np.max([me.min, new_min], axis=0)
+        intersection_max = np.min([me.max, new_max], axis=0)
+        if np.all(intersection_max >= intersection_min):
+            min_ind_old = me.nearest_gridpoint_index(intersection_min)
+            max_ind_old = me.nearest_gridpoint_index(intersection_max)
+            intersection_slices_old = tuple([slice(min_ind_old[k], max_ind_old[k]+1)
+                                             for k in range(me.ndim)])
+
+            min_ind_new = new_F.nearest_gridpoint_index(intersection_min)
+            max_ind_new = new_F.nearest_gridpoint_index(intersection_max)
+            intersection_slices_new = tuple([slice(min_ind_new[k], max_ind_new[k]+1)
+                                             for k in range(me.ndim)])
+
+            new_F.array[intersection_slices_new] = me.array[intersection_slices_old]
+
+        if check_error:
+            new_F_array2 = me(new_F.gridpoints).reshape(new_shape)
+            err_restrict_to_new_box = np.linalg.norm(new_F.array - new_F_array2)
+            print('err_restrict_to_new_box=', err_restrict_to_new_box)
+
         return new_F
 
     def translate(me, p):
         return BoxFunction(me.min + p, me.max + p, me.array)
 
     def nearest_gridpoint_index(me, pp):
-        return np.round(pp - me.min / me.h).astype(int)
+        return np.round((pp - me.min) / me.h).astype(int)
 
     def plot(me, title=None, figsize=None):
         X, Y = me.meshgrid
@@ -198,11 +218,15 @@ def boxconv(F, G, method='auto'):
 
 
 def boxinner(F, G):
-    return np.sum((F * G.conj()).array * F.dV)
+    return boxintegrate(F * G.conj())
 
 
 def boxnorm(F):
     return np.sqrt(np.abs(boxinner(F,F)))
+
+
+def boxintegrate(F):
+    return np.sum(F.array) * F.dV
 
 
 def box_conforms_to_grid(box_min, box_max, anchor_point, hh):
