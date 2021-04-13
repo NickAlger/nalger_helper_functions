@@ -156,6 +156,6 @@ except ImportError:
     print('BoxFunction, boxconv, boxinner, boxnorm, boxintegrate, convolution_square_root, not loaded')
 
 try:
-    from .pointwise_observation_matrix import pointwise_observation_matrix
+    from .pointwise_observation_matrix import pointwise_observation_matrix, points_inside_mesh
 except ImportError:
-    print('pointwise_observation_matrix not loaded')
+    print('pointwise_observation_matrix, points_inside_mesh not loaded')
