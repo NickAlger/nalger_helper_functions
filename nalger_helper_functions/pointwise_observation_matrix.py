@@ -40,23 +40,3 @@ def pointwise_observation_matrix(pp, V):
     ij = np.concatenate((np.array([rows]), np.array([cols])), axis=0)
     M = sps.csr_matrix((vals, ij), shape=(nx, V.dim()))
     return M
-
-
-mesh = dl.UnitSquareMesh(11,13)
-V = dl.FunctionSpace(mesh, 'CG', 2)
-u = dl.Function(V)
-u.vector()[:] = np.random.randn(V.dim())
-
-N = 100
-d = mesh.geometric_dimension()
-pp = np.random.rand(N, d)
-B = pointwise_observation_matrix(pp, V)
-
-x1 = np.zeros(N)
-for k in range(N):
-    x1[k] = u(dl.Point(pp[k,:]))
-
-x2 = B * u.vector()[:]
-
-err_pointwise_observation_matrix = np.linalg.norm(x2 - x1)
-print('err_pointwise_observation_matrix=', err_pointwise_observation_matrix)
