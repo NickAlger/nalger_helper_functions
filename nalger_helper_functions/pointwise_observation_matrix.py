@@ -53,3 +53,16 @@ def points_inside_mesh(pp, mesh):
         outside_pts[k] = (cell_id == outside_mesh_entity)
     inside_pts = np.logical_not(outside_pts)
     return inside_pts
+
+
+def make_grid_transfer_function(pp, V, exterior_fill_value=0.0):
+    num_pts, d = pp.shape
+    inside = points_inside_mesh(pp, V.mesh())
+    B = pointwise_observation_matrix(pp[inside, :], V)
+
+    def grid_transfer_function(u):
+        v = exterior_fill_value * np.ones(num_pts, dtype=u.dtype)
+        v[inside] = B * u
+        return v
+
+    return grid_transfer_function
