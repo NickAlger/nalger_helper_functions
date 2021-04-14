@@ -55,14 +55,20 @@ def points_inside_mesh(pp, mesh):
     return inside_pts
 
 
-def make_grid_transfer_function(pp, V, exterior_fill_value=0.0):
-    num_pts, d = pp.shape
-    inside = points_inside_mesh(pp, V.mesh())
-    B = pointwise_observation_matrix(pp[inside, :], V)
+class PointwiseObservationOperator:
+    def __init__(me, pp, V):
+        me.pp = pp
+        me.V = V
+        num_pts, me.ndim = me.pp.shape
+        me.shape = (num_pts, V.dim())
 
-    def grid_transfer_function(u):
-        v = exterior_fill_value * np.ones(num_pts, dtype=u.dtype)
-        v[inside] = B * u
+        me.inside_mesh_mask = points_inside_mesh(pp, V.mesh())
+        me.inside_mesh_transfer_matrix = pointwise_observation_matrix(pp[me.inside_mesh_mask, :], V)
+
+    def matvec(me, u, exterior_fill_value=0.0):
+        v = exterior_fill_value * np.ones(me.shape[0], dtype=u.dtype)
+        v[me.inside_mesh_mask] = me.inside_mesh_transfer_matrix * u
         return v
 
-    return grid_transfer_function
+    def rmatvec(me, v):
+        return me.inside_mesh_transfer_matrix.T * v[me.inside_mesh_mask]
