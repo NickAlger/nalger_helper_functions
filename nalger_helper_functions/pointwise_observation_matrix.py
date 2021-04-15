@@ -2,6 +2,7 @@ import numpy as np
 import scipy.sparse as sps
 import dolfin as dl
 
+
 def pointwise_observation_matrix(pp, V):
     inside_inds = np.argwhere(points_inside_mesh(pp, V.mesh())).reshape(-1)
     qq = pp[inside_inds, :]
