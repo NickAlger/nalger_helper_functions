@@ -156,9 +156,9 @@ except ImportError:
     print('BoxFunction, boxconv, boxinner, boxnorm, boxintegrate, convolution_square_root, not loaded')
 
 try:
-    from .pointwise_observation_matrix import pointwise_observation_matrix, points_inside_mesh, PointwiseObservationOperator
+    from .pointwise_observation_matrix import pointwise_observation_matrix, points_inside_mesh
 except ImportError:
-    print('pointwise_observation_matrix, points_inside_mesh, GridTransferOperator not loaded')
+    print('pointwise_observation_matrix, points_inside_mesh not loaded')
 
 try:
     from .fit_sparse_matrix import fit_sparse_matrix
