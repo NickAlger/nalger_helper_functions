@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from functools import cached_property
 import matplotlib.pyplot as plt
 
+from nalger_helper_functions import dtype_max
 
 @dataclass
 class BoxFunction:
@@ -207,13 +208,12 @@ class BoxFunction:
                 plt.title(title)
 
 
-
-
 def boxconv(F, G, method='auto'):
     if not box_functions_are_conforming(F, G):
         raise RuntimeError('BoxFunctions are not conforming')
 
-    F_star_G_data = convolve(F.array, G.array, mode='full', method=method) * F.dV
+    dtype = dtype_max([F, G])
+    F_star_G_data = convolve(F.array.astype(dtype), G.array.astype(dtype), mode='full', method=method) * F.dV
     return BoxFunction(F.min + G.min, F.max + G.max, F_star_G_data)
 
 

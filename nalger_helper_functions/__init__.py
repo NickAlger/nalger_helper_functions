@@ -1,6 +1,11 @@
 # Ordering matters! Must import dependencies before dependents
 
 try:
+    from .dtype_max import dtype_max
+except ImportError:
+    print('dtype_max not loaded')
+
+try:
     from .ind2sub_batches import ind2sub_batches, sub2ind_batches
 except ImportError:
     print('ind2sub_batches, sub2ind_batches not loaded')
@@ -169,3 +174,4 @@ try:
     from .multilinear_interpolation_matrix import multilinear_interpolation_matrix, unit_box_corners
 except ImportError:
     print('multilinear_interpolation_matrix, unit_box_corners not loaded')
+
