@@ -159,3 +159,13 @@ try:
     from .pointwise_observation_matrix import pointwise_observation_matrix, points_inside_mesh, PointwiseObservationOperator
 except ImportError:
     print('pointwise_observation_matrix, points_inside_mesh, GridTransferOperator not loaded')
+
+try:
+    from .fit_sparse_matrix import fit_sparse_matrix
+except ImportError:
+    print('fit_sparse_matrix not loaded')
+
+try:
+    from .multilinear_interpolation_matrix import multilinear_interpolation_matrix, unit_box_corners
+except ImportError:
+    print('multilinear_interpolation_matrix, unit_box_corners not loaded')
