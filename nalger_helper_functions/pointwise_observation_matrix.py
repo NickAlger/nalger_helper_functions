@@ -56,19 +56,65 @@ def points_inside_mesh(pp, mesh):
 
 
 class PointwiseObservationOperator:
-    def __init__(me, pp, V):
+    def __init__(me, pp, V, exterior_fill_value=0.0, inside_mesh_mask=None, inside_mesh_transfer_matrix=None,
+                 use_transpose=False):
         me.pp = pp
         me.V = V
+        me.exterior_fill_value = exterior_fill_value
+        me.use_transpose = use_transpose
+
         num_pts, me.ndim = me.pp.shape
-        me.shape = (num_pts, V.dim())
+        if use_transpose:
+            me.shape = (V.dim(), num_pts)
+        else:
+            me.shape = (num_pts, V.dim())
 
-        me.inside_mesh_mask = points_inside_mesh(pp, V.mesh())
-        me.inside_mesh_transfer_matrix = pointwise_observation_matrix(pp[me.inside_mesh_mask, :], V)
+        if inside_mesh_mask is None:
+            inside_mesh_mask = points_inside_mesh(pp, V.mesh())
+        me.inside_mesh_mask = inside_mesh_mask
 
-    def matvec(me, u, exterior_fill_value=0.0):
-        v = exterior_fill_value * np.ones(me.shape[0], dtype=u.dtype)
+        if inside_mesh_transfer_matrix is None:
+            inside_mesh_transfer_matrix = pointwise_observation_matrix(pp[me.inside_mesh_mask, :], V)
+        me.inside_mesh_transfer_matrix = inside_mesh_transfer_matrix
+
+    def _forward_matvec(me, u):
+        v = me.exterior_fill_value * np.ones(me.shape[0], dtype=u.dtype)
         v[me.inside_mesh_mask] = me.inside_mesh_transfer_matrix * u
         return v
 
-    def rmatvec(me, v):
+    def _transpose_matvec(me, v):
         return me.inside_mesh_transfer_matrix.T * v[me.inside_mesh_mask]
+
+    def matvec(me, x):
+        if me.use_transpose:
+            return me._transpose_matvec(x)
+        else:
+            return me._forward_matvec(x)
+
+    def rmatvec(me, x):
+        if me.use_transpose:
+            return me._forward_matvec(x)
+        else:
+            return me._transpose_matvec(x)
+
+    def __mul__(me, x):
+        return me.matvec(x)
+
+    def __rmul__(me, x):
+        return me.rmatvec(x)
+
+    def __matmul__(me, x):
+        return me.matvec(x)
+
+    def __rmatmul__(me, x):
+        return me.rmatvec(x)
+
+    def transpose(me):
+        return PointwiseObservationOperator(me.pp, me.V, exterior_fill_value=me.exterior_fill_value,
+                                            inside_mesh_mask=me.inside_mesh_mask,
+                                            inside_mesh_transfer_matrix=me.inside_mesh_transfer_matrix,
+                                            use_transpose= not me.use_transpose)
+
+    @property
+    def T(me):
+        return me.transpose()
