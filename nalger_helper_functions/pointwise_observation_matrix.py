@@ -3,7 +3,7 @@ import scipy.sparse as sps
 import dolfin as dl
 
 
-def pointwise_observation_matrix(pp, V):
+def pointwise_observation_matrix(pp, V, nonzero_columns_only=False):
     inside_inds = np.argwhere(points_inside_mesh(pp, V.mesh())).reshape(-1)
     qq = pp[inside_inds, :]
     B0 = pointwise_observation_matrix_interior_points_only(qq, V)
@@ -14,7 +14,13 @@ def pointwise_observation_matrix(pp, V):
     B_indptr = np.cumsum(B_diffs)
 
     B = sps.csr_matrix((B0.data, B0.indices, B_indptr), (pp.shape[0], B0.shape[1]))
-    return B
+
+    if nonzero_columns_only:
+        nonzero_cols = dofs_that_contribute_to_function_at_points(qq, V)
+        B = B.tocsc()[:,nonzero_cols].tocsr()
+        return B, nonzero_cols
+    else:
+        return B
 
 
 def pointwise_observation_matrix_interior_points_only(pp, V):
@@ -67,3 +73,20 @@ def points_inside_mesh(pp, mesh):
         outside_pts[k] = (cell_id == outside_mesh_entity)
     inside_pts = np.logical_not(outside_pts)
     return inside_pts
+
+
+def dofs_that_contribute_to_function_at_points(pp, V):
+    # degrees of freedom that contribute to function values at points pp
+    mesh = V.mesh()
+    dofmap = V.dofmap()
+    qq = pp[points_inside_mesh(pp, mesh),:]
+    N, d = qq.shape
+    bbt = mesh.bounding_box_tree()
+    contributing_dofs = list()
+    for k in range(N):
+        cell_id = bbt.compute_first_entity_collision(dl.Point(np.copy(qq[k, :])))
+        contributing_dofs.append(dofmap.cell_dofs(cell_id))
+    contributing_dofs = np.unique(np.concatenate(contributing_dofs)).reshape(-1)
+    return contributing_dofs
+
+

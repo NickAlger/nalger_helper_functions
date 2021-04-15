@@ -161,9 +161,9 @@ except ImportError:
     print('BoxFunction, boxconv, boxinner, boxnorm, boxintegrate, convolution_square_root, not loaded')
 
 try:
-    from .pointwise_observation_matrix import pointwise_observation_matrix, points_inside_mesh
+    from .pointwise_observation_matrix import pointwise_observation_matrix, points_inside_mesh, dofs_that_contribute_to_function_at_points
 except ImportError:
-    print('pointwise_observation_matrix, points_inside_mesh not loaded')
+    print('pointwise_observation_matrix, points_inside_mesh, dofs_that_contribute_to_function_at_points not loaded')
 
 try:
     from .fit_sparse_matrix import fit_sparse_matrix
