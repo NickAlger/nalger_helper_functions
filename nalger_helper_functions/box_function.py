@@ -2,18 +2,12 @@ import numpy as np
 from scipy.interpolate import interpn
 from scipy.signal import convolve
 from scipy import fft
-from dataclasses import dataclass
-from functools import cached_property
 import matplotlib.pyplot as plt
 
 from nalger_helper_functions import dtype_max
 
-@dataclass
-class BoxFunction:
-    min : np.array
-    max : np.array
-    array : np.array
 
+class BoxFunction:
     def __init__(me, box_min, box_max, array):
         me.min = np.asarray(np.array(box_min)).reshape(-1)
         me.max = np.asarray(np.array(box_max)).reshape(-1)
@@ -25,21 +19,34 @@ class BoxFunction:
 
         me.zeropoint_index = me.nearest_gridpoint_index(np.zeros(me.ndim))
 
-    @cached_property
+        me._lingrid = None
+        me._slightly_bigger_lingrid = None
+        me._meshgrid = None
+        me._gridpoints = None
+
+    @property
     def lingrid(me):
-        return list(np.linspace(me.min[k], me.max[k], me.shape[k]) for k in range(me.ndim))
+        if me._lingrid is None:
+            me._lingrid = list(np.linspace(me.min[k], me.max[k], me.shape[k]) for k in range(me.ndim))
+        return me._lingrid
 
-    @cached_property
-    def _slightly_bigger_lingrid(me):
-        return list(np.linspace(me.min[k] - 1e-15, me.max[k] + 1e-15, me.shape[k]) for k in range(me.ndim))
+    @property
+    def slightly_bigger_lingrid(me):
+        if me._slightly_bigger_lingrid is None:
+            me._slightly_bigger_lingrid = list(np.linspace(me.min[k] - 1e-15, me.max[k] + 1e-15, me.shape[k]) for k in range(me.ndim))
+        return me._slightly_bigger_lingrid
 
-    @cached_property
+    @property
     def meshgrid(me):
-        return np.meshgrid(*me.lingrid, indexing='ij')
+        if me._meshgrid is None:
+            me._meshgrid = np.meshgrid(*me.lingrid, indexing='ij')
+        return me._meshgrid
 
-    @cached_property
+    @property
     def gridpoints(me):
-        return np.array([X.reshape(-1) for X in me.meshgrid]).T
+        if me._gridpoints is None:
+            me._gridpoints = np.array([X.reshape(-1) for X in me.meshgrid]).T
+        return me._gridpoints
 
     @property
     def shape(me):
@@ -50,7 +57,7 @@ class BoxFunction:
         return me.array.ndim
 
     def __call__(me, pp, fill_value=0.0, method='linear'):
-        return interpn(me._slightly_bigger_lingrid, me.array, pp, bounds_error=False, fill_value=fill_value, method=method)
+        return interpn(me.slightly_bigger_lingrid, me.array, pp, bounds_error=False, fill_value=fill_value, method=method)
 
     def __mul__(me, other):
         if isinstance(other, BoxFunction):
