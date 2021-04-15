@@ -6,7 +6,12 @@ import dolfin as dl
 def pointwise_observation_matrix(pp, V, nonzero_columns_only=False):
     inside_inds = np.argwhere(points_inside_mesh(pp, V.mesh())).reshape(-1)
     qq = pp[inside_inds, :]
+
     B0 = pointwise_observation_matrix_interior_points_only(qq, V)
+    if nonzero_columns_only:
+        nonzero_cols = dofs_that_contribute_to_function_at_points(qq, V)
+        B0 = B0[:, nonzero_cols]
+        # B0 = B0.tocsr()
 
     B0_diffs = B0.indptr[1:] - B0.indptr[0:-1]
     B_diffs = np.zeros(pp.shape[0]+1, dtype=B0.indptr.dtype)
@@ -16,8 +21,6 @@ def pointwise_observation_matrix(pp, V, nonzero_columns_only=False):
     B = sps.csr_matrix((B0.data, B0.indices, B_indptr), (pp.shape[0], B0.shape[1]))
 
     if nonzero_columns_only:
-        nonzero_cols = dofs_that_contribute_to_function_at_points(qq, V)
-        B = B.tocsc()[:,nonzero_cols].tocsr()
         return B, nonzero_cols
     else:
         return B
