@@ -156,9 +156,9 @@ except ImportError:
     print('least_squares_directional_derivative_matrix not loaded')
 
 try:
-    from .box_function import BoxFunction, boxconv, boxinner, boxnorm, boxintegrate, convolution_square_root
+    from .box_function import BoxFunction, boxconv, boxinner, boxnorm, boxintegrate, convolution_square_root, box_functions_are_conforming
 except ImportError:
-    print('BoxFunction, boxconv, boxinner, boxnorm, boxintegrate, convolution_square_root, not loaded')
+    print('BoxFunction, boxconv, boxinner, boxnorm, boxintegrate, convolution_square_root, box_functions_are_conforming not loaded')
 
 try:
     from .pointwise_observation_matrix import pointwise_observation_matrix, points_inside_mesh, dofs_that_contribute_to_function_at_points
@@ -175,3 +175,7 @@ try:
 except ImportError:
     print('multilinear_interpolation_matrix, unit_box_corners not loaded')
 
+try:
+    from .shortest_distance_between_points_in_box import shortest_distance_between_points_in_box
+except ImportError:
+    print('shortest_distance_between_points_in_box not loaded')
