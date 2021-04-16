@@ -216,8 +216,10 @@ class BoxFunction:
 
 
 def boxconv(F, G, method='auto'):
-    if not box_functions_are_conforming(F, G):
-        raise RuntimeError('BoxFunctions are not conforming')
+    # if not box_functions_are_conforming(F, G):
+    #     raise RuntimeError('BoxFunctions are not conforming')
+    if np.linalg.norm(F.h - G.h) > 1e-10:
+        raise RuntimeError('BoxFunctions have different spacings h')
 
     dtype = dtype_max([F, G])
     F_star_G_data = convolve(F.array.astype(dtype), G.array.astype(dtype), mode='full', method=method) * F.dV
