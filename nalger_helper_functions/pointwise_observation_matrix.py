@@ -3,8 +3,9 @@ import scipy.sparse as sps
 import dolfin as dl
 
 
-def pointwise_observation_matrix(pp, V, nonzero_columns_only=False):
-    inside_inds = np.argwhere(points_inside_mesh(pp, V.mesh())).reshape(-1)
+def pointwise_observation_matrix(pp, V, nonzero_columns_only=False, return_inside_mesh_mask=False):
+    inside_mesh_mask = points_inside_mesh(pp, V.mesh())
+    inside_inds = np.argwhere(inside_mesh_mask).reshape(-1)
     qq = pp[inside_inds, :]
 
     B0 = pointwise_observation_matrix_interior_points_only(qq, V)
@@ -20,8 +21,12 @@ def pointwise_observation_matrix(pp, V, nonzero_columns_only=False):
 
     B = sps.csr_matrix((B0.data, B0.indices, B_indptr), (pp.shape[0], B0.shape[1]))
 
-    if nonzero_columns_only:
+    if nonzero_columns_only and return_inside_mesh_mask:
+        return B, nonzero_cols, inside_mesh_mask
+    elif nonzero_columns_only:
         return B, nonzero_cols
+    elif return_inside_mesh_mask:
+        return B, inside_mesh_mask
     else:
         return B
 

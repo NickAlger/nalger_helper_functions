@@ -179,3 +179,13 @@ try:
     from .shortest_distance_between_points_in_box import shortest_distance_between_points_in_box
 except ImportError:
     print('shortest_distance_between_points_in_box not loaded')
+
+try:
+    from .eval_fenics_function_on_regular_grid import eval_fenics_function_on_regular_grid
+    from .eval_fenics_function_on_regular_grid import eval_fenics_function_on_regular_grid_using_boxmesh
+    from .eval_fenics_function_on_regular_grid import eval_fenics_function_on_regular_grid_using_direct_evaluation
+    from .eval_fenics_function_on_regular_grid import eval_fenics_function_on_regular_grid_using_pointwise_observation_operator
+except ImportError:
+    print('shortest_distance_between_points_in_box not loaded')
+
+
