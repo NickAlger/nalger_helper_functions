@@ -56,6 +56,7 @@ def eval_fenics_function_on_regular_grid_using_boxmesh(f, box_min, box_max, grid
     F = f_grid.vector()[lexsort_inds].reshape(grid_shape)
 
     if not (outside_mesh_fill_value is None):
+        mesh = f.function_space().mesh()
         lexsorted_grid_coords = V_grid.tabulate_dof_coordinates()[lexsort_inds, :]
         inside_domain = points_inside_mesh(lexsorted_grid_coords, mesh).reshape(grid_shape)
         outside_domain = np.logical_not(inside_domain)
@@ -65,44 +66,3 @@ def eval_fenics_function_on_regular_grid_using_boxmesh(f, box_min, box_max, grid
 
 
 eval_fenics_function_on_regular_grid = eval_fenics_function_on_regular_grid_using_boxmesh
-
-
-from time import time
-from nalger_helper_functions import circle_mesh
-
-
-mesh = circle_mesh(np.zeros(2), 1.0, 0.05)
-V = dl.FunctionSpace(mesh, 'CG', 2)
-
-u = dl.Function(V)
-u.vector()[:] = np.random.randn(V.dim())
-
-box_min = np.array([-0.3, -0.4])
-box_max = np.array([0.8, 1.0])
-grid_shape = (51,47)
-
-outside_mesh_fill_value = -1.2
-
-t = time()
-U1 = eval_fenics_function_on_regular_grid_using_boxmesh(u, box_min, box_max, grid_shape,
-                                                        outside_mesh_fill_value=outside_mesh_fill_value)
-dt_boxmesh = time() - t
-print('dt_boxmesh=', dt_boxmesh)
-
-t = time()
-U2 = eval_fenics_function_on_regular_grid_using_direct_evaluation(u, box_min, box_max, grid_shape,
-                                                                  outside_mesh_fill_value=outside_mesh_fill_value)
-dt_direct = time() - t
-print('dt_direct=', dt_direct)
-
-t = time()
-U3 = eval_fenics_function_on_regular_grid_using_pointwise_observation_operator(u, box_min, box_max, grid_shape,
-                                                                               outside_mesh_fill_value=outside_mesh_fill_value)
-dt_pointwise_obs = time() - t
-print('dt_pointwise_obs=', dt_pointwise_obs)
-
-err_boxmesh_vs_direct = np.linalg.norm(U1-U2) / np.linalg.norm(U1)
-print('err_boxmesh_vs_direct=', err_boxmesh_vs_direct)
-
-err_pointwiseobs_vs_direct = np.linalg.norm(U1-U3) / np.linalg.norm(U1)
-print('err_pointwiseobs_vs_direct=', err_pointwiseobs_vs_direct)
