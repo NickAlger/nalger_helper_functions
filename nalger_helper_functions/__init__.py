@@ -156,7 +156,7 @@ except ImportError:
     print('least_squares_directional_derivative_matrix not loaded')
 
 try:
-    from .box_function import BoxFunction, boxconv, boxinner, boxnorm, boxintegrate, convolution_square_root, box_functions_are_conforming
+    from .box_function import BoxFunction, boxconv, boxinner, boxnorm, boxintegrate, convolution_square_root, box_functions_are_conforming, ellipsoid_characteristic_function
 except ImportError:
     print('BoxFunction, boxconv, boxinner, boxnorm, boxintegrate, convolution_square_root, box_functions_are_conforming not loaded')
 

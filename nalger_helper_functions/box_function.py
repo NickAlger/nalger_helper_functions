@@ -4,7 +4,7 @@ from scipy.signal import convolve
 from scipy import fft
 import matplotlib.pyplot as plt
 
-from nalger_helper_functions import dtype_max
+from nalger_helper_functions import dtype_max, point_is_in_ellipsoid
 
 
 class BoxFunction:
@@ -238,6 +238,12 @@ def boxintegrate(F):
     return np.sum(F.array) * F.dV
 
 
+def ellipsoid_characteristic_function(box_min, box_max, grid_shape, mu, Sigma, tau):
+    E = BoxFunction(box_min, box_max, np.zeros(grid_shape))
+    E.array = point_is_in_ellipsoid(E.gridpoints, mu, Sigma, tau).reshape(grid_shape).astype(float)
+    return E
+
+
 def box_conforms_to_grid(box_min, box_max, anchor_point, hh):
     conforming = True
 
@@ -264,6 +270,14 @@ def box_functions_are_conforming(F, G):
         print('BoxFunctions not conforming (one grid is shifted relative to the other)')
 
     return conforming
+
+
+def is_divisible_by(xx, yy, tol=1e-10):
+    return np.linalg.norm(xx / yy - np.rint(xx / yy)) < tol
+
+
+def flip_array(X):
+    return X[tuple([slice(None, None, -1) for _ in range(X.ndim)])]
 
 
 def convolution_square_root(PSI, pre_expansion=0, post_contraction=0,
@@ -299,11 +313,3 @@ def square_root(z, branch_cut_theta):
     modulus = np.abs(z)
     argument = np.mod(argument + branch_cut_theta, 2 * np.pi) - branch_cut_theta
     return np.sqrt(modulus) * np.exp(1j * argument / 2)
-
-
-def is_divisible_by(xx, yy, tol=1e-10):
-    return np.linalg.norm(xx / yy - np.rint(xx / yy)) < tol
-
-
-def flip_array(X):
-    return X[tuple([slice(None, None, -1) for _ in range(X.ndim)])]
