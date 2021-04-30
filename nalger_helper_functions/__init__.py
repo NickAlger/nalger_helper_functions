@@ -188,4 +188,7 @@ try:
 except ImportError:
     print('shortest_distance_between_points_in_box not loaded')
 
-
+try:
+    from .load_image_into_fenics import load_image_into_fenics
+except ImportError:
+    print('load_image_into_fenics not loaded')
