@@ -192,3 +192,8 @@ try:
     from .load_image_into_fenics import load_image_into_fenics
 except ImportError:
     print('load_image_into_fenics not loaded')
+
+try:
+    from .custom_cg import custom_cg
+except ImportError:
+    print('custom_cg not loaded')
