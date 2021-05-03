@@ -7,8 +7,83 @@ from scipy.spatial import cKDTree
 
 _shared_vars = dict()
 
+def complex_exponential(vhat, omega, points):
+    s = 2. * np.pi * omega * 1j
+    return np.exp(s * np.dot(points, vhat))
+
+
+def directional_derivative_of_complex_exponential(vhat, omega, points, derivative_direction):
+    s = 2. * np.pi * omega * 1j
+    return s * np.dot(derivative_direction, vhat) * np.exp(s * np.dot(points, vhat))
+
 
 def least_squares_directional_derivative_matrix(points, derivative_direction,
+                                                a_reg=1e-8, num_neighbors=10,
+                                                num_angles=5, num_frequencies=4,
+                                                s_min=2, s_max=20):
+    N, d = points.shape
+
+    uhat = derivative_direction / np.linalg.norm(derivative_direction)
+
+    T = cKDTree(points)
+    neighbor_distances, neighbor_inds = T.query(points, num_neighbors)
+
+    rows = list() # [0,    0,    0,     1,    1,    1,     2,    2,    2,     ... ]
+    cols = list() # [p0_n0,p0_n1,p0_n2, p1_n0,p1_n1,p1_n2, p2_n0,p2_n1,p2_n2, ... ]
+    values = list()
+    for r in range(N): # for each row
+        cc = neighbor_inds[r, :] # numpy array of ints. shape = (num_nbrs,)
+        rows += [r for _ in range(len(cc))]
+        cols += list(cc)
+
+        pr = points[r, :].reshape((1, -1))
+        pp_nbrs = points[cc, :] # numpy array of floats. shape = (num_nbrs, spatial_dimension)
+        dd_nbrs = neighbor_distances[r, :] # numpy array of floats. shape = (num_nbrs,)
+        local_pointcloud_diameter = 2.0 * np.max(dd_nbrs)
+        min_L = s_min * local_pointcloud_diameter
+        max_L = s_max * local_pointcloud_diameter
+
+        theta0 = np.arctan(uhat[1] / uhat[0])
+        thetas = theta0 + np.linspace(0, 2.*np.pi, num_angles, endpoint=False)
+        vhats = np.zeros((num_angles, d))
+        vhats[:, 0] = np.cos(thetas)
+        vhats[:, 1] = np.sin(thetas)
+
+        omegas = 1. / np.linspace(min_L, max_L, num_frequencies)
+
+        X = np.zeros((num_neighbors, num_angles, num_frequencies, 2))
+        DXr = np.zeros((num_angles, num_frequencies,2))
+        for ii in range(num_angles):
+            for jj in range(num_frequencies):
+                vhat = vhats[ii,:]
+                omega = omegas[jj]
+                X_ij = complex_exponential(vhat, omega, pp_nbrs) / omega
+                X[:, ii, jj, 0] = X_ij.real
+                X[:, ii, jj, 1] = X_ij.imag
+
+                DXr_ij = directional_derivative_of_complex_exponential(vhat, omega, pr, derivative_direction) / omega
+                DXr[ii, jj, 0] = DXr_ij.real
+                DXr[ii, jj, 1] = DXr_ij.imag
+
+        X = X.reshape((num_neighbors, -1))
+        DXr = DXr.reshape(-1)
+
+        A = np.bmat([[X.T], [a_reg*np.eye(len(cc))]])
+        b = np.concatenate([DXr, np.zeros(len(cc))])
+
+        q = np.linalg.lstsq(A, b, rcond=None)[0]  # min 0.5*||q^T*X - DXr||^2 + a_reg*0.5*||q||^2
+        values += list(q)
+
+    rows = np.array(rows)
+    cols = np.array(cols)
+    values = np.array(values)
+
+    D = sps.coo_matrix((values, (rows, cols)), shape=(N, N)).tocsr()
+
+    return D
+
+
+def least_squares_directional_derivative_matrix_old(points, derivative_direction,
                                                 a_reg=1e-6, num_neighbors=10,
                                                 num_angles=5, num_frequencies=4,
                                                 min_points_per_wavelength=30,
@@ -252,14 +327,7 @@ def finite_difference_check_gradient_and_hessian():
     plt.title('gradient and hessian finite difference check')
 
 
-def complex_exponential(vhat, omega, points):
-    s = 2. * np.pi * omega * 1j
-    return np.exp(s * np.dot(points, vhat))
 
-
-def directional_derivative_of_complex_exponential(vhat, omega, points, derivative_direction):
-    s = 2. * np.pi * omega * 1j
-    return s * np.dot(derivative_direction, vhat) * np.exp(s * np.dot(points, vhat))
 
 
 
