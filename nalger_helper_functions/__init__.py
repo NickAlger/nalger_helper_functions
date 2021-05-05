@@ -197,3 +197,8 @@ try:
     from .custom_cg import custom_cg
 except ImportError:
     print('custom_cg not loaded')
+
+try:
+    from .dlfct2array import dlfct2array
+except ImportError:
+    print('dlfct2array not loaded')
