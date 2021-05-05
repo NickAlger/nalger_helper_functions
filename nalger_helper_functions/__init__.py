@@ -199,6 +199,11 @@ except ImportError:
     print('custom_cg not loaded')
 
 try:
-    from .dlfct2array import dlfct2array
+    from .dlfct2array import dlfct2array, array2dlfct
 except ImportError:
-    print('dlfct2array not loaded')
+    print('dlfct2array, array2dlfct not loaded')
+
+try:
+    from .function_space_tensor2scalar import function_space_tensor2scalar, function_space_scalar2tensor
+except ImportError:
+    print('function_space_tensor2scalar, function_space_scalar2tensor not loaded')
