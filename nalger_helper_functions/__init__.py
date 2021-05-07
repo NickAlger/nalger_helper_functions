@@ -207,3 +207,8 @@ try:
     from .function_space_tensor2scalar import function_space_tensor2scalar, function_space_scalar2tensor
 except ImportError:
     print('function_space_tensor2scalar, function_space_scalar2tensor not loaded')
+
+try:
+    from .ellipsoid_intersection_test import ellipsoid_intersection_test, ellipsoid_intersection_test_helper, ellipsoid_K_function
+except ImportError:
+    print('ellipsoid_intersection_test, ellipsoid_intersection_test_helper, ellipsoid_K_function not loaded')

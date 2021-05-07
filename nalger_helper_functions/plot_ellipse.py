@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
 
-def plot_ellipse(mu, Sigma, n_std_tau, ax=None):
+def plot_ellipse(mu, Sigma, n_std_tau, ax=None, **kwargs):
     # Usage:
     #   https://github.com/NickAlger/nalger_helper_functions/tree/master/jupyter_notebooks/plot_ellipse.ipynb
     if ax is None:
@@ -18,5 +18,8 @@ def plot_ellipse(mu, Sigma, n_std_tau, ax=None):
     long_length = n_std_tau * 2. * np.sqrt(e_big)
     short_length = n_std_tau * 2. * np.sqrt(e_small)
 
-    ellipse = Ellipse(mu, width=long_length, height=short_length, angle=theta, facecolor='none', edgecolor='k')
+    if not ('facecolor' in kwargs):
+        kwargs['facecolor'] = 'none'
+
+    ellipse = Ellipse(mu, width=long_length, height=short_length, angle=theta, **kwargs)
     ax.add_artist(ellipse)
