@@ -212,3 +212,8 @@ try:
     from .ellipsoid_intersection_test import ellipsoid_intersection_test, ellipsoid_intersection_test_helper, ellipsoid_K_function
 except ImportError:
     print('ellipsoid_intersection_test, ellipsoid_intersection_test_helper, ellipsoid_K_function not loaded')
+
+try:
+    from .vector_polynomial import VectorPolynomial, make_taylor_vector_polynomial
+except ImportError:
+    print('VectorPolynomial, make_taylor_vector_polynomial not loaded')
