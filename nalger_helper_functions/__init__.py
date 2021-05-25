@@ -214,6 +214,10 @@ except ImportError:
     print('ellipsoid_intersection_test, ellipsoid_intersection_test_helper, ellipsoid_K_function not loaded')
 
 try:
-    from .vector_polynomial import VectorPolynomial, VectorRationalFunction, taylor_vector_polynomial, pade_vector_rational_function
+    from .vector_polynomial import VectorPolynomial, VectorRationalFunction, taylor_vector_polynomial, \
+        pade_vector_rational_function, polynomial_from_roots_vectorized, lagrange_polynomial_vectorized,\
+        polynomial_interpolation_vectorized, floater_hormann_rational_interpolation_vectorized
 except ImportError:
-    print('VectorPolynomial, VectorRationalFunction, make_taylor_vector_polynomial, pade_vector_rational_function not loaded')
+    print('VectorPolynomial, VectorRationalFunction, make_taylor_vector_polynomial, pade_vector_rational_function, '
+          + 'polynomial_from_roots_vectorized, lagrange_polynomial_vectorized, '
+          + 'polynomial_interpolation_vectorized, floater_hormann_rational_interpolation_vectorized not loaded')
