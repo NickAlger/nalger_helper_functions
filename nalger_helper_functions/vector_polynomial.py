@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.signal import fftconvolve
+from scipy.signal import fftconvolve, convolve
 from scipy.special import factorial
 
 import scipy.optimize as optimize
@@ -235,64 +235,73 @@ def pade_vector_rational_function(taylor_polynomial, pade_power, **kwargs):
     return numerator / denominator
 
 
-def polynomial_from_roots_vectorized(roots):
-    spatial_dimension, num_roots = roots.shape
-    one_colvec = np.ones((spatial_dimension,1))
-    poly = VectorPolynomial(one_colvec)
-    for k in range(num_roots):
-        coeffs = np.bmat([-roots[:,k].reshape((-1,1)), one_colvec]) # (x - root)
-        poly = poly * VectorPolynomial(coeffs)
-    return poly
+# def polynomial_from_roots_vectorized(roots):
+#     spatial_dimension, num_roots = roots.shape
+#     one_colvec = np.ones((spatial_dimension,1))
+#     poly = VectorPolynomial(one_colvec)
+#     for k in range(num_roots):
+#         coeffs = np.bmat([-roots[:,k].reshape((-1,1)), one_colvec]) # (x - root)
+#         poly = poly * VectorPolynomial(coeffs)
+#     return poly
+#
+#
+# def lagrange_polynomial_vectorized(tt, j, spatial_dimension):
+#     # tt[i] is the interpolation point for the i'th component of the polynomial.
+#     # j is the index of the interpolation point at which the polynomial equals 1.
+#     # At all other interpolation points (corresponding to indices i notequal j) the polynomial equals zero.
+#     num_pts = len(tt)
+#     tt_before = tt[:j]
+#     tj = tt[j]
+#     tt_after = tt[j+1:]
+#     roots = np.concatenate([tt_before, tt_after])
+#     roots_matrix = np.outer(np.ones(spatial_dimension), roots)
+#     numerator_poly = polynomial_from_roots_vectorized(roots_matrix)
+#     denominator = np.prod(tj - roots_matrix, axis=1).reshape((-1,1))
+#     lagrange_poly = numerator_poly / denominator
+#     return lagrange_poly
 
 
-def lagrange_polynomial_vectorized(xx, j):
-    # The i'th row of roots contains the interpolation points for the i'th component of the polynomial.
-    # j is the index of the interpolation point at which the polynomial equals 1.
-    # At all other interpolation points (corresponding to indices i notequal j) the polynomial equals zero.
-    spatial_dimension, num_pts = xx.shape
-    xxj = xx[:,j].reshape((-1,1))
-    roots_before = xx[:,:j].reshape((spatial_dimension,-1))
-    roots_after = xx[:, j+1:].reshape((spatial_dimension, -1))
-    roots = np.bmat([roots_before, roots_after])
-    print('roots.shape=', roots.shape)
-    numerator_poly = polynomial_from_roots_vectorized(roots)
-    denominator = np.prod(xxj - roots, axis=1).reshape((-1,1))
-    lagrange_poly = numerator_poly / denominator
-    # return lagrange_poly
-    return numerator_poly
+def vector_polynomial_interpolation(tt, yy):
+    # len(tt) = num_pts
+    # yy.shape = (num_pts, spatial_dimension)
+    vandermonde = tt.reshape((-1,1)) ** np.arange(len(tt)).reshape((1,-1))
+    coeffs = np.linalg.solve(vandermonde, yy).T
+    return VectorPolynomial(coeffs)
 
 
-def polynomial_interpolation_vectorized(xx, yy):
+def polynomial_coeffs_from_roots(rr):
+    # (x - rr[0]) * ... * (x - rr[n]) = cc[0] + cc[1] * x + cc[2] * x^2 + ... + cc[n] * x^n
+    cc = np.array([1])
+    for k in range(len(rr)):
+        cc = convolve(cc, np.array([-rr[k], 1.0]))
+    return cc
+
+
+def vector_floater_hormann_rational_interpolation(tt, yy, degree):
+    # len(tt) = num_pts
+    # yy.shape = (num_pts, spatial_dimension)
     num_pts, spatial_dimension = yy.shape
-    print('yy.shape=', yy.shape)
-    if len(xx.shape) == 1:
-        xx = np.dot(xx.reshape((-1,1)), np.ones((1,spatial_dimension)))
-
-    poly = VectorPolynomial(np.zeros((spatial_dimension,1)))
-    for j in range(num_pts):
-        print('xx.shape=', xx.shape)
-        lagrange_poly = lagrange_polynomial_vectorized(xx.T, j)
-        coeffs = yy[j,:].reshape((-1,1)) * lagrange_poly.coeffs
-        poly = poly + VectorPolynomial(coeffs)
-    return poly
-
-
-def floater_hormann_rational_interpolation_vectorized(xx, yy, degree):
-    spatial_dimension, num_pts = yy.shape
-    if len(xx.shape) == 1:
-        xx = np.ones((spatial_dimension,1)) * xx.reshape((1,-1))
 
     numerator = zeros_vector_polynomial(spatial_dimension)
     denominator = zeros_vector_polynomial(spatial_dimension)
-    for ii in range(num_pts - degree + 1):
-        xx_i = xx[:, ii:ii+degree].reshape((spatial_dimension, degree))
-        p_i = polynomial_interpolation_vectorized(xx_i, yy)
-        lambda_i = ((-1.)**ii) * polynomial_from_roots_vectorized(xx_i).inv()
+    for ii in range(num_pts - degree):
+        tt_i = tt[ii:ii+degree+1]
+        print('yy.shape=', yy.shape)
+        print('yy[ii:ii+degree+1, :].shape=', yy[ii:ii+degree+1, :].shape)
+        print('len(tt_i)=', len(tt_i))
+        yy_i = yy[ii:ii+degree+1, :].reshape((degree+1, spatial_dimension))
+        p_i = vector_polynomial_interpolation(tt_i, yy_i)
+        lambda_coeffs_1d = ((-1.)**ii) * polynomial_coeffs_from_roots(tt_i)
+        lambda_coeffs = np.outer(np.ones(spatial_dimension), lambda_coeffs_1d)
+        lambda_i = VectorPolynomial(lambda_coeffs)
 
-        numerator = numerator + lambda_i * p_i
-        denominator = denominator + lambda_i
+        # numerator = numerator + lambda_i * p_i
+        # denominator = denominator + lambda_i
+        numerator = p_i
+    denominator = ones_vector_polynomial(spatial_dimension)
 
-    rat = numerator / denominator
+    # rat = numerator / denominator
+    rat = numerator
     return rat
 
 
