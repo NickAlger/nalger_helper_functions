@@ -221,3 +221,8 @@ except ImportError:
     print('VectorPolynomial, VectorRationalFunction, make_taylor_vector_polynomial, pade_vector_rational_function, '
           + 'vector_polynomial_interpolation, polynomial_coeffs_from_roots, '
           + 'vector_floater_hormann_rational_interpolation not loaded')
+
+try:
+    from .make_mass_matrix import make_mass_matrix
+except ImportError:
+    print('make_mass_matrix not loaded')
