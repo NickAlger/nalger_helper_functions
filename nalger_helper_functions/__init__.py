@@ -226,3 +226,8 @@ try:
     from .make_mass_matrix import make_mass_matrix
 except ImportError:
     print('make_mass_matrix not loaded')
+
+try:
+    from .make_fenics_amg_solver import make_fenics_amg_solver
+except ImportError:
+    print('make_fenics_amg_solver not loaded')
