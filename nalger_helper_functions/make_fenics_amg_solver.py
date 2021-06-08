@@ -13,6 +13,7 @@ def make_fenics_amg_solver(A_petsc):
         solver.parameters['relative_tolerance'] = rtol
         solver.parameters['maximum_iterations'] = maxiter
         solver.parameters['monitor_convergence'] = verbose
-        return solver.solve(x_petsc, b_petsc)
+        solver.solve(x_petsc, b_petsc)
+        return x_petsc
 
     return solve_A
