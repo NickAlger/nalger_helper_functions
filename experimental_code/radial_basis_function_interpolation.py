@@ -3,7 +3,10 @@ from scipy.optimize import root_scalar
 
 
 def multiquadric(rr, e):
+    # return e*rr
     return np.sqrt(1. + np.power(e * rr,2))
+    # return np.exp(-np.power(e * rr,2))
+    # return 1./np.sqrt(1. + np.power(e * rr,2))
 
 
 def eval_multiquadric_at_points(pp, x0, e):
@@ -58,18 +61,22 @@ def choose_multiquadric_parameter(xx, desired_cond=1e12, e_min=1e-5, e_max=1e5):
 
 import matplotlib.pyplot as plt
 
-N = 85
+# N = 85
+N = 500
 d = 2
 
 xx = np.random.rand(N, d)
 
-e = choose_multiquadric_parameter(xx, desired_cond=1e6)
-# e = 1e-1
+# desired_cond=1e12 # 1e6
+# e = choose_multiquadric_parameter(xx, desired_cond=desired_cond)
+e = 1e3
 Phi = multiquadric_matrix(xx, e)
 
-# ff = np.zeros(N)
-# ff[0] = 1.0
-ff = np.ones(N)
+kk=2
+
+ff = np.zeros(N)
+ff[kk] = 1.0
+# ff = np.ones(N)
 ww = np.linalg.solve(Phi, ff)
 
 X, Y = np.meshgrid(np.linspace(-0., 1., 200), np.linspace(-0., 1., 200))
@@ -83,7 +90,7 @@ plt.pcolor(X, Y, Z)
 plt.colorbar()
 plt.title('e='+str(e))
 plt.scatter(xx[:,0], xx[:,1], s=3, c='k')
-plt.plot(xx[0,0], xx[0,1], '*r')
+plt.plot(xx[kk,0], xx[kk,1], '*r')
 
 
 ##
