@@ -70,6 +70,7 @@ def pointwise_observation_matrix_interior_points_only(pp, V):
 
 
 def points_inside_mesh(pp, mesh):
+    mesh.geometry()
     bbt = mesh.bounding_box_tree()
     infinity_point = dl.Point(np.inf * np.ones(mesh.geometric_dimension()))
     outside_mesh_entity = bbt.compute_first_entity_collision(infinity_point)
