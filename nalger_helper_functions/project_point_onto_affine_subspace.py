@@ -72,4 +72,8 @@ def project_point_onto_affine_subspace(p, V):
         affine_coordinates = np.concatenate([cc_first, cc_rest], axis=1) # shape = (num_pts, k)
 
     PP_projected = np.einsum('pi,pij->pj', affine_coordinates, VV) # shape = (num_pts, N)
+
+    if len(p.shape) == 1:
+        PP_projected = PP_projected.reshape(-1)
+        affine_coordinates = affine_coordinates.reshape(-1)
     return PP_projected, affine_coordinates
