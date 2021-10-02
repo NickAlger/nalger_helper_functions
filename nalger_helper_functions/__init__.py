@@ -231,3 +231,19 @@ try:
     from .make_fenics_amg_solver import make_fenics_amg_solver
 except ImportError:
     print('make_fenics_amg_solver not loaded')
+
+try:
+    from .powerset import powerset
+except ImportError:
+    print('powerset not loaded')
+    
+try:
+    from .project_point_onto_affine_subspace import project_point_onto_affine_subspace
+except ImportError:
+    print('project_point_onto_affine_subspace not loaded')
+
+try:
+    from .closest_point_on_simplex import closest_point_on_simplex
+except ImportError:
+    print('closest_point_on_simplex not loaded')
+
