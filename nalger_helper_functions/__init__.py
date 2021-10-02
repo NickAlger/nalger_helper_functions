@@ -236,7 +236,7 @@ try:
     from .powerset import powerset
 except ImportError:
     print('powerset not loaded')
-    
+
 try:
     from .project_point_onto_affine_subspace import project_point_onto_affine_subspace
 except ImportError:
@@ -246,4 +246,9 @@ try:
     from .closest_point_on_simplex import closest_point_on_simplex
 except ImportError:
     print('closest_point_on_simplex not loaded')
+
+try:
+    from .closest_point_in_mesh import closest_point_in_mesh
+except ImportError:
+    print('closest_point_in_mesh not loaded')
 
