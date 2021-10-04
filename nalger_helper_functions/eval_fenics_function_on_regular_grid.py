@@ -1,7 +1,7 @@
 import numpy as np
 import dolfin as dl
 
-from nalger_helper_functions import box_mesh_nd, box_mesh_lexsort, points_inside_mesh, make_regular_grid, pointwise_observation_matrix
+from nalger_helper_functions import box_mesh_nd, box_mesh_lexsort, points_inside_mesh, make_regular_grid, pointwise_observation_matrix, closest_point_in_mesh
 
 
 def eval_fenics_function_on_regular_grid_using_pointwise_observation_operator(f, box_min, box_max, grid_shape,
@@ -43,10 +43,19 @@ def eval_fenics_function_on_regular_grid_using_direct_evaluation(f, box_min, box
 
 
 def eval_fenics_function_on_regular_grid_using_boxmesh(f, box_min, box_max, grid_shape,
-                                                       outside_mesh_fill_value=None):
+                                                       outside_mesh_fill_value=None,
+                                                       boundary_reflection=False):
+    mesh = f.function_space().mesh()
     grid_mesh = box_mesh_nd(box_min, box_max, grid_shape)
     V_grid = dl.FunctionSpace(grid_mesh, 'CG', 1)
     lexsort_inds = box_mesh_lexsort(V_grid)
+
+    if boundary_reflection:
+        pp = grid_mesh.coordinates()
+        print('closest_point_in_mesh=', closest_point_in_mesh)
+        pp_projected = closest_point_in_mesh(pp, mesh)
+        pp_with_reflection = pp + 2.0 * (pp_projected - pp)
+        grid_mesh.coordinates()[:,:] = pp_with_reflection
 
     f.set_allow_extrapolation(True)
     f_grid = dl.Function(V_grid)
@@ -56,7 +65,6 @@ def eval_fenics_function_on_regular_grid_using_boxmesh(f, box_min, box_max, grid
     F = f_grid.vector()[lexsort_inds].reshape(grid_shape)
 
     if not (outside_mesh_fill_value is None):
-        mesh = f.function_space().mesh()
         lexsorted_grid_coords = V_grid.tabulate_dof_coordinates()[lexsort_inds, :]
         inside_domain = points_inside_mesh(lexsorted_grid_coords, mesh).reshape(grid_shape)
         outside_domain = np.logical_not(inside_domain)

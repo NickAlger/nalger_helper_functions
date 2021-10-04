@@ -181,14 +181,6 @@ except ImportError:
     print('shortest_distance_between_points_in_box not loaded')
 
 try:
-    from .eval_fenics_function_on_regular_grid import eval_fenics_function_on_regular_grid
-    from .eval_fenics_function_on_regular_grid import eval_fenics_function_on_regular_grid_using_boxmesh
-    from .eval_fenics_function_on_regular_grid import eval_fenics_function_on_regular_grid_using_direct_evaluation
-    from .eval_fenics_function_on_regular_grid import eval_fenics_function_on_regular_grid_using_pointwise_observation_operator
-except ImportError:
-    print('shortest_distance_between_points_in_box not loaded')
-
-try:
     from .load_image_into_fenics import load_image_into_fenics
 except ImportError:
     print('load_image_into_fenics not loaded')
@@ -252,3 +244,10 @@ try:
 except ImportError:
     print('closest_point_in_mesh not loaded')
 
+try:
+    from .eval_fenics_function_on_regular_grid import eval_fenics_function_on_regular_grid
+    from .eval_fenics_function_on_regular_grid import eval_fenics_function_on_regular_grid_using_boxmesh
+    from .eval_fenics_function_on_regular_grid import eval_fenics_function_on_regular_grid_using_direct_evaluation
+    from .eval_fenics_function_on_regular_grid import eval_fenics_function_on_regular_grid_using_pointwise_observation_operator
+except ImportError:
+    print('val_fenics_function_on_regular_grid not loaded')
