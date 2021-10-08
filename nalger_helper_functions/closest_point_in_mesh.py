@@ -28,9 +28,9 @@ def closest_point_in_mesh(p, mesh):
         plt.show()
     """
     if len(p.shape) == 1:
-        PP = p[None,:]
+        PP = p[None,:].copy()
     else:
-        PP = p
+        PP = p.copy()
     num_pts, N = PP.shape
     tdim = mesh.topology().dim()
     k = tdim + 1

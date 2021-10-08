@@ -251,3 +251,8 @@ try:
     from .eval_fenics_function_on_regular_grid import eval_fenics_function_on_regular_grid_using_pointwise_observation_operator
 except ImportError:
     print('val_fenics_function_on_regular_grid not loaded')
+
+try:
+    from .reflect_exterior_points_across_boundary import reflect_exterior_points_across_boundary
+except ImportError:
+    print('reflect_exterior_points_across_boundary')
