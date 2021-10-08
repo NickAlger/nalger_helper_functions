@@ -54,7 +54,6 @@ def eval_fenics_function_on_regular_grid_using_boxmesh(f, box_min, box_max, grid
 
     if boundary_reflection:
         pp = grid_mesh.coordinates()
-        print('closest_point_in_mesh=', closest_point_in_mesh)
         pp_projected = closest_point_in_mesh(pp, mesh)
         pp_with_reflection = pp + 2.0 * (pp_projected - pp)
         grid_mesh.coordinates()[:,:] = pp_with_reflection
