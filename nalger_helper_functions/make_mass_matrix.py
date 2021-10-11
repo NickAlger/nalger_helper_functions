@@ -43,7 +43,8 @@ def make_mass_matrix_simple_lumping(function_space_V):
 def make_mass_matrix_diagonal_lumping(function_space_V):
     # uses diagonal of consistent mass matrix
     ML = make_mass_matrix_unlumped(function_space_V)
-    mass_lumps = ML.init_vector(1)
+    mass_lumps = dl.Vector()
+    ML.init_vector(mass_lumps, 1)
     ML.get_diagonal(mass_lumps)
     ML.zero()
     ML.set_diagonal(mass_lumps)
@@ -60,7 +61,8 @@ def make_mass_matrix_quadrature_lumping(function_space_V):
     return ML
 
 def make_fenics_diagonal_matrix_solver(A):
-    idd = A.init_vector(1)
+    idd = dl.Vector()
+    A.init_vector(idd, 1)
     A.get_diagonal(idd)
     idd[:] = 1.0 / idd[:]
     solve_A = lambda v: idd * v
