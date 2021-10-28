@@ -21,5 +21,8 @@ def plot_ellipse(mu, Sigma, n_std_tau, ax=None, **kwargs):
     if not ('facecolor' in kwargs):
         kwargs['facecolor'] = 'none'
 
+    if not ('edgecolor' in kwargs):
+        kwargs['edgecolor'] = 'k'
+
     ellipse = Ellipse(mu, width=long_length, height=short_length, angle=theta, **kwargs)
     ax.add_artist(ellipse)
