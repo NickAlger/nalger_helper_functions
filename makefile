@@ -24,7 +24,7 @@ SHAREDFLAGS := -shared -fPIC
 ALL_COMPILE_STUFF = $(CXXFLAGS) $(PYFLAGS) \
 					-I$(INCLUDE_DIR) -I$(EIGEN_INCLUDE) -I$(THREADPOOL_INCLUDE)
 
-BINDINGS_TARGET = nalger_helper_functions_cpp.so
+BINDINGS_TARGET = nalger_helper_functions_cpp$(PYSUFFIX)
 
 all: $(LIB_DIR)/$(BINDINGS_TARGET) $(EXAMPLES_DIR)/kdtree_example $(EXAMPLES_DIR)/aabbtree_example
 	@echo 'Finished building target: $@'
