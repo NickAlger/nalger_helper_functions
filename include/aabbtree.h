@@ -304,6 +304,7 @@ public:
         return all_collisions;
     }
 
+
 };
 
 } // end namespace AABB
