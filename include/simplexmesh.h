@@ -16,18 +16,12 @@
 
 namespace SMESH {
 
-using namespace Eigen;
-using namespace std;
-using namespace KDT;
-using namespace AABB;
-
-
-vector<vector<int>> powerset(int N)
+std::vector<std::vector<int>> powerset(int N)
 {
-    vector<vector<int>> pset;
+    std::vector<std::vector<int>> pset;
     if (N < 1)
     {
-        vector<int> empty_set;
+        std::vector<int> empty_set;
         pset.push_back( empty_set );
     }
     else
@@ -36,7 +30,7 @@ vector<vector<int>> powerset(int N)
         int sz0 = pset.size();
         for ( int ii=0; ii<sz0; ++ii )
         {
-            vector<int> x = pset[ii];
+            std::vector<int> x = pset[ii];
             x.push_back(N-1);
             pset.push_back(x);
         }
@@ -44,13 +38,13 @@ vector<vector<int>> powerset(int N)
     return pset;
 }
 
-std::pair<MatrixXd, VectorXd> make_simplex_transform_operator( const MatrixXd & simplex_vertices )
+std::pair<Eigen::MatrixXd, Eigen::VectorXd> make_simplex_transform_operator( const Eigen::MatrixXd & simplex_vertices )
 {
     int K = simplex_vertices.rows();
     int M = simplex_vertices.cols();
 
-    MatrixXd S(M, K); // first return
-    VectorXd b(M);    // second return
+    Eigen::MatrixXd S(M, K); // first return
+    Eigen::VectorXd b(M);    // second return
 
     if ( M == 1 )
     {
@@ -59,21 +53,21 @@ std::pair<MatrixXd, VectorXd> make_simplex_transform_operator( const MatrixXd & 
     }
     else
     {
-        VectorXd v0(K);
+        Eigen::VectorXd v0(K);
         v0 = simplex_vertices.col(0);
-        MatrixXd dV(K,M-1);
+        Eigen::MatrixXd dV(K,M-1);
         for ( int jj=1; jj<M; ++jj )
         {
             dV.col(jj-1) = simplex_vertices.col(jj) - v0;
         }
-        MatrixXd S0(M-1, K);
-        S0 = dV.colPivHouseholderQr().solve(MatrixXd::Identity(K,K));
-        Matrix<double, 1, Dynamic> ones_rowvec(M-1);
+        Eigen::MatrixXd S0(M-1, K);
+        S0 = dV.colPivHouseholderQr().solve(Eigen::MatrixXd::Identity(K,K));
+        Eigen::Matrix<double, 1, Eigen::Dynamic> ones_rowvec(M-1);
         ones_rowvec.setOnes();
         S.bottomRightCorner(M-1, K) = S0;
         S.row(0) = -ones_rowvec * S0;
 
-        VectorXd e0(M);
+        Eigen::VectorXd e0(M);
         e0.setZero();
         e0(0) = 1.0;
         b = e0 - S * v0;
@@ -81,125 +75,17 @@ std::pair<MatrixXd, VectorXd> make_simplex_transform_operator( const MatrixXd & 
     return std::make_pair(S, b);
 }
 
-struct Simplex { MatrixXd V;   // simplex vertices
-                 MatrixXd A;   // coordinate transform matrix
-                 VectorXd b;}; // coordinate transform vector
+struct Simplex { Eigen::MatrixXd V;   // simplex vertices
+                 Eigen::MatrixXd A;   // coordinate transform matrix
+                 Eigen::VectorXd b;}; // coordinate transform vector
 
-struct FacetStuff { vector<MatrixXd> VV;   // Facet vertices
-                    vector<MatrixXd> SS;   // Facet simplex coordinate matrices
-                    vector<VectorXd> bb;}; // Facet simplex coordinate vectors
-
-FacetStuff make_facet_stuff( const MatrixXd & simplex_vertices )
-{
-    // q = query point
-    // pi = projection of q onto ith facet
-    // ci = affine coordinates of pi with respect to vertices of ith facet
-    // ci = Si * q + bi
-    // pi = Vi * ci
-    int K = simplex_vertices.rows();
-    int num_vertices = simplex_vertices.cols();
-
-    vector<VectorXd> all_vertices(num_vertices);
-    for ( int ii=0; ii<num_vertices; ++ii)
-    {
-        all_vertices[ii] = simplex_vertices.col(ii);
-    }
-
-    vector<vector<int>> pset = powerset(num_vertices);
-
-    vector<MatrixXd> VV; // [V1, V2, ...]
-    vector<MatrixXd> SS; // [S1, S2, ...]
-    vector<VectorXd> bb; // [b1, b2, ...]
-    for ( int ii=0; ii<pset.size(); ++ii )
-    {
-        vector<int> facet_inds = pset[ii];
-        if ( !facet_inds.empty() )
-        {
-            int num_facet_vertices = facet_inds.size();
-            MatrixXd Vi(K, num_facet_vertices);
-            for ( int jj=0; jj<num_facet_vertices; ++jj )
-            {
-                Vi.col(jj) = simplex_vertices.col(facet_inds[jj]);
-            }
-
-            std::pair<MatrixXd, VectorXd> res = make_simplex_transform_operator( Vi );
-
-            VV.push_back(Vi);
-            SS.push_back(res.first);
-            bb.push_back(res.second);
-        }
-    }
-    return FacetStuff { VV, SS, bb };
-}
-
-VectorXd closest_point_in_simplex_using_precomputed_facet_stuff( const VectorXd & query,            // shape=(dim, 1)
-                                                                 const FacetStuff & FS)
-{
-    int dim = query.size();
-    VectorXd closest_point(dim);
-
-    int num_facets = FS.VV.size();
-
-    double dsq_best = std::numeric_limits<double>::infinity();
-    for ( int ii=0; ii<num_facets; ++ii )
-    {
-        VectorXd facet_coords = FS.SS[ii] * query + FS.bb[ii];
-        bool projection_is_in_facet = (facet_coords.array() >= 0.0).all();
-        if ( projection_is_in_facet )
-        {
-            VectorXd candidate_point = FS.VV[ii] * facet_coords;
-            double dsq_candidate = (candidate_point - query).squaredNorm();
-            if ( dsq_candidate < dsq_best )
-            {
-                closest_point = candidate_point;
-                dsq_best = dsq_candidate;
-            }
-        }
-    }
-    return closest_point;
-}
-
-VectorXd closest_point_in_simplex( const VectorXd & query,            // shape=(dim, 1)
-                                   const MatrixXd & simplex_vertices) // shape=(dim, npts)
-{
-    FacetStuff FS = make_facet_stuff( simplex_vertices );
-    return closest_point_in_simplex_using_precomputed_facet_stuff(query, FS);
-}
-
-
-MatrixXd closest_point_in_simplex_vectorized( const MatrixXd & query,            // shape=(dim, nquery)
-                                              const MatrixXd & simplex_vertices) // shape=(dim*npts, nquery)
-{
-    int dim = query.rows();
-    int nquery = query.cols();
-    int npts = simplex_vertices.rows() / dim;
-
-    MatrixXd closest_point;
-    closest_point.resize(query.rows(), query.cols());
-
-    for ( int ii=0; ii<nquery; ++ii )
-    {
-        MatrixXd S;
-        S.resize(dim, npts);
-        for ( int jj=0; jj<dim; ++jj )
-        {
-            for ( int kk=0; kk<npts; ++kk )
-            {
-                S(jj,kk) = simplex_vertices(kk*dim + jj, ii);
-            }
-        }
-        closest_point.col(ii) = closest_point_in_simplex( query.col(ii), S );
-    }
-    return closest_point;
-}
-
-pair<VectorXd, VectorXd> compute_pointcloud_bounding_box( const MatrixXd & points )
+std::pair<Eigen::VectorXd, Eigen::VectorXd> compute_pointcloud_bounding_box( const Eigen::MatrixXd & points )
 {
     int dim = points.rows();
     int num_points = points.cols();
 
-    VectorXd box_min(dim);
-    VectorXd box_max(dim);
+    Eigen::VectorXd box_min(dim);
+    Eigen::VectorXd box_max(dim);
 
     for ( int kk=0; kk<dim; ++kk )
     {
@@ -227,17 +113,17 @@ pair<VectorXd, VectorXd> compute_pointcloud_bounding_box( const MatrixXd & point
 class SimplexMesh
 {
 private:
-    MatrixXi         faces;   // boundary face simplices of dimension dim-1. shape=(dim,num_faces)
-    vector<VectorXi> subfaces; // sub-simplices of boundary faces of dimension 0 through dim-1 (includes boundary faces)
+    Eigen::MatrixXi              faces;    // boundary face simplices of dimension dim-1. shape=(dim,num_faces)
+    std::vector<Eigen::VectorXi> subfaces; // sub-simplices of boundary faces of dimension 0 through dim-1 (includes boundary faces)
 
-    vector<VectorXi> face2subface;
+    std::vector<Eigen::VectorXi> face2subface;
 
-    AABBTree cell_aabbtree;
-    AABBTree face_aabbtree;
-    KDTree   face_kdtree;
+    AABB::AABBTree cell_aabbtree;
+    AABB::AABBTree face_aabbtree;
+    KDT::KDTree   face_kdtree;
 
-    vector< Simplex > cell_simplices;
-    vector< Simplex > subface_simplices;
+    std::vector< Simplex > cell_simplices;
+    std::vector< Simplex > subface_simplices;
 
     int dim;
     int num_vertices;
@@ -248,17 +134,17 @@ private:
     int default_sleep_duration;
     int default_number_of_threads;
 
-    void eval_CG1_helper( MatrixXd &                  functions_at_points,
-                          const vector<int> &         function_inds,
-                          const vector<int> &         point_inds,
-                          const VectorXi &            all_simplex_inds,
-                          const MatrixXd &            all_affine_coords,
-                          const Ref<const MatrixXd> & functions_at_vertices ) const
+    void eval_CG1_helper( Eigen::MatrixXd &                         functions_at_points,
+                          const std::vector<int> &                  function_inds,
+                          const std::vector<int> &                  point_inds,
+                          const Eigen::VectorXi &                   all_simplex_inds,
+                          const Eigen::MatrixXd &                   all_affine_coords,
+                          const Eigen::Ref<const Eigen::MatrixXd> & functions_at_vertices ) const
     {
         for ( int point_ind : point_inds )
         {
             int      simplex_ind   = all_simplex_inds(point_ind);
-            VectorXd affine_coords = all_affine_coords.col(point_ind);
+            Eigen::VectorXd affine_coords = all_affine_coords.col(point_ind);
 
             for ( int kk=0; kk<dim+1; ++kk ) // for simplex vertex
             {
@@ -271,9 +157,9 @@ private:
         }
     }
 
-    VectorXd closest_point_one_query( const VectorXd & query ) const
+    Eigen::VectorXd closest_point_one_query( const Eigen::VectorXd & query ) const
     {
-        VectorXd point = vertices.col(0);
+        Eigen::VectorXd point = vertices.col(0);
         if ( point_is_in_mesh( query )(0) )
         {
             point = query;
@@ -281,22 +167,22 @@ private:
         else
         {
             // 1. Find a set of candidate boundary faces, one of which contains the closest point
-            pair<VectorXi, VectorXd> kd_result = face_kdtree.query( query, 1 );
+            std::pair<Eigen::VectorXi, Eigen::VectorXd> kd_result = face_kdtree.query( query, 1 );
             double dist_estimate = (1.0 + 1e-14) * sqrt(kd_result.second(0));
-            VectorXi face_inds = face_aabbtree.ball_collisions( query, dist_estimate );
+            Eigen::VectorXi face_inds = face_aabbtree.ball_collisions( query, dist_estimate );
 
             // 2. Determine unique set of boundary entities to visit
-            vector<int> entities;
-            entities.reserve(power_of_two(dim));
+            std::vector<int> entities;
+            entities.reserve(AABB::power_of_two(dim));
             for ( int ii=0; ii<face_inds.size(); ++ii )
             {
-                const VectorXi & subface_inds = face2subface[face_inds(ii)];
+                const Eigen::VectorXi & subface_inds = face2subface[face_inds(ii)];
                 for ( int jj=0; jj<subface_inds.size(); ++jj )
                 {
                     entities.push_back(subface_inds(jj));
                 }
             }
-            sort( entities.begin(), entities.end() );
+            std::sort( entities.begin(), entities.end() );
             entities.erase( unique( entities.begin(), entities.end() ), entities.end() );
 
             // 3. Project query onto the affine subspaces associated with each subface.
@@ -306,10 +192,10 @@ private:
             for ( int ee=0; ee<entities.size(); ++ee )
             {
                 const Simplex & E = subface_simplices[entities[ee]];
-                VectorXd projected_affine_coords = E.A * query + E.b;
+                Eigen::VectorXd projected_affine_coords = E.A * query + E.b;
                 if ( (projected_affine_coords.array() >= 0.0).all() ) // projection is in subface simplex
                 {
-                    VectorXd projected_query = E.V * projected_affine_coords;
+                    Eigen::VectorXd projected_query = E.V * projected_affine_coords;
                     double dsq = (projected_query - query).squaredNorm();
                     if ( dsq < dsq_best )
                     {
@@ -322,9 +208,9 @@ private:
         return point;
     }
 
-    std::pair<int,VectorXd> first_point_collision_one_query( const Eigen::VectorXd & point ) const
+    std::pair<int,Eigen::VectorXd> first_point_collision_one_query( const Eigen::VectorXd & point ) const
     {
-        VectorXi candidate_inds =  cell_aabbtree.point_collisions( point );
+        Eigen::VectorXi candidate_inds =  cell_aabbtree.point_collisions( point );
         int num_candidates = candidate_inds.size();
 
         int simplex_ind = -1;
@@ -345,12 +231,12 @@ private:
     }
 
 public:
-    MatrixXd    vertices; // shape=(dim,num_vertices)
-    MatrixXi    cells;    // interior simplices of volumetric dimension. shape=(dim+1,num_cells)
+    Eigen::MatrixXd    vertices; // shape=(dim,num_vertices)
+    Eigen::MatrixXi    cells;    // interior simplices of volumetric dimension. shape=(dim+1,num_cells)
     thread_pool pool;
 
-    SimplexMesh( const Ref<const MatrixXd> input_vertices, // shape=(dim,num_vertices)
-                 const Ref<const MatrixXi> input_cells )   // shape=(dim+1,num_cells)
+    SimplexMesh( const Eigen::Ref<const Eigen::MatrixXd> input_vertices, // shape=(dim,num_vertices)
+                 const Eigen::Ref<const Eigen::MatrixXi> input_cells )   // shape=(dim+1,num_cells)
     {
         // ------------------------    Input checking and copying    ------------------------
         dim = input_vertices.rows();
@@ -396,23 +282,23 @@ public:
         cell_simplices.resize(num_cells);
         for ( int ii=0; ii<num_cells; ++ii )
         {
-            MatrixXd simplex_vertices(dim, dim+1);
+            Eigen::MatrixXd simplex_vertices(dim, dim+1);
             for (int jj=0; jj<dim+1; ++jj )
             {
                 simplex_vertices.col(jj) = vertices.col(cells(jj, ii));
             }
-            std::pair<MatrixXd, VectorXd> STS = make_simplex_transform_operator( simplex_vertices );
+            std::pair<Eigen::MatrixXd, Eigen::VectorXd> STS = make_simplex_transform_operator( simplex_vertices );
             cell_simplices[ii] = Simplex { simplex_vertices, // V
                                            STS.first,        // A
                                            STS.second };     // b
         }
 
         // Generate cell AABB tree
-        MatrixXd cell_box_mins (dim, num_cells);
-        MatrixXd cell_box_maxes(dim, num_cells);
+        Eigen::MatrixXd cell_box_mins (dim, num_cells);
+        Eigen::MatrixXd cell_box_maxes(dim, num_cells);
         for ( int ii=0; ii<num_cells; ++ii )
         {
-            pair<VectorXd, VectorXd> BB = compute_pointcloud_bounding_box( cell_simplices[ii].V );
+            std::pair<Eigen::VectorXd, Eigen::VectorXd> BB = compute_pointcloud_bounding_box( cell_simplices[ii].V );
             cell_box_mins.col(ii) = BB.first;
             cell_box_maxes.col(ii) = BB.second;
         }
@@ -421,12 +307,12 @@ public:
 
         // ------------------------    FACES    ------------------------
         // For all faces (dim-1 dimensional simplex which has dim vertices), compute how many cells they are part of.
-        map<vector<int>, int> face_counts; // face -> cell count
+        std::map<std::vector<int>, int> face_counts; // face -> cell count
         for ( int cc=0; cc<num_cells; ++cc )
         {
             for ( int opposite_vertex_ind=0; opposite_vertex_ind<dim+1; ++opposite_vertex_ind )
             {
-                vector<int> face;
+                std::vector<int> face;
                 for ( int kk=0; kk<dim+1; ++kk )
                 {
                     if ( kk != opposite_vertex_ind )
@@ -434,7 +320,7 @@ public:
                         face.push_back(cells(kk, cc));
                     }
                 }
-                sort( face.begin(), face.end() ); // sort for comparison purposes
+                std::sort( face.begin(), face.end() ); // sort for comparison purposes
 
                 if ( face_counts.find(face) == face_counts.end() ) // if this face isnt in the map yet
                 {
@@ -448,11 +334,11 @@ public:
         }
 
         // Faces (faces on the boundary) are the faces that are part of only one cell
-        vector<VectorXi> faces_vector;
+        std::vector<Eigen::VectorXi> faces_vector;
         for ( auto it = face_counts.begin(); it != face_counts.end(); ++it )
         {
-            vector<int> face = it->first;
-            VectorXi F(dim);
+            std::vector<int> face = it->first;
+            Eigen::VectorXi F(dim);
             for ( int kk=0; kk<dim; ++kk)
             {
                 F(kk) = face[kk];
@@ -473,7 +359,7 @@ public:
 
 
         // Create kdtree of vertices that are on faces (i.e., on the boundary)
-        set<int> face_vertex_inds;
+        std::set<int> face_vertex_inds;
         for ( int bb=0; bb<num_faces; ++bb )
         {
             for ( int kk=0; kk<dim; ++kk )
@@ -483,7 +369,7 @@ public:
         }
 
         int num_face_vertices = face_vertex_inds.size();
-        MatrixXd face_vertices(dim,num_face_vertices);
+        Eigen::MatrixXd face_vertices(dim,num_face_vertices);
         int vv=0;
         for ( auto it  = face_vertex_inds.begin();
                    it != face_vertex_inds.end();
@@ -496,16 +382,16 @@ public:
 
 
         // Create face AABB tree
-        MatrixXd face_box_mins(dim, num_faces);
-        MatrixXd face_box_maxes(dim, num_faces);
+        Eigen::MatrixXd face_box_mins(dim, num_faces);
+        Eigen::MatrixXd face_box_maxes(dim, num_faces);
         for ( int bb=0; bb<num_faces; ++bb )
         {
-            MatrixXd face_vertices(dim,dim);
+            Eigen::MatrixXd face_vertices(dim,dim);
             for (int jj=0; jj<dim; ++jj )
             {
                 face_vertices.col(jj) = vertices.col(faces(jj, bb));
             }
-            pair<VectorXd, VectorXd> BB = compute_pointcloud_bounding_box( face_vertices );
+            std::pair<Eigen::VectorXd, Eigen::VectorXd> BB = compute_pointcloud_bounding_box( face_vertices );
             face_box_mins.col(bb) = BB.first;
             face_box_maxes.col(bb) = BB.second;
         }
@@ -514,27 +400,27 @@ public:
 
         // ------------------------    SUBFACES    ------------------------
         // Construct all boundary entities (faces-of-faces, etc)
-        vector<vector<int>> pset = powerset(dim); // powerset(3) = [[], [0], [1], [0, 1], [2], [0, 2], [1, 2], [0, 1, 2]]
-        map<vector<int>, vector<int>> subface2face_map;
+        std::vector<std::vector<int>> pset = powerset(dim); // powerset(3) = [[], [0], [1], [0, 1], [2], [0, 2], [1, 2], [0, 1, 2]]
+        std::map<std::vector<int>, std::vector<int>> subface2face_map;
         for ( int bb=0; bb<num_faces; ++bb )
         {
             for ( int ii=0; ii<pset.size(); ++ii )
             {
-                vector<int> vertex_subset = pset[ii];
+                std::vector<int> vertex_subset = pset[ii];
                 if ( !vertex_subset.empty() )
                 {
                     int num_subface_vertices = vertex_subset.size();
-                    vector<int> subface_vertex_inds;
+                    std::vector<int> subface_vertex_inds;
                     for ( int jj=0; jj<num_subface_vertices; ++jj )
                     {
                         subface_vertex_inds.push_back(faces(vertex_subset[jj], bb));
                     }
-                    sort( subface_vertex_inds.begin(), subface_vertex_inds.end() );
+                    std::sort( subface_vertex_inds.begin(), subface_vertex_inds.end() );
 
 
                     if ( subface2face_map.find(subface_vertex_inds) == subface2face_map.end() ) // if this subface isnt in the map yet
                     {
-                        vector<int> faces_containing_this_subface;
+                        std::vector<int> faces_containing_this_subface;
                         faces_containing_this_subface.push_back(bb);
                         subface2face_map[subface_vertex_inds] = faces_containing_this_subface;
                     }
@@ -546,22 +432,22 @@ public:
             }
         }
 
-        vector<vector<int>> face2subface_vector( num_faces );
+        std::vector<std::vector<int>> face2subface_vector( num_faces );
         int subface_number = 0;
         for ( auto it  = subface2face_map.begin();
                    it != subface2face_map.end();
                  ++it )
         {
-            vector<int> subface = it->first;
+            std::vector<int> subface = it->first;
             int num_subface_vertices = subface.size();
-            VectorXi SF(num_subface_vertices);
+            Eigen::VectorXi SF(num_subface_vertices);
             for ( int kk=0; kk<num_subface_vertices; ++kk)
             {
                 SF(kk) = subface[kk];
             }
             subfaces.push_back(SF);
 
-            vector<int> faces_containing_this_subface = it->second;
+            std::vector<int> faces_containing_this_subface = it->second;
             for ( int bb=0; bb<faces_containing_this_subface.size(); ++bb )
             {
                 int face_ind = faces_containing_this_subface[bb];
@@ -573,8 +459,8 @@ public:
         face2subface.resize(num_faces);
         for ( int bb=0; bb<num_faces; ++bb )
         {
-            vector<int> entities_for_this_face_vector = face2subface_vector[bb];
-            VectorXi entities_for_this_face(entities_for_this_face_vector.size());
+            std::vector<int> entities_for_this_face_vector = face2subface_vector[bb];
+            Eigen::VectorXi entities_for_this_face(entities_for_this_face_vector.size());
             for ( int jj=0; jj<entities_for_this_face_vector.size(); ++jj )
             {
                 entities_for_this_face(jj) = entities_for_this_face_vector[jj];
@@ -588,32 +474,32 @@ public:
         for ( int ee=0; ee<num_subfaces; ++ee )
         {
             int num_vertices_in_subface = subfaces[ee].size();
-            MatrixXd subface_vertices(dim, num_vertices_in_subface);
+            Eigen::MatrixXd subface_vertices(dim, num_vertices_in_subface);
             for (int vv=0; vv<num_vertices_in_subface; ++vv )
             {
                 subface_vertices.col(vv) = vertices.col(subfaces[ee](vv));
             }
-            std::pair<MatrixXd, VectorXd> STS = make_simplex_transform_operator( subface_vertices );
+            std::pair<Eigen::MatrixXd, Eigen::VectorXd> STS = make_simplex_transform_operator( subface_vertices );
             subface_simplices[ee] = Simplex { subface_vertices, // V
                                               STS.first,       // A
                                               STS.second };    // b
         }
     }
 
-    Matrix<bool, Dynamic, 1> point_is_in_mesh( const Ref<const MatrixXd> query_points ) const
+    Eigen::Matrix<bool, Eigen::Dynamic, 1> point_is_in_mesh( const Eigen::Ref<const Eigen::MatrixXd> query_points ) const
     {
         return (first_point_collision(query_points).first.array() >= 0);
     }
 
-    Matrix<bool, Dynamic, 1> point_is_in_mesh_multithreaded( const Ref<const MatrixXd> query_points )
+    Eigen::Matrix<bool, Eigen::Dynamic, 1> point_is_in_mesh_multithreaded( const Eigen::Ref<const Eigen::MatrixXd> query_points )
     {
         return (first_point_collision_multithreaded(query_points).first.array() >= 0);
     }
 
-    MatrixXd closest_point( const Ref<const MatrixXd> query_points ) const
+    Eigen::MatrixXd closest_point( const Eigen::Ref<const Eigen::MatrixXd> query_points ) const
     {
         int num_queries = query_points.cols();
-        MatrixXd closest_points;
+        Eigen::MatrixXd closest_points;
         closest_points.resize(dim, num_queries);
 
         for ( int ii=0; ii<num_queries; ++ii )
@@ -624,10 +510,10 @@ public:
         return closest_points;
     }
 
-    MatrixXd closest_point_multithreaded( const Ref<const MatrixXd> query_points )
+    Eigen::MatrixXd closest_point_multithreaded( const Eigen::Ref<const Eigen::MatrixXd> query_points )
     {
         int num_queries = query_points.cols();
-        MatrixXd closest_points;
+        Eigen::MatrixXd closest_points;
         closest_points.resize(dim, num_queries);
 
         std::vector<int> shuffle_inds(num_queries); // randomize ordering to make work even among threads
@@ -646,27 +532,27 @@ public:
         return closest_points;
     }
 
-    std::pair<VectorXi,MatrixXd> first_point_collision( const Ref<const Eigen::MatrixXd> points ) const
+    std::pair<Eigen::VectorXi,Eigen::MatrixXd> first_point_collision( const Eigen::Ref<const Eigen::MatrixXd> points ) const
     {
         int num_pts = points.cols();
-        VectorXi all_simplex_inds(num_pts);
-        MatrixXd all_affine_coords(dim+1, num_pts);
+        Eigen::VectorXi all_simplex_inds(num_pts);
+        Eigen::MatrixXd all_affine_coords(dim+1, num_pts);
 
         for ( int ii=0; ii<num_pts; ++ii )
         {
-            pair<int,VectorXd> IC = first_point_collision_one_query( points.col(ii) );
+            std::pair<int,Eigen::VectorXd> IC = first_point_collision_one_query( points.col(ii) );
             all_simplex_inds(ii) = IC.first;
             all_affine_coords.col(ii) = IC.second;
         }
 
-        return make_pair(all_simplex_inds, all_affine_coords);
+        return std::make_pair(all_simplex_inds, all_affine_coords);
     }
 
-    std::pair<VectorXi,MatrixXd> first_point_collision_multithreaded( const Ref<const Eigen::MatrixXd> points )
+    std::pair<Eigen::VectorXi,Eigen::MatrixXd> first_point_collision_multithreaded( const Eigen::Ref<const Eigen::MatrixXd> points )
     {
         int num_pts = points.cols();
-        VectorXi all_simplex_inds(num_pts);
-        MatrixXd all_affine_coords(dim+1, num_pts);
+        Eigen::VectorXi all_simplex_inds(num_pts);
+        Eigen::MatrixXd all_affine_coords(dim+1, num_pts);
 
         std::vector<int> shuffle_inds(num_pts); // randomize ordering to make work even among threads
         std::iota(shuffle_inds.begin(), shuffle_inds.end(), 0);
@@ -674,7 +560,7 @@ public:
 
         for ( int ii=0; ii<num_pts; ++ii )
         {
-            pair<int,VectorXd> IC = first_point_collision_one_query( points.col(ii) );
+            std::pair<int,Eigen::VectorXd> IC = first_point_collision_one_query( points.col(ii) );
             all_simplex_inds(ii) = IC.first;
             all_affine_coords.col(ii) = IC.second;
         }
@@ -682,14 +568,14 @@ public:
         {
             for ( int ii=a; ii<b; ++ii )
             {
-                pair<int,VectorXd> IC = first_point_collision_one_query( points.col(shuffle_inds[ii]) );
+                std::pair<int,Eigen::VectorXd> IC = first_point_collision_one_query( points.col(shuffle_inds[ii]) );
                 all_simplex_inds(shuffle_inds[ii]) = IC.first;
                 all_affine_coords.col(shuffle_inds[ii]) = IC.second;
             }
         };
 
         pool.parallelize_loop(0, num_pts, loop);
-        return make_pair(all_simplex_inds, all_affine_coords);
+        return std::make_pair(all_simplex_inds, all_affine_coords);
     }
 
     // ------------    SimplexMesh::eval_CG1()    --------------
@@ -717,29 +603,29 @@ public:
     //                            [g(p1), g(p2), ..., g(pM)],
     //                            [h(p1), h(p2), ..., h(pM)]]
     //       - shape = (num_functions, num_pts)
-    MatrixXd eval_CG1( const Ref<const MatrixXd> functions_at_vertices, // shape=(num_functions, num_vertices)
-                       const Ref<const MatrixXd> points,
-                       bool use_reflection ) const // shape=(dim, num_pts)
+    Eigen::MatrixXd eval_CG1( const Eigen::Ref<const Eigen::MatrixXd> functions_at_vertices, // shape=(num_functions, num_vertices)
+                              const Eigen::Ref<const Eigen::MatrixXd> points,
+                              bool use_reflection ) const // shape=(dim, num_pts)
     {
         int num_functions = functions_at_vertices.rows();
         int num_pts = points.cols();
 
-        MatrixXd functions_at_points(num_functions, num_pts);
+        Eigen::MatrixXd functions_at_points(num_functions, num_pts);
         functions_at_points.setZero();
 
-        VectorXi all_simplex_inds(num_pts);
-        MatrixXd all_affine_coords(dim+1, num_pts);
+        Eigen::VectorXi all_simplex_inds(num_pts);
+        Eigen::MatrixXd all_affine_coords(dim+1, num_pts);
 
         std::vector<int> function_inds(num_functions);
         std::iota(function_inds.begin(), function_inds.end(), 0);
 
-        vector<int> point_inds;
+        std::vector<int> point_inds;
         point_inds.reserve(num_pts);
 
         for ( int ii=0; ii<num_pts; ++ii )
         {
-            VectorXd point = points.col(ii);
-            std::pair<VectorXi,MatrixXd> IC = first_point_collision( point );
+            Eigen::VectorXd point = points.col(ii);
+            std::pair<Eigen::VectorXi,Eigen::MatrixXd> IC = first_point_collision( point );
             if ( use_reflection )
             {
                if ( IC.first(0) < 0 ) // if point is outside mesh
@@ -767,31 +653,31 @@ public:
         return functions_at_points;
     }
 
-    MatrixXd eval_CG1_multithreaded( const Ref<const MatrixXd> functions_at_vertices, // shape=(num_functions, num_vertices)
-                                     const Ref<const MatrixXd> points,
-                                     bool use_reflection ) // shape=(dim, num_pts)
+    Eigen::MatrixXd eval_CG1_multithreaded( const Eigen::Ref<const Eigen::MatrixXd> functions_at_vertices, // shape=(num_functions, num_vertices)
+                                            const Eigen::Ref<const Eigen::MatrixXd> points,
+                                            bool use_reflection ) // shape=(dim, num_pts)
     {
         int num_functions = functions_at_vertices.rows();
         int num_pts = points.cols();
 
-        MatrixXd functions_at_points(num_functions, num_pts);
+        Eigen::MatrixXd functions_at_points(num_functions, num_pts);
         functions_at_points.setZero();
 
-        VectorXi all_simplex_inds(num_pts);
-        MatrixXd all_affine_coords(dim+1, num_pts);
+        Eigen::VectorXi all_simplex_inds(num_pts);
+        Eigen::MatrixXd all_affine_coords(dim+1, num_pts);
 
         std::vector<int> function_inds(num_functions);
         std::iota(function_inds.begin(), function_inds.end(), 0);
 
         auto loop = [&](const int & start, const int & stop)
         {
-            vector<int> point_inds;
+            std::vector<int> point_inds;
             point_inds.reserve(stop-start);
 
             for ( int ii=start; ii<stop; ++ii )
             {
-                VectorXd point = points.col(ii);
-                std::pair<VectorXi,MatrixXd> IC = first_point_collision( point );
+                Eigen::VectorXd point = points.col(ii);
+                std::pair<Eigen::VectorXi,Eigen::MatrixXd> IC = first_point_collision( point );
                 if ( use_reflection )
                 {
                    if ( IC.first(0) < 0 ) // if point is outside mesh

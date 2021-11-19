@@ -1,17 +1,15 @@
 import numpy as np
-import hlibpro_python_wrapper as hpro
 from time import time
-from scipy.spatial import KDTree
+from scipy.spatial import KDTree as scipy_KDTree
 
-hcpp = hpro.hpro_cpp
-
+from nalger_helper_functions import KDTree
 
 K = 5
 num_neighbors = 11
 num_querys = 133
 
 pp = np.random.randn(100,K)
-KDT = hcpp.KDTree(np.array(pp.T, order='F'))
+KDT = KDTree(np.array(pp.T, order='F'))
 KDT.block_size = 1
 
 qq = np.random.randn(num_querys, K)
@@ -55,7 +53,7 @@ pp = np.random.randn(n_pts, K)
 pp_T = np.array(pp.T, order='F')
 
 t = time()
-KDT = hcpp.KDTree(pp_T)
+KDT = KDTree(pp_T)
 dt_build = time() - t
 print('dt_build=', dt_build)
 
@@ -76,7 +74,7 @@ print('dt_query_one_multithreaded=', dt_query_one_multithreaded)
 
 
 t = time()
-KDT_scipy = KDTree(pp)
+KDT_scipy = scipy_KDTree(pp)
 dt_build_scipy = time() - t
 print('dt_build_scipy=', dt_build_scipy)
 

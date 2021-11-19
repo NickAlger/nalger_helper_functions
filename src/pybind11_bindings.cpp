@@ -61,7 +61,7 @@ PYBIND11_MODULE(nalger_helper_functions_cpp, m) {
         .def("set_thread_count", &SimplexMesh::set_thread_count)
         .def("reset_thread_count_to_default", &SimplexMesh::reset_thread_count_to_default);
 
-    m.def("closest_point_in_simplex_vectorized", &closest_point_in_simplex_vectorized);
+//    m.def("closest_point_in_simplex_vectorized", &closest_point_in_simplex_vectorized);
     m.def("geometric_sort", &geometric_sort);
 }
 
