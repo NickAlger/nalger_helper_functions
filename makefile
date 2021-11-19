@@ -14,6 +14,8 @@ INCLUDE_DIR := ./include
 SRC_DIR  := ./src
 OBJ_DIR  := ./obj
 BUILD_DIR  := ./nalger_helper_functions
+# LIB_DIR  := ./lib
+LIB_DIR  := $(BUILD_DIR)
 EXAMPLES_DIR := ./examples
 
 CXXFLAGS := -std=c++17 -pthread -lpthread -O3 -Wall
@@ -24,11 +26,11 @@ ALL_COMPILE_STUFF = $(CXXFLAGS) $(PYFLAGS) \
 
 BINDINGS_TARGET = nalger_helper_functions_cpp.so
 
-all: $(BUILD_DIR)/$(BINDINGS_TARGET) $(EXAMPLES_DIR)/kdtree_example $(EXAMPLES_DIR)/aabbtree_example
+all: $(LIB_DIR)/$(BINDINGS_TARGET) $(EXAMPLES_DIR)/kdtree_example $(EXAMPLES_DIR)/aabbtree_example
 	@echo 'Finished building target: $@'
 	@echo ' '
 
-$(BUILD_DIR)/$(BINDINGS_TARGET): $(SRC_DIR)/pybind11_bindings.cpp $(INCLUDE_DIR)/kdtree.h $(INCLUDE_DIR)/aabbtree.h $(INCLUDE_DIR)/simplexmesh.h
+$(LIB_DIR)/$(BINDINGS_TARGET): $(SRC_DIR)/pybind11_bindings.cpp $(INCLUDE_DIR)/kdtree.h $(INCLUDE_DIR)/aabbtree.h $(INCLUDE_DIR)/simplexmesh.h | $(LIB_DIR)
 	@echo 'Building target: $@'
 	g++ -o "$@" "$<" $(CXXFLAGS) $(SHAREDFLAGS) $(PYFLAGS) -I$(INCLUDE_DIR) -I$(EIGEN_INCLUDE) -I$(THREADPOOL_INCLUDE)
 	@echo 'Finished building target: $@'
@@ -46,11 +48,13 @@ $(EXAMPLES_DIR)/aabbtree_example: $(EXAMPLES_DIR)/aabbtree_example.cpp $(INCLUDE
 	@echo 'Finished building target: $@'
 	@echo ' '
 
+$(LIB_DIR):
+	mkdir -p $(LIB_DIR)
 
 clean:
 	-rm -rf $(EXAMPLES_DIR)/kdtree_example
 	-rm -rf $(EXAMPLES_DIR)/aabbtree_example
-	-rm -rf $(BUILD_DIR)/$(BINDINGS_TARGET)
+	-rm -rf $(LIB_DIR)/$(BINDINGS_TARGET)
 	-@echo ' '
 
 .PHONY: all clean dependents

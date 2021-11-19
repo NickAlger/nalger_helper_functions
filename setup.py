@@ -7,4 +7,6 @@ setup(
     license='MIT',
     author='Nick Alger',
     # long_description=open('README.txt').read(),
+    include_package_data=True,
+    package_data={'nalger_helper_functions': ['nalger_helper_functions_cpp.so']},
 )
