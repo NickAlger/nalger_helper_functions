@@ -8,22 +8,23 @@
 
 using namespace Eigen;
 using namespace std;
+using namespace KDT;
 
 /*
-Compile and run commands for my computer (put your own eigen directory):
-g++ -o kdtree_example -I /home/nick/anaconda3/envs/fenics3/include/eigen3 -O3 kdtree_example.cpp
+Example compile and run commands for my computer (put your own include directories):
+g++ -o "kdtree_example" "kdtree_example.cpp" -std=c++17 -pthread -lpthread -O3 -I../include -I/home/nick/anaconda3/envs/fenics3/include/eigen3  -I/home/nick/repos/thread-pool
 ./kdtree_example
 */
 
 int main()
 {
-    constexpr int dim = 2; // spatial dimension
-    int num_points = 100;
+    int dim = 2; // spatial dimension
+    int num_points = 10;
     int num_queries = 5;
     int num_neighbors = 3;
 
     MatrixXd points = MatrixXd::Random(dim, num_points);
-    KDTree<dim> kdtree(points); // <----------------------------------------------------- Build the kd-tree
+    KDTree kdtree = KDTree(points); // <----------------------------------------------------- Build the kd-tree
 
     MatrixXd query_points = MatrixXd::Random(dim, num_queries);
     pair<MatrixXi, MatrixXd> result = kdtree.query(query_points, num_neighbors); // <---- find nearest neighbors
@@ -32,7 +33,7 @@ int main()
     MatrixXd squared_distances = result.second; // shape=(num_neighbors, num_queries)
 
 
-    //
+    // PRINT RESULTS
 
     cout << "indices of nearest " << num_neighbors << " points to " << num_queries << " query points:" << endl;
     cout << inds << endl;
@@ -120,17 +121,24 @@ int main()
     MatrixXd points2 = MatrixXd::Random(dim2, num_points2);
 
     auto build_t1 = std::chrono::high_resolution_clock::now();
-    KDTree<dim2> kdtree2(points2); // <----------------------------------------------------- Build the kd-tree
+    KDTree kdtree2 = KDTree(points2); // <----------------------------------------------------- Build the kd-tree
     auto build_t2 = std::chrono::high_resolution_clock::now();
 
     cout << "build time=" << std::chrono::duration_cast<std::chrono::milliseconds>(build_t2-build_t1).count() << "ms" << endl;
 
     MatrixXd query_points2 = MatrixXd::Random(dim2, num_queries2);
 
+    // Single threaded version
     auto query_t1 = std::chrono::high_resolution_clock::now();
     pair<MatrixXi, MatrixXd> result2 = kdtree2.query(query_points2, num_neighbors2); // <---- find nearest neighbors
     auto query_t2 = std::chrono::high_resolution_clock::now();
 
     cout << "query time=" << std::chrono::duration_cast<std::chrono::milliseconds>(query_t2-query_t1).count() << "ms" << endl;
 
+    // Multithreaded version
+    query_t1 = std::chrono::high_resolution_clock::now();
+    result2 = kdtree2.query_multithreaded(query_points2, num_neighbors2); // <---- multithreaded version
+    query_t2 = std::chrono::high_resolution_clock::now();
+
+    cout << "multithreaded query time=" << std::chrono::duration_cast<std::chrono::milliseconds>(query_t2-query_t1).count() << "ms" << endl;
 }

@@ -255,4 +255,9 @@ except ImportError:
 try:
     from .reflect_exterior_points_across_boundary import reflect_exterior_points_across_boundary
 except ImportError:
-    print('reflect_exterior_points_across_boundary')
+    print('reflect_exterior_points_across_boundary not loaded')
+
+try:
+    from .nalger_helper_functions_cpp import KDTree, AABBTree, SimplexMesh, closest_point_in_simplex_vectorized, geometric_sort
+except ImportError:
+    print('KDTree, AABBTree, SimplexMesh, closest_point_in_simplex_vectorized, geometric_sort not loaded')
