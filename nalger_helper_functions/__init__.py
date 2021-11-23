@@ -276,3 +276,8 @@ try:
     from .nalger_helper_functions_cpp import geometric_sort
 except ImportError:
     print('geometric_sort not loaded')
+
+try:
+    from .estimate_column_errors_randomized import estimate_column_errors_randomized
+except ImportError:
+    print('estimate_column_errors_randomized not loaded')
