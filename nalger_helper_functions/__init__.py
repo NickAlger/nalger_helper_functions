@@ -281,3 +281,8 @@ try:
     from .estimate_column_errors_randomized import estimate_column_errors_randomized
 except ImportError:
     print('estimate_column_errors_randomized not loaded')
+
+try:
+    from .generalized_leapfrog_integrator import generalized_leapfrog_integrator
+except ImportError:
+    print('generalized_leapfrog_integrator not loaded')
