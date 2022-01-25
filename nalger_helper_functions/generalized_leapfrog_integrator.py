@@ -17,14 +17,18 @@ def generalized_leapfrog_integrator(final_time_T : float,
     # https://arxiv.org/abs/1910.06243
     #
     # hamiltonian_object must implement the following methods:
-    #   hamiltonian_object.position()        : None        -> numpy array
-    #   hamiltonian_object.momentum()        : None        -> numpy array
-    #   hamiltonian_object.update_position() : numpy.array -> None
-    #   hamiltonian_object.update_momentum() : numpy.array -> None
-    #   hamiltonian_object.hamiltonian()     : None        -> numpy array
-    #   hamiltonian_object.dH_dx()           : None        -> numpy array
-    #   hamiltonian_object.dH_dp()           : None        -> numpy array
-    #   hamiltonian_object.copy()            : None        -> another hamiltonian object
+    #   hamiltonian_object.position()        : None     -> n-vector
+    #   hamiltonian_object.momentum()        : None     -> n-vector
+    #   hamiltonian_object.update_position() : n-vector -> None
+    #   hamiltonian_object.update_momentum() : n-vector -> None
+    #   hamiltonian_object.hamiltonian()     : None     -> n-vector
+    #   hamiltonian_object.dH_dx()           : None     -> n-vector
+    #   hamiltonian_object.dH_dp()           : None     -> n-vector
+    #   hamiltonian_object.copy()            : None     -> another hamiltonian object
+    #
+    # Here an "n-vector" is any implementation of a mathematical vector in R^n (such as a numpy array)
+    # that can be added to another n-vector via __add__(), i.e., u+v,
+    # and scaled by a float via __mul__() methods, i.e., a*u
 
     Ha = hamiltonian_object        # Ha: w', p
     Hb = hamiltonian_object.copy() # Hb: w, p'
@@ -38,6 +42,8 @@ def generalized_leapfrog_integrator(final_time_T : float,
 
     integration_failed = False
     dt = float(final_time_T) / float(num_timesteps_N)
+
+    _phi_a(dt / 2., Ha, Hb) # initial half-step
     for k in range(num_timesteps_N):
         if verbose:
             print('k=', k, ', Ha=', Ha.hamiltonian(), ', Hb=', Hb.hamiltonian(),
@@ -51,15 +57,17 @@ def generalized_leapfrog_integrator(final_time_T : float,
             integration_failed = True
             break
 
-        _phi_a(dt / 2., Ha, Hb)
         _phi_b(dt / 2., Ha, Hb)
         _phi_c(dt,      Ha, Hb, omega)
         _phi_b(dt / 2., Ha, Hb)
-        _phi_a(dt / 2., Ha, Hb)
+        if k < (num_timesteps_N - 1):
+            _phi_a(dt, Ha, Hb)
 
         if save_path:
             ww.append(Hb.position())
             pp.append(Ha.momentum())
+
+    _phi_a(dt / 2., Ha, Hb) # final half-step
 
     hamiltonian_object.update_position(0.5*(Ha.position()+Hb.position()))
     hamiltonian_object.update_momentum(0.5*(Ha.momentum()+Hb.momentum()))
