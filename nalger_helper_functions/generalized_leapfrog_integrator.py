@@ -1,5 +1,6 @@
 import numpy as np
 
+# WORK IN PROGRESS. DO NOT USE UNLESS YOU KNOW WHAT YOU ARE DOING
 
 def generalized_leapfrog_integrator(final_time_T : float,
                                     num_timesteps_N : int,
@@ -83,6 +84,10 @@ def generalized_leapfrog_integrator(final_time_T : float,
     if save_path:
         return np.array(ww), np.array(pp)
 
+def _coupling_hamiltonian(Ha, Hb):
+    position_residual = 0.5*np.linalg.norm(Ha.position() - Hb.position())**2
+    momentum_residual = 0.5*np.linalg.norm(Ha.momentum() - Hb.momentum())**2
+    return position_residual + momentum_residual
 
 def _R(dt, x_diff, p_diff, omega):
     R_x =   np.cos(2. * omega * dt) * x_diff + np.sin(2. * omega * dt) * p_diff
