@@ -286,3 +286,8 @@ try:
     from .generalized_leapfrog_integrator import generalized_leapfrog_integrator
 except ImportError:
     print('generalized_leapfrog_integrator not loaded')
+
+try:
+    from .function_space_enhanced import FunctionSpaceEnhanced
+except ImportError:
+    print('FunctionSpaceEnhanced not loaded')
