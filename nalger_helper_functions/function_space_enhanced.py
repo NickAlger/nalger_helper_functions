@@ -18,12 +18,50 @@ class FunctionSpaceEnhanced(dl.FunctionSpace):
         me._mass_lumps_rowsum_numpy = None
         me._mass_lumps_diagonal_petsc = None
         me._mass_lumps_diagonal_numpy = None
-        me._apply_mass_matrix_linop = None
-        me._solve_mass_matrix_linop = None
-        me._apply_lumped_mass_matrix_diagonal_linop = None
-        me._apply_lumped_mass_matrix_rowsum_linop = None
-        me._solve_lumped_mass_matrix_diagonal_linop = None
-        me._solve_lumped_mass_matrix_rowsum_linop = None
+
+        # me.num_applies = 0
+
+        me.apply_mass_matrix_linop = spla.LinearOperator((me.dim(), me.dim()),
+                                                         matvec=me.apply_mass_matrix,
+                                                         rmatvec=me.apply_mass_matrix)
+
+        me.solve_mass_matrix_LU_linop = spla.LinearOperator((me.dim(), me.dim()),
+                                                            matvec=me.solve_mass_matrix_LU,
+                                                            rmatvec=me.solve_mass_matrix_LU)
+
+        me.apply_lumped_mass_matrix_diagonal_linop = spla.LinearOperator((me.dim(), me.dim()),
+                                                                         matvec=me.apply_lumped_mass_matrix_diagonal,
+                                                                         rmatvec=me.apply_lumped_mass_matrix_diagonal)
+
+        me.apply_lumped_mass_matrix_rowsum_linop = spla.LinearOperator((me.dim(), me.dim()),
+                                                                       matvec=me.apply_lumped_mass_matrix_rowsum,
+                                                                       rmatvec=me.apply_lumped_mass_matrix_rowsum)
+
+        me.solve_lumped_mass_matrix_diagonal_linop = spla.LinearOperator((me.dim(), me.dim()),
+                                                                         matvec=me.solve_lumped_mass_matrix_diagonal,
+                                                                         rmatvec=me.solve_lumped_mass_matrix_diagonal)
+
+        me.solve_lumped_mass_matrix_rowsum_linop = spla.LinearOperator((me.dim(), me.dim()),
+                                                                       matvec=me.solve_lumped_mass_matrix_rowsum,
+                                                                       rmatvec=me.solve_lumped_mass_matrix_rowsum)
+
+        me.solve_mass_matrix_PCG_linop = spla.LinearOperator((me.dim(), me.dim()),
+                                                             matvec=me.solve_mass_matrix_PCG,
+                                                             rmatvec=me.solve_mass_matrix_PCG)
+
+        me.apply_M = me.apply_mass_matrix
+        me.apply_MLd = me.apply_lumped_mass_matrix_diagonal
+        me.apply_MLr = me.apply_lumped_mass_matrix_rowsum
+        me.solve_M_LU = me.solve_mass_matrix_LU
+        me.solve_MLd = me.solve_lumped_mass_matrix_diagonal
+        me.solve_MLr = me.solve_lumped_mass_matrix_rowsum
+
+        me.apply_M_linop = me.apply_mass_matrix_linop
+        me.apply_MLd_linop = me.apply_lumped_mass_matrix_diagonal_linop
+        me.apply_MLr_linop = me.apply_lumped_mass_matrix_rowsum_linop
+        me.solve_M_LU_linop = me.solve_mass_matrix_LU_linop
+        me.solve_MLd_linop = me.solve_lumped_mass_matrix_diagonal_linop
+        me.solve_MLr_linop = me.solve_lumped_mass_matrix_rowsum_linop
 
     @property
     def coords(me):
@@ -44,6 +82,8 @@ class FunctionSpaceEnhanced(dl.FunctionSpace):
         return me._mass_matrix_scipy
 
     def apply_mass_matrix(me, x):
+        # print('me.num_applies=', me.num_applies)
+        # me.num_applies += 1
         if isinstance(x, np.ndarray):
             Mx = me.petsc2numpy(me.mass_matrix_petsc * me.numpy2petsc(x))
         else:
@@ -107,7 +147,7 @@ class FunctionSpaceEnhanced(dl.FunctionSpace):
         if me._mass_lumps_diagonal_petsc is None:
             me._mass_lumps_diagonal_petsc = me.get_vector()
             me.mass_matrix_petsc.get_diagonal(me._mass_lumps_diagonal_petsc)
-        return me._mass_lumps_diagonal
+        return me._mass_lumps_diagonal_petsc
 
     @property
     def mass_lumps_rowsum_numpy(me):
@@ -119,7 +159,7 @@ class FunctionSpaceEnhanced(dl.FunctionSpace):
     def mass_lumps_diagonal_numpy(me):
         if me._mass_lumps_diagonal_numpy is None:
             me._mass_lumps_diagonal_numpy = me.petsc2numpy(me.mass_lumps_diagonal_petsc)
-        return me._mass_lumps_rowsum_numpy
+        return me._mass_lumps_diagonal_numpy
 
     def apply_lumped_mass_matrix_diagonal(me, x):
         if isinstance(x, np.ndarray):
@@ -149,55 +189,29 @@ class FunctionSpaceEnhanced(dl.FunctionSpace):
             iMLx = me.numpy2petsc(me.petsc2numpy(x) / me.mass_lumps_rowsum_numpy)
         return iMLx
 
-    @property
-    def apply_mass_matrix_linop(me):
-        if me._apply_mass_matrix_linop is None:
-            me._apply_mass_matrix_linop = spla.LinearOperator((me.dim(), me.dim()),
-                                                              matvec=me.apply_mass_matrix,
-                                                              rmatvec=me.apply_mass_matrix)
-        return me._apply_mass_matrix_linop
+    def solve_mass_matrix_PCG(me, y, **kwargs):
+        if isinstance(y, np.ndarray):
+            y_numpy = y
+        else:
+            y_numpy = me.petsc2numpy(y)
 
-    @property
-    def solve_mass_matrix_linop(me):
-        if me._solve_mass_matrix_linop is None:
-            me._solve_mass_matrix_linop = spla.LinearOperator((me.dim(), me.dim()),
-                                                              matvec=me.solve_mass_matrix,
-                                                              rmatvec=me.solve_mass_matrix)
-        return me._solve_mass_matrix_linop
+        x_numpy, info = spla.cg(me.apply_mass_matrix_linop, y_numpy,
+                                M=me.solve_lumped_mass_matrix_diagonal_linop, **kwargs)
 
-    @property
-    def apply_lumped_mass_matrix_diagonal_linop(me):
-        if me._apply_lumped_mass_matrix_diagonal_linop is None:
-            me._apply_lumped_mass_matrix_diagonal_linop = spla.LinearOperator((me.dim(), me.dim()),
-                                                                              matvec=me.apply_lumped_mass_matrix_diagonal,
-                                                                              rmatvec=me.apply_lumped_mass_matrix_diagonal)
-        return me._apply_lumped_mass_matrix_diagonal_linop
+        if isinstance(y, np.ndarray):
+            x = x_numpy
+        else:
+            x = me.numpy2petsc(x_numpy)
 
-    @property
-    def apply_lumped_mass_matrix_rowsum_linop(me):
-        if me._apply_lumped_mass_matrix_rowsum_linop is None:
-            me._apply_lumped_mass_matrix_rowsum_linop = spla.LinearOperator((me.dim(), me.dim()),
-                                                                            matvec=me.apply_lumped_mass_matrix_rowsum,
-                                                                            rmatvec=me.apply_lumped_mass_matrix_rowsum)
-        return me._apply_lumped_mass_matrix_rowsum_linop
+        return x
 
-    @property
-    def solve_lumped_mass_matrix_diagonal_linop(me):
-        if me._solve_lumped_mass_matrix_diagonal_linop is None:
-            me._solve_lumped_mass_matrix_diagonal_linop = spla.LinearOperator((me.dim(), me.dim()),
-                                                                              matvec=me.solve_lumped_mass_matrix_diagonal,
-                                                                              rmatvec=me.solve_lumped_mass_matrix_diagonal)
-        return me._solve_lumped_mass_matrix_diagonal_linop
+    def get_solve_mass_matrix_PCG_linop(me, **kwargs):
+        f = lambda y: me.solve_mass_matrix_PCG(y, **kwargs)
+        return spla.LinearOperator((me.dim(), me.dim()), matvec=f, rmatvec=f)
 
-    @property
-    def solve_lumped_mass_matrix_rowsum_linop(me):
-        if me._solve_lumped_mass_matrix_rowsum_linop is None:
-            me._solve_lumped_mass_matrix_rowsum_linop = spla.LinearOperator((me.dim(), me.dim()),
-                                                                            matvec=me.solve_lumped_mass_matrix_rowsum,
-                                                                            rmatvec=me.solve_lumped_mass_matrix_rowsum)
-        return me._solve_lumped_mass_matrix_rowsum_linop
 
-#
+
+
 # mesh = dl.UnitSquareMesh(10,11)
 # Vh = FunctionSpaceEnhanced(mesh, 'CG', 2)
 #
@@ -215,3 +229,5 @@ class FunctionSpaceEnhanced(dl.FunctionSpace):
 # LU_solve_err = np.linalg.norm(Vh.apply_mass_matrix(Vh.solve_mass_matrix_LU(z)) - z) / np.linalg.norm(z)
 # print('LU_solve_err=', LU_solve_err)
 #
+# PCG_solve_err = np.linalg.norm(Vh.apply_mass_matrix(Vh.solve_mass_matrix_PCG(z,tol=1e-15)) - z) / np.linalg.norm(z)
+# print('PCG_solve_err=', PCG_solve_err)
