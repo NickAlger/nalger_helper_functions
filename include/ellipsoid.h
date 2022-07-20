@@ -3,7 +3,8 @@
 #include <iostream>
 #include <list>
 #include <vector>
-#include <queue>
+#include <numeric>
+#include <algorithm>
 
 #include <math.h>
 #include <cmath>
@@ -11,6 +12,7 @@
 #include <Eigen/Eigenvalues>
 
 #include "brent_minimize.h"
+#include "aabbtree.h"
 
 namespace ELLIPSOID {
 
@@ -81,5 +83,129 @@ bool ellipsoids_intersect( const Eigen::VectorXd mu_A,
         return false;
     }
 }
+
+
+class EllipsoidBatchPicker
+{
+private:
+    AABB::AABBTree               aabb;
+    std::vector<Eigen::VectorXd> all_mu;
+    std::vector<Eigen::MatrixXd> all_Sigma;
+    int                          num_pts;
+    int                          spatial_dim;
+    double                       tau;
+    std::vector<double>          squared_distances;
+    std::vector<bool>            is_pickable;
+
+public:
+    std::vector<std::vector<int>>     batches;
+
+    EllipsoidBatchPicker( const std::vector<Eigen::VectorXd> all_mu_input,
+                          const std::vector<Eigen::MatrixXd> all_Sigma_input,
+                          const double                       tau_input)
+    {
+        tau = tau_input;
+        num_pts = all_mu_input.size();
+        if (all_Sigma_input.size() != num_pts)
+        {
+            throw std::invalid_argument( "Different number of mu and Sigma" );
+        }
+        if ( num_pts == 0 )
+        {
+            throw std::invalid_argument( "No ellipsoids provided" );
+        }
+
+        spatial_dim = all_mu_input[0].size();
+
+        squared_distances.resize(num_pts);
+        is_pickable.resize(num_pts);
+        all_mu.resize(num_pts);
+        all_Sigma.resize(num_pts);
+        for ( int ii=0; ii<num_pts; ++ii )
+        {
+            Eigen::VectorXd mu = all_mu_input[ii];
+            Eigen::VectorXd Sigma = all_Sigma_input[ii];
+            all_mu[ii] = mu;
+            all_Sigma[ii] = Sigma;
+            is_pickable[ii] = true;
+            squared_distances[ii] = -1.0;
+        }
+
+        Eigen::MatrixXd box_mins(spatial_dim, num_pts);
+        Eigen::MatrixXd box_maxes(spatial_dim, num_pts);
+        for ( int ii=0; ii<num_pts; ++ii )
+        {
+            std::tuple<Eigen::VectorXd, Eigen::VectorXd> B = ellipsoid_bounding_box(all_mu[ii],
+                                                                                    all_Sigma[ii],
+                                                                                    tau);
+            box_mins.col(ii) = std::get<0>(B);
+            box_maxes.col(ii) = std::get<1>(B);
+        }
+        aabb.build_tree(box_mins, box_maxes);
+    }
+
+    std::vector<int> pick_batch()
+    {
+        for ( int ii=0; ii<num_pts; ++ii )
+        {
+            is_pickable[ii] = true;
+        }
+
+        for ( int b=0; b<batches.size(); ++b )
+        {
+            for ( int k=0; k<batches[b].size(); ++k )
+            {
+                int ind = batches[b][k];
+                is_pickable[ind] = false;
+            }
+        }
+
+        std::vector<int> candidate_inds(num_pts);
+        std::iota(candidate_inds.begin(), candidate_inds.end(), 0);
+        stable_sort(candidate_inds.begin(), candidate_inds.end(),
+            [this](int i1, int i2) {return squared_distances[i1] < squared_distances[i2];});
+
+        std::vector<int> next_batch;
+        for ( int idx : candidate_inds )
+        {
+            if ( is_pickable[idx] )
+            {
+                next_batch.push_back(idx);
+                is_pickable[idx] = false;
+                std::tuple<Eigen::VectorXd, Eigen::VectorXd> B = ellipsoid_bounding_box(all_mu[idx], all_Sigma[idx], tau);
+                Eigen::VectorXi possible_collisions = aabb.box_collisions(std::get<0>(B), std::get<1>(B));
+                for ( int jj=0; jj<possible_collisions.size(); ++jj )
+                {
+                    int idx2 = possible_collisions[jj];
+                    if ( is_pickable[idx2] )
+                    {
+                        if ( ellipsoids_intersect(all_mu[idx2], all_Sigma[idx2],
+                                                  all_mu[idx],  all_Sigma[idx],
+                                                  tau) )
+                        {
+                            is_pickable[idx2] = false;
+                        }
+                    }
+
+                }
+            }
+        }
+        batches.push_back(next_batch);
+
+        for ( int ind : next_batch )
+        {
+            for ( int ii=0; ii<num_pts; ++ii )
+            {
+                double old_dsq = squared_distances[ii];
+                double new_dsq = (all_mu[ind] - all_mu[ii]).squaredNorm();
+                if ( new_dsq < old_dsq || old_dsq < 0.0 )
+                {
+                    squared_distances[ii] = new_dsq;
+                }
+            }
+        }
+        return next_batch;
+    }
+};
 
 } // end namespace ELLIPSOID
