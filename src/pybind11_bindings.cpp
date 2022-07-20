@@ -11,11 +11,14 @@
 #include <Eigen/LU>
 #include <pybind11/eigen.h>
 #include <pybind11/stl.h>
+#include <pybind11/functional.h>
 
 #include "kdtree.h"
 #include "aabbtree.h"
 #include "simplexmesh.h"
 #include "geometric_sort.h"
+#include "brent_minimize.h"
+#include "ellipsoid.h"
 
 namespace py = pybind11;
 
@@ -26,6 +29,8 @@ using namespace KDT;
 using namespace AABB;
 using namespace SMESH;
 using namespace GSORT;
+using namespace BRENT;
+using namespace ELLIPSOID;
 
 
 PYBIND11_MODULE(nalger_helper_functions_cpp, m) {
@@ -42,6 +47,8 @@ PYBIND11_MODULE(nalger_helper_functions_cpp, m) {
                        const Ref<const MatrixXd> >())
         .def("point_collisions", &AABBTree::point_collisions)
         .def("point_collisions_vectorized", &AABBTree::point_collisions_vectorized)
+        .def("box_collisions", &AABBTree::box_collisions)
+        .def("box_collisions_vectorized", &AABBTree::box_collisions_vectorized)
         .def("ball_collisions", &AABBTree::ball_collisions)
         .def("ball_collisions_vectorized", &AABBTree::ball_collisions_vectorized);
 
@@ -63,5 +70,12 @@ PYBIND11_MODULE(nalger_helper_functions_cpp, m) {
 
 //    m.def("closest_point_in_simplex_vectorized", &closest_point_in_simplex_vectorized);
     m.def("geometric_sort", &geometric_sort);
+    m.def("brent_minimize", &brent_minimize);
+    m.def("ellipsoids_intersect", &ellipsoids_intersect);
 }
 
+
+//import numpy as np
+//from nalger_helper_functions import brent_minimize
+//brent_minimize(lambda x: np.cos(np.exp(x)), -1.0, 1.5, 1e-7, 200)
+//Out[3]: (1.1447298817285088, -0.9999999999999999, 12, 13)

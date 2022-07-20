@@ -156,7 +156,7 @@ print('bad_boxes_do_not_contain_points=', bad_boxes_do_not_contain_points)
 
 K=2
 num_boxes = int(1e5)
-num_pts = int(1e7)
+num_pts = int(1e6)
 
 print('num_boxes=', num_boxes, ', num_pts=', num_pts)
 
@@ -251,7 +251,7 @@ plt.show()
 
 K = 2
 
-num_boxes = int(1e5)
+num_boxes = int(1e6)
 num_balls = int(1e6)
 
 box_area = 2. / num_boxes
@@ -265,14 +265,15 @@ b_maxes = np.array(box_centers + box_widths, order='F')
 AABB = AABBTree(b_mins, b_maxes)
 
 ball_centers = np.array(np.random.randn(K, num_balls), order='F')
-ball_radii = np.array(8.0 * box_h * np.random.randn(num_balls), order='F')
+ball_radii = np.array(6.0 * box_h * np.random.randn(num_balls), order='F')
 
 t = time()
 all_collisions = AABB.ball_collisions_vectorized(ball_centers, ball_radii)
 dt_ball = time() - t
 print('num_boxes=', num_boxes, ', num_balls=', num_balls, ', dt_ball=', dt_ball)
 
-plt.show()
+mean_num_collisions_ball = np.mean([len(c) for c in all_collisions])
+print('mean_num_collisions_ball=', mean_num_collisions_ball)
 
 # np.mean([len(x) for x in all_collisions])
 
@@ -317,3 +318,68 @@ plt.show()
 # dt_build= 0.12599444389343262
 # dt_first_point_intersection_vectorized= 0.5189225673675537
 # num_boxes= 100000 , num_balls= 1000000 , dt_ball= 3.6354219913482666
+
+# Box query
+
+num_boxes = 351
+
+box_area = 2. / num_boxes
+box_h = np.power(box_area, 1./K)
+
+box_centers = np.random.randn(K, num_boxes)
+box_widths = box_h * np.abs(np.random.randn(K, num_boxes))
+b_mins = np.array(box_centers - box_widths, order='F')
+b_maxes = np.array(box_centers + box_widths, order='F')
+
+AABB = AABBTree(b_mins, b_maxes)
+
+qc = np.random.randn(K) / 4
+qmin = qc - np.random.rand(K)
+qmax = qc + np.random.rand(K)
+
+intersections = AABB.box_collisions(qmin, qmax)
+
+plt.figure()
+for k in range(num_boxes):
+    plot_rectangle(b_mins[:, k], b_maxes[:, k], facecolor='b')
+
+for jj in intersections:
+    plot_rectangle(b_mins[:, jj], b_maxes[:, jj], facecolor='r')
+
+plot_rectangle(qmin, qmax)
+
+big_box_min = np.min(b_mins, axis=1)
+big_box_max = np.max(b_maxes, axis=1)
+plt.xlim(big_box_min[0], big_box_max[0])
+plt.ylim(big_box_min[1], big_box_max[1])
+plt.show()
+
+
+# Box query timing
+
+K = 2
+
+num_boxes = int(1e6)
+num_query_boxes = int(1e6)
+
+box_area = 2. / num_boxes
+box_h = np.power(box_area, 1./K)
+
+box_centers = np.random.randn(K, num_boxes)
+box_widths = box_h * np.abs(np.random.randn(K, num_boxes))
+b_mins = np.array(box_centers - box_widths, order='F')
+b_maxes = np.array(box_centers + box_widths, order='F')
+
+AABB = AABBTree(b_mins, b_maxes)
+
+query_centers = np.random.randn(K, num_query_boxes) / 4
+query_mins = np.array(query_centers - 8.0 * box_h * np.random.rand(K, num_query_boxes), order='F')
+query_maxes = np.array(query_centers + 8.0 * box_h * np.random.rand(K, num_query_boxes), order='F')
+
+t = time()
+all_collisions = AABB.box_collisions_vectorized(query_mins, query_maxes)
+dt_box = time() - t
+print('num_boxes=', num_boxes, ', num_query_boxes=', num_query_boxes, ', dt_box=', dt_box)
+
+mean_num_collisions_box = np.mean([len(c) for c in all_collisions])
+print('mean_num_collisions_box=', mean_num_collisions_box)

@@ -30,7 +30,7 @@ all: $(LIB_DIR)/$(BINDINGS_TARGET) $(EXAMPLES_DIR)/kdtree_example $(EXAMPLES_DIR
 	@echo 'Finished building target: $@'
 	@echo ' '
 
-$(LIB_DIR)/$(BINDINGS_TARGET): $(SRC_DIR)/pybind11_bindings.cpp $(INCLUDE_DIR)/kdtree.h $(INCLUDE_DIR)/aabbtree.h $(INCLUDE_DIR)/simplexmesh.h | $(LIB_DIR)
+$(LIB_DIR)/$(BINDINGS_TARGET): $(SRC_DIR)/pybind11_bindings.cpp $(INCLUDE_DIR)/kdtree.h $(INCLUDE_DIR)/aabbtree.h $(INCLUDE_DIR)/simplexmesh.h $(INCLUDE_DIR)/brent_minimize.h $(INCLUDE_DIR)/ellipsoid.h | $(LIB_DIR)
 	@echo 'Building target: $@'
 	g++ -o "$@" "$<" $(CXXFLAGS) $(SHAREDFLAGS) $(PYFLAGS) -I$(INCLUDE_DIR) -I$(EIGEN_INCLUDE) -I$(THREADPOOL_INCLUDE)
 	@echo 'Finished building target: $@'

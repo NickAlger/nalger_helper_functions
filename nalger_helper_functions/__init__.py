@@ -278,6 +278,16 @@ except ImportError:
     print('geometric_sort not loaded')
 
 try:
+    from .nalger_helper_functions_cpp import brent_minimize
+except ImportError:
+    print('brent_minimize not loaded')
+
+try:
+    from .nalger_helper_functions_cpp import ellipsoids_intersect
+except ImportError:
+    print('ellipsoids_intersect not loaded')
+
+try:
     from .estimate_column_errors_randomized import estimate_column_errors_randomized
 except ImportError:
     print('estimate_column_errors_randomized not loaded')

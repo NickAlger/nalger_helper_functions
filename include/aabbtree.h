@@ -218,6 +218,43 @@ public:
         return collision_leafs_external_indexing;
     }
 
+    Eigen::VectorXi box_collisions( const Eigen::VectorXd & query_min, const Eigen::VectorXd & query_max ) const
+    {
+        std::queue<int> boxes_under_consideration;
+        boxes_under_consideration.push(0);
+
+        std::vector<int> collision_leafs;
+        collision_leafs.reserve(100);
+
+        while ( !boxes_under_consideration.empty() )
+        {
+            int B = boxes_under_consideration.front();
+            boxes_under_consideration.pop();
+            bool query_intersects_box = ( query_min.array()       <= box_maxes.col(B).array() ).all() &&
+                                        ( box_mins.col(B).array() <= query_max.array()        ).all();
+
+            if ( query_intersects_box )
+            {
+                if ( 2*B + 1 >= num_boxes ) // if current box is leaf
+                {
+                    collision_leafs.push_back(B);
+                }
+                else // current box is internal node
+                {
+                    boxes_under_consideration.push(2*B + 1);
+                    boxes_under_consideration.push(2*B + 2);
+                }
+            }
+        }
+
+        Eigen::VectorXi collision_leafs_external_indexing(collision_leafs.size());
+        for ( int ii=0; ii<collision_leafs.size(); ++ii )
+        {
+            collision_leafs_external_indexing(ii) = i2e(collision_leafs[ii]);
+        }
+        return collision_leafs_external_indexing;
+    }
+
     Eigen::VectorXi ball_collisions( const Eigen::VectorXd & center, double radius ) const
     {
         double radius_squared = radius*radius;
@@ -279,6 +316,29 @@ public:
         };
 
         pool.parallelize_loop(0, num_points, loop);
+        return all_collisions;
+    }
+
+    std::vector<Eigen::VectorXi> box_collisions_vectorized( const Eigen::Ref<const Eigen::MatrixXd> query_mins,
+                                                            const Eigen::Ref<const Eigen::MatrixXd> query_maxes )
+    {
+        int num_boxes = query_mins.cols();
+        std::vector<Eigen::VectorXi> all_collisions(num_boxes);
+
+        std::vector<int> shuffle_inds(num_boxes); // randomize ordering to make work even among threads
+        std::iota(shuffle_inds.begin(), shuffle_inds.end(), 0);
+        std::random_shuffle(shuffle_inds.begin(), shuffle_inds.end());
+
+        auto loop = [&](const int &a, const int &b)
+        {
+            for ( int ii=a; ii<b; ++ii )
+            {
+                all_collisions[shuffle_inds[ii]] = box_collisions( query_mins.col(shuffle_inds[ii]),
+                                                                   query_maxes.col(shuffle_inds[ii]) );
+            }
+        };
+
+        pool.parallelize_loop(0, num_boxes, loop);
         return all_collisions;
     }
 
