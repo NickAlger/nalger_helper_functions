@@ -95,11 +95,12 @@ private:
     int                          num_pts;
     int                          spatial_dim;
     double                       tau;
-    std::vector<double>          squared_distances;
+    std::vector<bool>            is_in_batch;
     std::vector<bool>            is_pickable;
 
 public:
-    std::vector<std::vector<int>>     batches;
+    std::vector<std::vector<int>> batches;
+    std::vector<double>           squared_distances;
 
     EllipsoidBatchPicker( const std::vector<Eigen::VectorXd> all_points_input,
                           const std::vector<Eigen::VectorXd> all_mu_input,
@@ -124,6 +125,7 @@ public:
 
         squared_distances.reserve(num_pts);
         is_pickable.reserve(num_pts);
+        is_in_batch.reserve(num_pts);
         all_points.reserve(num_pts);
         all_mu.reserve(num_pts);
         all_Sigma.reserve(num_pts);
@@ -133,6 +135,7 @@ public:
             all_mu.push_back(all_mu_input[ii]);
             all_Sigma.push_back(all_Sigma_input[ii]);
             is_pickable.push_back(true);
+            is_in_batch.push_back(false);
             squared_distances.push_back(-1.0);
         }
 
@@ -153,22 +156,13 @@ public:
     {
         for ( int ii=0; ii<num_pts; ++ii )
         {
-            is_pickable[ii] = true;
-        }
-
-        for ( int b=0; b<batches.size(); ++b )
-        {
-            for ( int k=0; k<batches[b].size(); ++k )
-            {
-                int ind = batches[b][k];
-                is_pickable[ind] = false;
-            }
+            is_pickable[ii] = (!is_in_batch[ii]);
         }
 
         std::vector<int> candidate_inds(num_pts);
         std::iota(candidate_inds.begin(), candidate_inds.end(), 0);
         stable_sort(candidate_inds.begin(), candidate_inds.end(),
-            [this](int i1, int i2) {return squared_distances[i1] < squared_distances[i2];});
+            [this](int i1, int i2) {return squared_distances[i1] > squared_distances[i2];});
 
         std::vector<int> next_batch;
         for ( int idx : candidate_inds )
@@ -177,6 +171,7 @@ public:
             {
                 next_batch.push_back(idx);
                 is_pickable[idx] = false;
+                is_in_batch[idx] = true;
                 std::tuple<Eigen::VectorXd, Eigen::VectorXd> B = ellipsoid_bounding_box(all_mu[idx], all_Sigma[idx], tau);
                 Eigen::VectorXi possible_collisions = aabb.box_collisions(std::get<0>(B), std::get<1>(B));
                 for ( int jj=0; jj<possible_collisions.size(); ++jj )
