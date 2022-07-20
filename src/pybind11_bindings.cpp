@@ -72,8 +72,15 @@ PYBIND11_MODULE(nalger_helper_functions_cpp, m) {
     m.def("geometric_sort", &geometric_sort);
     m.def("brent_minimize", &brent_minimize);
     m.def("ellipsoids_intersect", &ellipsoids_intersect);
-}
 
+    py::class_<EllipsoidBatchPicker>(m, "EllipsoidBatchPicker")
+        .def(py::init< const std::vector<Eigen::VectorXd>,
+                       const std::vector<Eigen::VectorXd>,
+                       const std::vector<Eigen::MatrixXd>,
+                       const double>())
+        .def_readwrite("batches", &EllipsoidBatchPicker::batches)
+        .def("pick_batch", &EllipsoidBatchPicker::pick_batch);
+}
 
 //import numpy as np
 //from nalger_helper_functions import brent_minimize

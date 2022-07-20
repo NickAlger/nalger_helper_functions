@@ -89,6 +89,7 @@ class EllipsoidBatchPicker
 {
 private:
     AABB::AABBTree               aabb;
+    std::vector<Eigen::VectorXd> all_points;
     std::vector<Eigen::VectorXd> all_mu;
     std::vector<Eigen::MatrixXd> all_Sigma;
     int                          num_pts;
@@ -100,35 +101,39 @@ private:
 public:
     std::vector<std::vector<int>>     batches;
 
-    EllipsoidBatchPicker( const std::vector<Eigen::VectorXd> all_mu_input,
+    EllipsoidBatchPicker( const std::vector<Eigen::VectorXd> all_points_input,
+                          const std::vector<Eigen::VectorXd> all_mu_input,
                           const std::vector<Eigen::MatrixXd> all_Sigma_input,
                           const double                       tau_input)
     {
         tau = tau_input;
-        num_pts = all_mu_input.size();
+        num_pts = all_points_input.size();
+        if (all_mu_input.size() != num_pts)
+        {
+            throw std::invalid_argument( "Different number of points and mu" );
+        }
         if (all_Sigma_input.size() != num_pts)
         {
-            throw std::invalid_argument( "Different number of mu and Sigma" );
+            throw std::invalid_argument( "Different number of points and Sigma" );
         }
         if ( num_pts == 0 )
         {
             throw std::invalid_argument( "No ellipsoids provided" );
         }
+        spatial_dim = all_points_input[0].size();
 
-        spatial_dim = all_mu_input[0].size();
-
-        squared_distances.resize(num_pts);
-        is_pickable.resize(num_pts);
-        all_mu.resize(num_pts);
-        all_Sigma.resize(num_pts);
+        squared_distances.reserve(num_pts);
+        is_pickable.reserve(num_pts);
+        all_points.reserve(num_pts);
+        all_mu.reserve(num_pts);
+        all_Sigma.reserve(num_pts);
         for ( int ii=0; ii<num_pts; ++ii )
         {
-            Eigen::VectorXd mu = all_mu_input[ii];
-            Eigen::VectorXd Sigma = all_Sigma_input[ii];
-            all_mu[ii] = mu;
-            all_Sigma[ii] = Sigma;
-            is_pickable[ii] = true;
-            squared_distances[ii] = -1.0;
+            all_points.push_back(all_points_input[ii]);
+            all_mu.push_back(all_mu_input[ii]);
+            all_Sigma.push_back(all_Sigma_input[ii]);
+            is_pickable.push_back(true);
+            squared_distances.push_back(-1.0);
         }
 
         Eigen::MatrixXd box_mins(spatial_dim, num_pts);
@@ -197,7 +202,7 @@ public:
             for ( int ii=0; ii<num_pts; ++ii )
             {
                 double old_dsq = squared_distances[ii];
-                double new_dsq = (all_mu[ind] - all_mu[ii]).squaredNorm();
+                double new_dsq = (all_points[ind] - all_points[ii]).squaredNorm();
                 if ( new_dsq < old_dsq || old_dsq < 0.0 )
                 {
                     squared_distances[ii] = new_dsq;

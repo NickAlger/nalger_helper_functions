@@ -288,6 +288,11 @@ except ImportError:
     print('ellipsoids_intersect not loaded')
 
 try:
+    from .nalger_helper_functions_cpp import EllipsoidBatchPicker
+except ImportError:
+    print('EllipsoidBatchPicker not loaded')
+
+try:
     from .estimate_column_errors_randomized import estimate_column_errors_randomized
 except ImportError:
     print('estimate_column_errors_randomized not loaded')
