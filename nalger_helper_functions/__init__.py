@@ -306,3 +306,8 @@ try:
     from .function_space_enhanced import FunctionSpaceEnhanced
 except ImportError:
     print('FunctionSpaceEnhanced not loaded')
+
+try:
+    from .threshold_crossings import threshold_crossings
+except ImportError:
+    print('threshold_crossings not loaded')
