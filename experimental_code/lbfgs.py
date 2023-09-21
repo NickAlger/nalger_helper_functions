@@ -3,6 +3,7 @@ import numpy as np
 import typing as typ
 from collections import deque
 from scipy.optimize import line_search
+# import scipy.optimize.linesearch as ls
 from dataclasses import dataclass
 from enum import Enum
 
@@ -17,12 +18,101 @@ def lbfgs(
         max_iter: int=100,
         display: bool=True,
         inv_hess0: typ.Union[typ.Callable[[np.ndarray], np.ndarray], InverseHessianApproximation]=None,
+        num_initial_iter: int = 5 # number of initial iterations before inv_hess0 is used
 ) -> LbfgsResult:
-    if isinstance(inv_hess0, InverseHessianApproximation):
-        inv_hess = inv_hess0
-    else:
-        inv_hess = InverseHessianApproximation(max_vector_pairs_stored, deque(), deque(), inv_hess0)
+    '''Computes argmin_x cost(x) via L-BFGS,
+    with option for a user-supplied initial inverse Hessian approximation.
 
+    Examples:
+    In:
+        import numpy as np
+        from scipy.optimize import rosen, rosen_der
+
+        x0 = np.array([1.3, 0.7, 0.8, 1.9, 1.2])
+
+        print('Minimization with no initial inverse Hessian')
+        result = lbfgs(rosen, rosen_der, x0, rtol=1e-10, display=True)
+        print('solution x=', result.x)
+
+        print()
+        print('Using previous final inverse Hessian as new initial Hessian after 5 iterations')
+        n = len(x0)
+        H0 = np.zeros((n,n))
+        for k in range(n):
+            ek = np.zeros(n)
+            ek[k] = 1.0
+            H0[:,k] = result.inv_hess.matvec(ek)
+
+        inv_hess0 = lambda x: H0 @ x
+
+        result2 = lbfgs(rosen, rosen_der, x0, inv_hess0=inv_hess0, rtol=1e-10, num_initial_iter=5)
+        print('solution x=', result2.x)
+
+        # Compare to implementation in Scipy:
+        # from scipy.optimize import minimize
+        # result = minimize(rosen, x0, method='L-BFGS-B', jac=rosen_der, tol=1e-10, options={'disp': True})
+    Out:
+        Minimization with no initial inverse Hessian
+        Iter: 0 , cost: 848.22 , |g|_inf: 2085.4 , step_size: 0.0004496668508702465 , using inv_hess0: False
+        Iter: 1 , cost: 41.34323740111179 , |g|_inf: 178.40189326409805 , step_size: 1.0 , using inv_hess0: False
+        Iter: 2 , cost: 16.826849424945813 , |g|_inf: 105.5379767341664 , step_size: 1.0 , using inv_hess0: False
+        Iter: 3 , cost: 2.7868248969070386 , |g|_inf: 51.01396443585729 , step_size: 1.0 , using inv_hess0: False
+        Iter: 4 , cost: 1.0446811105748832 , |g|_inf: 21.4422281910189 , step_size: 1.0 , using inv_hess0: False
+        Iter: 5 , cost: 0.11343722694575001 , |g|_inf: 10.271531675646154 , step_size: 1.0 , using inv_hess0: False
+        Iter: 6 , cost: 0.060566823074288886 , |g|_inf: 5.686864400775745 , step_size: 1.0 , using inv_hess0: False
+        Iter: 7 , cost: 0.023420212085108402 , |g|_inf: 1.5704063229963603 , step_size: 1.0 , using inv_hess0: False
+        Iter: 8 , cost: 0.022180253777025063 , |g|_inf: 0.17433645466701125 , step_size: 1.0 , using inv_hess0: False
+        Iter: 9 , cost: 0.022151908056769233 , |g|_inf: 0.11831447213364044 , step_size: 1.0 , using inv_hess0: False
+        Iter: 10 , cost: 0.022133010800577987 , |g|_inf: 0.11402668398416971 , step_size: 1.0 , using inv_hess0: False
+        Iter: 11 , cost: 0.022056436870526372 , |g|_inf: 0.21700710669019296 , step_size: 1.0 , using inv_hess0: False
+        Iter: 12 , cost: 0.021886291988417073 , |g|_inf: 0.4594384674152714 , step_size: 1.0 , using inv_hess0: False
+        Iter: 13 , cost: 0.021419477729493135 , |g|_inf: 0.8681741839339854 , step_size: 1.0 , using inv_hess0: False
+        Iter: 14 , cost: 0.02028561455954908 , |g|_inf: 1.463264156139919 , step_size: 1.0 , using inv_hess0: False
+        Iter: 15 , cost: 0.017710838497109766 , |g|_inf: 2.2247567158236277 , step_size: 1.0 , using inv_hess0: False
+        Iter: 16 , cost: 0.01329633053477537 , |g|_inf: 2.744706991756995 , step_size: 1.0 , using inv_hess0: False
+        Iter: 17 , cost: 0.007709379962193361 , |g|_inf: 2.2656282021799203 , step_size: 0.35986933832901696 , using inv_hess0: False
+        Iter: 18 , cost: 0.0054833100677158155 , |g|_inf: 2.1711999804740865 , step_size: 1.0 , using inv_hess0: False
+        Iter: 19 , cost: 0.0003740486325942903 , |g|_inf: 0.36510436662563045 , step_size: 1.0 , using inv_hess0: False
+        Iter: 20 , cost: 7.488746110463646e-05 , |g|_inf: 0.24329588889891557 , step_size: 1.0 , using inv_hess0: False
+        Iter: 21 , cost: 1.830477855363404e-05 , |g|_inf: 0.12302056237760803 , step_size: 1.0 , using inv_hess0: False
+        Iter: 22 , cost: 4.411567691498245e-06 , |g|_inf: 0.05863970038611927 , step_size: 1.0 , using inv_hess0: False
+        Iter: 23 , cost: 2.202310701587146e-09 , |g|_inf: 0.0019280333566841972 , step_size: 1.0 , using inv_hess0: False
+        Iter: 24 , cost: 7.274525404517185e-12 , |g|_inf: 9.430503164691668e-05 , step_size: 1.0 , using inv_hess0: False
+        Iter: 25 , cost: 9.541897903167501e-15 , |g|_inf: 3.6120283847345e-06 , step_size: 1.0 , using inv_hess0: False
+        LBFGS done.
+            Termination reason: RTOL_ACHIEVED
+            Iterations: 26
+            Cost evaluations: 28
+            Gradient evaluations: 53
+            Final cost: 3.9063012510091e-18
+            Final |g|_inf: 4.128863472988538e-08
+        solution x= [1. 1. 1. 1. 1.]
+        Using previous final inverse Hessian as new initial Hessian after 5 iterations
+        Iter: 0 , cost: 848.22 , |g|_inf: 2085.4 , step_size: 0.0004496668508702465 , using inv_hess0: False
+        Iter: 1 , cost: 41.34323740111179 , |g|_inf: 178.40189326409805 , step_size: 1.0 , using inv_hess0: False
+        Iter: 2 , cost: 16.826849424945813 , |g|_inf: 105.5379767341664 , step_size: 1.0 , using inv_hess0: False
+        Iter: 3 , cost: 2.7868248969070386 , |g|_inf: 51.01396443585729 , step_size: 1.0 , using inv_hess0: False
+        Iter: 4 , cost: 1.0446811105748832 , |g|_inf: 21.4422281910189 , step_size: 1.0 , using inv_hess0: False
+        Iter: 5 , cost: 0.11343722694575001 , |g|_inf: 10.271531675646154 , step_size: 1.0 , using inv_hess0: True
+        Iter: 6 , cost: 0.027903578598861556 , |g|_inf: 5.033211989929168 , step_size: 1.0 , using inv_hess0: True
+        Iter: 7 , cost: 0.007612495012282753 , |g|_inf: 1.8882487205461977 , step_size: 1.0 , using inv_hess0: True
+        Iter: 8 , cost: 0.0020264075816008036 , |g|_inf: 0.8379239722392997 , step_size: 1.0 , using inv_hess0: True
+        Iter: 9 , cost: 0.0007145427190684071 , |g|_inf: 0.6949123244055606 , step_size: 1.0 , using inv_hess0: True
+        Iter: 10 , cost: 7.039729253501432e-05 , |g|_inf: 0.2777101575526239 , step_size: 1.0 , using inv_hess0: True
+        Iter: 11 , cost: 1.9016824157216738e-05 , |g|_inf: 0.13022925174117678 , step_size: 1.0 , using inv_hess0: True
+        Iter: 12 , cost: 3.3308347005081375e-08 , |g|_inf: 0.004710133337606962 , step_size: 1.0 , using inv_hess0: True
+        Iter: 13 , cost: 1.2938550580040016e-10 , |g|_inf: 0.00026003960834704943 , step_size: 1.0 , using inv_hess0: True
+        Iter: 14 , cost: 5.996089267977567e-14 , |g|_inf: 1.0548330665030862e-05 , step_size: 1.0 , using inv_hess0: True
+        Iter: 15 , cost: 2.4010557108165267e-16 , |g|_inf: 3.747210574866713e-07 , step_size: 1.0 , using inv_hess0: True
+        LBFGS done.
+            Termination reason: RTOL_ACHIEVED
+            Iterations: 16
+            Cost evaluations: 17
+            Gradient evaluations: 33
+            Final cost: 1.5871272067049831e-18
+            Final |g|_inf: 2.8119372165952003e-08
+        solution x= [1. 1. 1. 1. 1.]
+    '''
     num_cost_evals: int = 0
     def __cost_with_counter(x):
         nonlocal num_cost_evals
@@ -36,6 +126,12 @@ def lbfgs(
         return grad(x)
 
     iter: int = 0
+    if isinstance(inv_hess0, InverseHessianApproximation) and iter >= num_initial_iter:
+        inv_hess = inv_hess0
+    elif iter >= num_initial_iter:
+        inv_hess = InverseHessianApproximation(max_vector_pairs_stored, deque(), deque(), inv_hess0)
+    else:
+        inv_hess = InverseHessianApproximation(max_vector_pairs_stored, deque(), deque(), None)
 
     x: np.ndarray = x0
     f: float        = __cost_with_counter(x)
@@ -47,17 +143,19 @@ def lbfgs(
     gradnorm_history: typ.List[float] = [gradnorm]
 
     p: np.ndarray = inv_hess.matvec(-g)
-    line_search_result = line_search(__cost_with_counter, __grad_with_counter, x, p, g, f)
-    # line_search_result = line_search(cost, grad, x, p, g, f)
-    # s = 3.5e-4
-    # line_search_result = [s, None, None, cost(x + s*p)]
+    if inv_hess.inv_hess0 is None:
+        old_old_fval = f + np.linalg.norm(g) / 2.0
+    else:
+        old_old_fval = None
+    line_search_result = line_search(__cost_with_counter, __grad_with_counter, x, p, g, f, old_old_fval)
     step_size: float = line_search_result[0]
 
     step_size_history: typ.List[float] = [step_size]
 
     def __display_iter_info():
         if display:
-            print('Iter:', iter, ', cost:', f, ', ||g||:', gradnorm, ', step_size:', step_size)
+            print('Iter:', iter, ', cost:', f, ', |g|_inf:', gradnorm, ', step_size:', step_size,
+                  ', using inv_hess0:', inv_hess.inv_hess0 is not None)
 
     __display_iter_info()
     f0: float = f
@@ -66,6 +164,12 @@ def lbfgs(
     termination_reason: LbfgsTerminationReason = LbfgsTerminationReason.MAXITER_REACHED
     while iter < max_iter:
         iter += 1
+        if iter == num_initial_iter:
+            if isinstance(inv_hess0, InverseHessianApproximation):
+                inv_hess = inv_hess0
+            else:
+                inv_hess = InverseHessianApproximation(max_vector_pairs_stored, deque(), deque(), inv_hess0)
+
         x_old = x
         f_old = f
         g_old = g
@@ -103,7 +207,7 @@ def lbfgs(
         print('    Cost evaluations:', num_cost_evals)
         print('    Gradient evaluations:', num_grad_evals)
         print('    Final cost:', f)
-        print('    Final ||g||:', gradnorm)
+        print('    Final |g|_inf:', gradnorm)
 
     return LbfgsResult(x, f, g, inv_hess,
                        iter, num_cost_evals, num_grad_evals,
@@ -131,7 +235,7 @@ class LbfgsResult(typ.NamedTuple):
     termination_reason: LbfgsTerminationReason
 
 
-@dataclass(frozen=True)
+@dataclass
 class InverseHessianApproximation:
     '''See Nocedal and Wright page 177-179.'''
     m: int # max vector pairs stored
@@ -200,34 +304,3 @@ class InverseHessianApproximation:
             r = r + s * (alpha - beta)
         return r
 
-
-from scipy.optimize import minimize, rosen, rosen_der
-
-# x0 = np.array([1.3, 0.7, 0.8, 1.9, 1.2])
-x0 = np.array([1.3, 0.7])
-# x0 = 1.0 + np.random.randn(5)
-
-print()
-print('No initial inverse Hessian:')
-result = lbfgs(rosen, rosen_der, x0, rtol=1e-10)
-
-print()
-print('Warm start Hessian with InverseHessianApproximation object from previous result')
-result2 = lbfgs(rosen, rosen_der, x0, inv_hess0=result.inv_hess, rtol=1e-10)
-
-n = len(x0)
-H0 = np.zeros((n,n))
-for k in range(n):
-    ek = np.zeros(n)
-    ek[k] = 1.0
-    H0[:,k] = result.inv_hess.matvec(ek)
-
-print()
-print('Initial inverse Hessian as lambda function')
-result3 = lbfgs(rosen, rosen_der, x0, inv_hess0=lambda x: H0 @ x, rtol=1e-10)
-
-# res = minimize(rosen, x0, method='L-BFGS-B', jac=rosen_der, tol=1e-10, options={'gtol': 1e-15, 'disp': True})
-
-print()
-print('BFGS')
-res = minimize(rosen, x0, method='BFGS', jac=rosen_der, tol=1e-10, options={'gtol': 1e-15, 'disp': True})
