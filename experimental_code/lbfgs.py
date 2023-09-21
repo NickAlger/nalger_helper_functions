@@ -46,7 +46,7 @@ def lbfgs(
     cost_history: typ.List[float] = [f]
     gradnorm_history: typ.List[float] = [gradnorm]
 
-    p: np.ndarray = inv_hess.solve_quasi_newton_system(-g)
+    p: np.ndarray = inv_hess.matvec(-g)
     line_search_result = line_search(__cost_with_counter, __grad_with_counter, x, p, g, f)
     # line_search_result = line_search(cost, grad, x, p, g, f)
     # s = 3.5e-4
@@ -88,7 +88,7 @@ def lbfgs(
             break
 
         inv_hess.add_new_s_y_pair(x - x_old, g - g_old)
-        p = inv_hess.solve_quasi_newton_system(-g)
+        p = inv_hess.matvec(-g)
         line_search_result = line_search(__cost_with_counter, __grad_with_counter, x, p, g, f)
         step_size = line_search_result[0]
 
@@ -182,14 +182,13 @@ class InverseHessianApproximation:
                 gamma_k = 1.0
             return gamma_k * x # H0_k = gamma_k*I
 
-    def solve_quasi_newton_system(me, grad_fk: np.ndarray) -> np.ndarray:
+    def matvec(me, q: np.ndarray) -> np.ndarray:
         '''Computes
             r = H_k grad f_k
         via L-BFGS two-loop recursion.
         Algorithm 7.4 on page 178 of Nocedal and Wright.
         '''
         rhos = [1.0 / np.sum(y * s) for s, y in zip(me.ss, me.yy)] # equation 7.17 (left) on page 177
-        q = grad_fk
         alphas = []
         for s, y, rho in zip(me.ss, me.yy, rhos):
             alpha = rho * np.sum(s * q)
@@ -204,15 +203,31 @@ class InverseHessianApproximation:
 
 from scipy.optimize import minimize, rosen, rosen_der
 
-x0 = np.array([1.3, 0.7, 0.8, 1.9, 1.2])
+# x0 = np.array([1.3, 0.7, 0.8, 1.9, 1.2])
+x0 = np.array([1.3, 0.7])
+# x0 = 1.0 + np.random.randn(5)
+
+print()
+print('No initial inverse Hessian:')
 result = lbfgs(rosen, rosen_der, x0, rtol=1e-10)
 
-result = lbfgs(rosen, rosen_der, x0, inv_hess0=result.inv_hess, rtol=1e-10)
+print()
+print('Warm start Hessian with InverseHessianApproximation object from previous result')
+result2 = lbfgs(rosen, rosen_der, x0, inv_hess0=result.inv_hess, rtol=1e-10)
 
-# result = lbfgs(rosen, rosen_der, np.array([1.3, 0.7, 0.8, 1.9, 1.2]), inv_hess0=lambda x: x)
+n = len(x0)
+H0 = np.zeros((n,n))
+for k in range(n):
+    ek = np.zeros(n)
+    ek[k] = 1.0
+    H0[:,k] = result.inv_hess.matvec(ek)
 
-# res = minimize(rosen, x0, method='BFGS', jac=rosen_der,
-#                options={'gtol': 1e-6, 'disp': True})
+print()
+print('Initial inverse Hessian as lambda function')
+result3 = lbfgs(rosen, rosen_der, x0, inv_hess0=lambda x: H0 @ x, rtol=1e-10)
 
 # res = minimize(rosen, x0, method='L-BFGS-B', jac=rosen_der, tol=1e-10, options={'gtol': 1e-15, 'disp': True})
+
+print()
+print('BFGS')
 res = minimize(rosen, x0, method='BFGS', jac=rosen_der, tol=1e-10, options={'gtol': 1e-15, 'disp': True})
