@@ -17,7 +17,7 @@ def lbfgs(
         stag_tol: float=1e-8,
         max_iter: int=100,
         display: bool=True,
-        inv_hess0: typ.Union[typ.Callable[[np.ndarray], np.ndarray], InverseHessianApproximation]=None,
+        inv_hess0: typ.Union[typ.Callable[[np.ndarray], np.ndarray], LbfgsInverseHessianApproximation]=None,
         num_initial_iter: int = 5 # number of initial iterations before inv_hess0 is used
 ) -> LbfgsResult:
     '''Computes argmin_x cost(x) via L-BFGS,
@@ -27,6 +27,7 @@ def lbfgs(
     In:
         import numpy as np
         from scipy.optimize import rosen, rosen_der
+        from nalger_helper_functions import lbfgs
 
         x0 = np.array([1.3, 0.7, 0.8, 1.9, 1.2])
 
@@ -177,12 +178,12 @@ def lbfgs(
         return grad(x)
 
     iter: int = 0
-    if isinstance(inv_hess0, InverseHessianApproximation) and iter >= num_initial_iter:
+    if isinstance(inv_hess0, LbfgsInverseHessianApproximation) and iter >= num_initial_iter:
         inv_hess = inv_hess0
     elif iter >= num_initial_iter:
-        inv_hess = InverseHessianApproximation(max_vector_pairs_stored, deque(), deque(), inv_hess0)
+        inv_hess = LbfgsInverseHessianApproximation(max_vector_pairs_stored, deque(), deque(), inv_hess0)
     else:
-        inv_hess = InverseHessianApproximation(max_vector_pairs_stored, deque(), deque(), None)
+        inv_hess = LbfgsInverseHessianApproximation(max_vector_pairs_stored, deque(), deque(), None)
 
     x: np.ndarray = x0
     f: float        = __cost_with_counter(x)
@@ -218,10 +219,10 @@ def lbfgs(
     while iter < max_iter:
         iter += 1
         if iter == num_initial_iter:
-            if isinstance(inv_hess0, InverseHessianApproximation):
+            if isinstance(inv_hess0, LbfgsInverseHessianApproximation):
                 inv_hess = inv_hess0
             else:
-                inv_hess = InverseHessianApproximation(max_vector_pairs_stored, deque(), deque(), inv_hess0)
+                inv_hess = LbfgsInverseHessianApproximation(max_vector_pairs_stored, deque(), deque(), inv_hess0)
 
         x_old = x
         f_old = f
@@ -278,7 +279,7 @@ class LbfgsResult(typ.NamedTuple):
     x: np.ndarray       # solution
     cost: float         # cost(x)
     grad: np.ndarray    # grad f(x)
-    inv_hess: InverseHessianApproximation   # L-BFGS approximation to the inverse Hessian at x
+    inv_hess: LbfgsInverseHessianApproximation   # L-BFGS approximation to the inverse Hessian at x
     iter: int
     num_cost_evals: int
     num_grad_evals: int
@@ -289,7 +290,7 @@ class LbfgsResult(typ.NamedTuple):
 
 
 @dataclass
-class InverseHessianApproximation:
+class LbfgsInverseHessianApproximation:
     '''See Nocedal and Wright page 177-179.'''
     m: int # max vector pairs stored
     ss: typ.Deque[np.ndarray] # GETS MODIFIED! ss=[s_(k-1), s_(k-2), ..., s_(k-m)], s_i = x_(i+1) - x_i. Eq 7.18, left, on page 177

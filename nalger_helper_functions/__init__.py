@@ -311,3 +311,8 @@ try:
     from .threshold_crossings import threshold_crossings
 except ImportError:
     print('threshold_crossings not loaded')
+
+try:
+    from .lbfgs import lbfgs, LbfgsResult, LbfgsInverseHessianApproximation, LbfgsTerminationReason
+except ImportError:
+    print('lbfgs not loaded')
