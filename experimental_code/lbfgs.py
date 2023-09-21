@@ -32,7 +32,7 @@ def lbfgs(
 
         print('Minimization with no initial inverse Hessian')
         result = lbfgs(rosen, rosen_der, x0, rtol=1e-10, display=True)
-        print('solution x=', result.x)
+        print('x=', result.x)
 
         print()
         print('Using previous final inverse Hessian as new initial Hessian after 5 iterations')
@@ -46,11 +46,13 @@ def lbfgs(
         inv_hess0 = lambda x: H0 @ x
 
         result2 = lbfgs(rosen, rosen_der, x0, inv_hess0=inv_hess0, rtol=1e-10, num_initial_iter=5)
-        print('solution x=', result2.x)
+        print('warmstart x=', result2.x)
 
-        # Compare to implementation in Scipy:
-        # from scipy.optimize import minimize
-        # result = minimize(rosen, x0, method='L-BFGS-B', jac=rosen_der, tol=1e-10, options={'disp': True})
+        print()
+        print('Using Scipy L-BFGS implementation for comparison:')
+        from scipy.optimize import minimize
+        result3 = minimize(rosen, x0, method='L-BFGS-B', jac=rosen_der, tol=1e-10, options={'disp': True})
+        print('Scipy x=', result3.x)
     Out:
         Minimization with no initial inverse Hessian
         Iter: 0 , cost: 848.22 , |g|_inf: 2085.4 , step_size: 0.0004496668508702465 , using inv_hess0: False
@@ -86,7 +88,8 @@ def lbfgs(
             Gradient evaluations: 53
             Final cost: 3.9063012510091e-18
             Final |g|_inf: 4.128863472988538e-08
-        solution x= [1. 1. 1. 1. 1.]
+        x= [1. 1. 1. 1. 1.]
+
         Using previous final inverse Hessian as new initial Hessian after 5 iterations
         Iter: 0 , cost: 848.22 , |g|_inf: 2085.4 , step_size: 0.0004496668508702465 , using inv_hess0: False
         Iter: 1 , cost: 41.34323740111179 , |g|_inf: 178.40189326409805 , step_size: 1.0 , using inv_hess0: False
@@ -111,7 +114,55 @@ def lbfgs(
             Gradient evaluations: 33
             Final cost: 1.5871272067049831e-18
             Final |g|_inf: 2.8119372165952003e-08
-        solution x= [1. 1. 1. 1. 1.]
+        warmstart x= [1. 1. 1. 1. 1.]
+
+        Using Scipy L-BFGS implementation for comparison:
+        RUNNING THE L-BFGS-B CODE
+                   * * *
+        Machine precision = 2.220D-16
+         N =            5     M =           10
+        At X0         0 variables are exactly at the bounds
+         This problem is unconstrained.
+        At iterate    0    f=  8.48220D+02    |proj g|=  2.08540D+03
+        At iterate    1    f=  3.99762D+01    |proj g|=  1.69958D+02
+        At iterate    2    f=  1.63703D+01    |proj g|=  1.00591D+02
+        At iterate    3    f=  2.73198D+00    |proj g|=  4.96538D+01
+        At iterate    4    f=  1.01393D+00    |proj g|=  2.20827D+01
+        At iterate    5    f=  1.07202D-01    |proj g|=  1.03271D+01
+        At iterate    6    f=  2.30119D-02    |proj g|=  8.24714D-01
+        At iterate    7    f=  2.22778D-02    |proj g|=  1.74719D-01
+        At iterate    8    f=  2.22432D-02    |proj g|=  1.18020D-01
+        At iterate    9    f=  2.22175D-02    |proj g|=  1.05946D-01
+        At iterate   10    f=  2.21319D-02    |proj g|=  2.88356D-01
+        At iterate   11    f=  2.19305D-02    |proj g|=  5.83854D-01
+        At iterate   12    f=  2.13934D-02    |proj g|=  1.06513D+00
+        At iterate   13    f=  2.00866D-02    |proj g|=  1.76535D+00
+        At iterate   14    f=  1.72122D-02    |proj g|=  2.62905D+00
+        At iterate   15    f=  1.25070D-02    |proj g|=  3.20973D+00
+        At iterate   16    f=  7.12103D-03    |proj g|=  3.34539D+00
+        At iterate   17    f=  4.34321D-03    |proj g|=  2.35238D+00
+        At iterate   18    f=  2.25392D-04    |proj g|=  4.22986D-01
+        At iterate   19    f=  1.96518D-05    |proj g|=  1.19854D-01
+        At iterate   20    f=  2.58660D-06    |proj g|=  3.79854D-02
+        At iterate   21    f=  1.04796D-07    |proj g|=  1.27803D-02
+        At iterate   22    f=  5.45817D-09    |proj g|=  2.12583D-03
+        At iterate   23    f=  3.45957D-10    |proj g|=  4.36388D-04
+        At iterate   24    f=  1.30034D-12    |proj g|=  1.26799D-05
+        At iterate   25    f=  1.91592D-14    |proj g|=  5.08299D-06
+                   * * *
+        Tit   = total number of iterations
+        Tnf   = total number of function evaluations
+        Tnint = total number of segments explored during Cauchy searches
+        Skip  = number of BFGS updates skipped
+        Nact  = number of active bounds at final generalized Cauchy point
+        Projg = norm of the final projected gradient
+        F     = final function value
+                   * * *
+           N    Tit     Tnf  Tnint  Skip  Nact     Projg        F
+            5     25     27      1     0     0   5.083D-06   1.916D-14
+          F =   1.9159228970049549E-014
+        CONVERGENCE: REL_REDUCTION_OF_F_<=_FACTR*EPSMCH
+        Scipy x= [0.99999999 0.99999999 0.99999998 0.99999996 0.9999999 ]
     '''
     num_cost_evals: int = 0
     def __cost_with_counter(x):
@@ -144,7 +195,9 @@ def lbfgs(
 
     p: np.ndarray = inv_hess.matvec(-g)
     if inv_hess.inv_hess0 is None:
+        # print('np.linalg.norm(g) / 2.0=', np.linalg.norm(g) / 2.0)
         old_old_fval = f + np.linalg.norm(g) / 2.0
+        # old_old_fval = f + gradnorm / 2.0
     else:
         old_old_fval = None
     line_search_result = line_search(__cost_with_counter, __grad_with_counter, x, p, g, f, old_old_fval)
