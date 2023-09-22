@@ -208,7 +208,10 @@ def lbfgs(
 
     def __display_iter_info():
         if display:
-            print('Iter:', iter, ', cost:', f, ', |g|_inf:', gradnorm, ', step_size:', step_size,
+            print('Iter:', iter,
+                  ', cost:', np.format_float_scientific(f, precision=3, unique=False),
+                  ', |g|_inf:', np.format_float_scientific(gradnorm, precision=3, unique=False),
+                  ', step_size:', np.format_float_scientific(step_size, precision=3, unique=False),
                   ', using inv_hess0:', inv_hess.inv_hess0 is not None)
 
     __display_iter_info()
