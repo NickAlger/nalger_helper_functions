@@ -7,6 +7,7 @@ import scipy.optimize.linesearch as ls
 from dataclasses import dataclass
 from enum import Enum
 
+
 VecType = typ.TypeVar('VecType')
 
 def lbfgs(

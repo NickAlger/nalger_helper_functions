@@ -316,3 +316,8 @@ try:
     from .lbfgs import lbfgs, LbfgsResult, LbfgsInverseHessianApproximation, LbfgsTerminationReason
 except ImportError:
     print('lbfgs not loaded')
+
+try:
+    from .cross_approximation import aca_full, aca_partial
+except ImportError:
+    print('aca_full, aca_partial not loaded')
