@@ -85,19 +85,19 @@ def aca_full(
     return row_inds, col_inds, uu, vv
 
 
-import typing as typ
-
-
 def aca_partial(
         A_get_row: typ.Callable[[int], np.ndarray],
         A_get_col: typ.Callable[[int], np.ndarray],
         A_shape: typ.Tuple[int, int],
         max_rank: int = 100,
         rtol: float = 1e-2,
+        aca_safety_factor: float = 0.25,
+        recompress_safety_factor: float = 0.75,
         display=False,
         required_successes: int = 10,
         first_row: int = None,
-        rows_to_avoid: typ.List[int] = None
+        rows_to_avoid: typ.List[int] = None,
+        recompress: bool = True
 ) -> typ.Tuple[
     np.ndarray, # U
     np.ndarray, # Vt
@@ -125,31 +125,29 @@ def aca_partial(
         B_get_row = lambda ii: B[ii,:]
         B_get_col = lambda jj: B[:,jj]
 
-        row_inds, col_inds, uu, ww = aca_partial(B_get_row, B_get_col, B.shape, rtol=1e-2, display=True)
+        U, Wt, row_inds, col_inds = aca_partial(B_get_row, B_get_col, B.shape, rtol=1e-2, display=True, required_successes=3)
 
-        rank = len(row_inds)
-        U = np.array(uu).T
-        Wt = np.array(ww)
+        rows_sampled = len(row_inds)
+        rank = U.shape[1]
         B_aca = U @ Wt
         err_aca = np.linalg.norm(B_aca - B) / np.linalg.norm(B)
 
         U_svd, ss_svd, Vt_svd = np.linalg.svd(B, 0)
         B_svd = U_svd[:,:rank] @ np.diag(ss_svd[:rank]) @ Vt_svd[:rank, :]
         err_svd = np.linalg.norm(B_svd - B) / np.linalg.norm(B)
-        print('rank=', rank, ', err_aca=', err_aca, ', err_svd=', err_svd)
+        print('rows_sampled=', rows_sampled, ', rank=', rank, ', err_aca=', err_aca, ', err_svd=', err_svd)
     Out:
-        k= 0 , relerr_estimate= 1.0000000000000002 , num_successes= 0
-        k= 1 , relerr_estimate= 0.9414152902898599 , num_successes= 0
-        k= 2 , relerr_estimate= 0.038759420958288666 , num_successes= 0
-        k= 3 , relerr_estimate= 0.02903746410600461 , num_successes= 0
-        k= 4 , relerr_estimate= 0.04551107924027933 , num_successes= 0
-        k= 5 , relerr_estimate= 0.0026704977816689197 , num_successes= 0
-        k= 6 , relerr_estimate= 0.002351820583877269 , num_successes= 1
-        k= 7 , relerr_estimate= 0.0012760090490301702 , num_successes= 2
-        k= 8 , relerr_estimate= 9.351347289873483e-05 , num_successes= 3
-        k= 9 , relerr_estimate= 3.835674291368529e-05 , num_successes= 4
-        rtol= 0.01  achieved.
-        rank= 10 , err_aca= 2.5737653108161734e-05 , err_svd= 3.2868723166024736e-06
+        k= 0 , ii= 252 , jj= 0 , relerr_estimate= 1.0000000000000002 , num_successes= 0
+        k= 1 , ii= 0 , jj= 16 , relerr_estimate= 0.9380037647362998 , num_successes= 0
+        k= 2 , ii= 1 , jj= 1 , relerr_estimate= 0.040137009277809756 , num_successes= 0
+        k= 3 , ii= 2 , jj= 4 , relerr_estimate= 0.029748192599424506 , num_successes= 0
+        k= 4 , ii= 5 , jj= 114 , relerr_estimate= 0.044441738215922476 , num_successes= 0
+        k= 5 , ii= 15 , jj= 2 , relerr_estimate= 0.002607003649757758 , num_successes= 0
+        k= 6 , ii= 23 , jj= 42 , relerr_estimate= 0.0023913311106377277 , num_successes= 0
+        k= 7 , ii= 372 , jj= 374 , relerr_estimate= 0.0013204129706175442 , num_successes= 1
+        k= 8 , ii= 125 , jj= 9 , relerr_estimate= 0.00015167257046685222 , num_successes= 2
+        rtol_safe= 0.0025  achieved.
+        rows_sampled= 9 , rank= 5 , err_aca= 0.0036988020800923184 , err_svd= 0.003690532459097194
     '''
     rows_to_avoid = [] if rows_to_avoid is None else rows_to_avoid
     candidate_rows = np.ones(A_shape[0], dtype=bool)
@@ -159,8 +157,8 @@ def aca_partial(
         candidate_rows_list = np.arange(A_shape[0])[candidate_rows]
         return candidate_rows_list[np.random.randint(len(candidate_rows_list))]
 
-    # first_row = np.random.randint(A_shape[0]) if first_row is None else first_row
-    rtol_squared = rtol * rtol
+    rtol_safe = rtol * aca_safety_factor
+    rtol_safe_squared = rtol_safe * rtol_safe
     max_rank = np.min([np.min(A_shape), max_rank])
     row_inds = []
     col_inds = []
@@ -214,11 +212,11 @@ def aca_partial(
         ii_candidate = np.argmax(np.abs(R_col_j[candidate_rows]))
         ii = np.arange(A_shape[0])[candidate_rows][ii_candidate]
 
-        if (norm_uk * norm_vk) ** 2 < rtol_squared * norm_Ak_squared:
+        if (norm_uk * norm_vk) ** 2 < rtol_safe_squared * norm_Ak_squared:
             num_successes += 1
             if num_successes >= required_successes:
                 if display:
-                    print('rtol=', rtol, ' achieved.')
+                    print('rtol_safe=', rtol_safe, ' achieved.')
                 break
             ii = get_random_candidate_row()
         else:
@@ -226,6 +224,9 @@ def aca_partial(
 
     U = np.array(uu).T
     Vt = np.array(vv)
+
+    if recompress:
+        U, Vt = recompress_low_rank_approximation(U, Vt, rtol*recompress_safety_factor)
 
     return U, Vt, row_inds, col_inds
 
