@@ -85,6 +85,9 @@ def aca_full(
     return row_inds, col_inds, uu, vv
 
 
+import typing as typ
+
+
 def aca_partial(
         A_get_row: typ.Callable[[int], np.ndarray],
         A_get_col: typ.Callable[[int], np.ndarray],
@@ -92,7 +95,9 @@ def aca_partial(
         max_rank: int = 100,
         rtol: float = 1e-2,
         display=False,
-        error_estimator_rolling_window_size: int = 5
+        required_successes: int = 10,
+        first_row: int = None,
+        rows_to_avoid: typ.List[int] = None
 ) -> typ.Tuple[typ.List[int],  # row_inds=[i1, i2, ..., ik]
                typ.List[int],  # col_inds=[j1, j2, ...m jk]
                typ.List[np.ndarray],  # uu = [u1, u2, ..., uk]
@@ -145,6 +150,15 @@ def aca_partial(
         rtol= 0.01  achieved.
         rank= 10 , err_aca= 2.5737653108161734e-05 , err_svd= 3.2868723166024736e-06
     '''
+    rows_to_avoid = [] if rows_to_avoid is None else rows_to_avoid
+    candidate_rows = np.ones(A_shape[0], dtype=bool)
+    candidate_rows[rows_to_avoid] = False
+
+    def get_random_candidate_row():
+        candidate_rows_list = np.arange(A_shape[0])[candidate_rows]
+        return candidate_rows_list[np.random.randint(len(candidate_rows_list))]
+
+    # first_row = np.random.randint(A_shape[0]) if first_row is None else first_row
     rtol_squared = rtol * rtol
     max_rank = np.min([np.min(A_shape), max_rank])
     row_inds = []
@@ -159,19 +173,22 @@ def aca_partial(
         return A_get_col(jj).reshape(-1) - np.sum([u * v[jj] for u, v in zip(uu, vv)], axis=0)
 
     norm_Ak_squared = 0.0
-    ii = np.random.randint(A_shape[0])  # 0
+    norm_uk = 0.0
+    norm_vk = 0.0
+    ii = get_random_candidate_row() if first_row is None else first_row
     num_successes = 0
     for k in range(max_rank):
         R_row_i = R_get_row(ii)
+        candidate_rows[ii] = False
         jj = np.argmax(np.abs(R_row_i))
         delta = R_row_i[jj]
+        R_col_j = R_get_col(jj)
         if delta == 0.0:
             if len(row_inds) == np.min(A_shape) - 1:
                 if display:
                     print('Matrix recovered')
                 break
         else:
-            R_col_j = R_get_col(jj)
             u = R_col_j.copy()
             v = R_row_i.copy() / delta
             norm_uk = np.linalg.norm(u)
@@ -183,20 +200,26 @@ def aca_partial(
             col_inds.append(jj)
             norm_Ak_squared += np.sum([np.dot(u, uj) * np.dot(v, vj) for uj, vj in zip(uu, vv)])
 
-        R_col_j_modified = R_col_j
-        R_col_j_modified[row_inds] = 0.0
-        ii = np.argmax(np.abs(R_col_j_modified))
-
         if display:
             relerr_estimate = norm_uk * norm_vk / np.sqrt(norm_Ak_squared)
-            print('k=', k, ', relerr_estimate=', relerr_estimate, ', num_successes=', num_successes)
+            print('k=', k, ', ii=', ii, ', jj=', jj, ', relerr_estimate=', relerr_estimate, ', num_successes=',
+                  num_successes)
+
+        if np.all(np.logical_not(candidate_rows)):
+            if display:
+                print('no more rows to choose')
+            break
+
+        ii_candidate = np.argmax(np.abs(R_col_j[candidate_rows]))
+        ii = np.arange(A_shape[0])[candidate_rows][ii_candidate]
 
         if (norm_uk * norm_vk) ** 2 < rtol_squared * norm_Ak_squared:
             num_successes += 1
-            if num_successes >= error_estimator_rolling_window_size:
+            if num_successes >= required_successes:
                 if display:
                     print('rtol=', rtol, ' achieved.')
                 break
+            ii = get_random_candidate_row()
         else:
             num_successes = 0
 
