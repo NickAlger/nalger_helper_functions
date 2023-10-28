@@ -98,13 +98,14 @@ def aca_partial(
         required_successes: int = 10,
         first_row: int = None,
         rows_to_avoid: typ.List[int] = None
-) -> typ.Tuple[typ.List[int],  # row_inds=[i1, i2, ..., ik]
-               typ.List[int],  # col_inds=[j1, j2, ...m jk]
-               typ.List[np.ndarray],  # uu = [u1, u2, ..., uk]
-               typ.List[np.ndarray]  # vvt= [v1, v2, ..., vk]
+) -> typ.Tuple[
+    np.ndarray, # U
+    np.ndarray, # Vt
+    typ.List[int],  # row_inds=[i1, i2, ..., ik]
+    typ.List[int],  # col_inds=[j1, j2, ...m jk]
 ]:
     '''Constructs low rank approximation of matrix A by sampling rows and columns.
-    A =approx= u1 @ v1.T + u2 @ v2.T + ... + uk @ vk.T
+    A =approx= u1 @ v1.T + u2 @ v2.T + ... + uk @ vk.T = U @ Vt
 
     See Algorithm 4 (ACA with partial pivoting) on page 16 in:
     Jonas Ballani and Daniel Kressner.
@@ -223,7 +224,51 @@ def aca_partial(
         else:
             num_successes = 0
 
-    return row_inds, col_inds, uu, vv
+    U = np.array(uu).T
+    Vt = np.array(vv)
+
+    return U, Vt, row_inds, col_inds
+
+
+def recompress_low_rank_approximation(
+        X: np.ndarray, # shape=(N,r)
+        Y: np.ndarray, # shape=(r,M)
+        rtol: float
+) -> typ.Tuple[np.ndarray, np.ndarray]:
+    '''Recompresses low rank matrix A = X @ Y to reduce size of factors X and Y.
+
+    In:
+        initial_rank = 50
+        rtol = 5e-2
+        X = np.random.randn(500, initial_rank)
+        XXt = X @ X.T
+        X = XXt @ XXt @ XXt @ X
+
+        Y = np.random.randn(initial_rank, 600)
+        YtY = Y.T @ Y
+        Y = Y @ YtY @ YtY @ YtY
+
+        X2, Y2 = recompress_low_rank_approximation(X, Y, rtol)
+        compressed_rank = X2.shape[1]
+
+        A = X @ Y
+        trunc_err = np.linalg.norm(X2 @ Y2 - A, 2) / np.linalg.norm(A, 2)
+        print('initial_rank=', initial_rank, ', compressed_rank=', compressed_rank)
+        print('trunc_err=', trunc_err, ', rtol=', rtol)
+    Out:
+        initial_rank= 50 , compressed_rank= 24
+        trunc_err= 0.04953604235214692 , rtol= 0.05
+    '''
+    # A = X @ Y
+    QX, RX = np.linalg.qr(X, mode='reduced')
+    QYt, RYt = np.linalg.qr(Y.T, mode='reduced')
+    U, ss, Vt = np.linalg.svd(RX @ RYt.T)
+
+    rank = np.sum(ss >= rtol*ss[0])
+    X2 = QX @ U[:,:rank]
+    Y2 = ss[:rank].reshape((-1,1)) * (Vt[:rank,:] @ QYt.T)
+    return X2, Y2
+
 
 # Experimental / not tested below here
 

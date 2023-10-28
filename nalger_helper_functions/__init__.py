@@ -318,6 +318,6 @@ except ImportError:
     print('lbfgs not loaded')
 
 try:
-    from .cross_approximation import aca_full, aca_partial
+    from .cross_approximation import aca_full, aca_partial, recompress_low_rank_approximation
 except ImportError:
     print('aca_full, aca_partial not loaded')
