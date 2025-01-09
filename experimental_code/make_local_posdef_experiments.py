@@ -142,3 +142,232 @@ plt.title('A_sym_plus_tilde-A_sym_plus')
 
 err = np.linalg.norm(A_sym_plus_tilde - A_sym_plus) / np.linalg.norm(A_sym_plus)
 print('err=', err)
+
+####
+
+from dataclasses import dataclass
+import typing as typ
+import functools as ft
+
+@dataclass(frozen=True)
+class PatchDenseMatrix:
+    num_rows: int
+    num_cols: int
+    patch_matrices: typ.Tuple[np.ndarray]
+    patch_row_inds: typ.Tuple[typ.Tuple[int]]
+    patch_col_inds: typ.Tuple[typ.Tuple[int]]
+
+    def __post_init__(me):
+        assert(len(me.patch_matrices) == me.num_patches)
+        assert(len(me.patch_row_inds) == me.num_patches)
+        assert(len(me.patch_col_inds) == me.num_patches)
+        assert(me.num_rows >= 0)
+        assert(me.num_cols >= 0)
+
+        for M, rr, cc in zip(me.patch_matrices, me.patch_row_inds, me.patch_col_inds):
+            assert(M.shape == (len(rr), len(cc)))
+
+        for rr in me.patch_row_inds:
+            assert(np.all(np.array(rr) >= 0))
+            assert(np.all(np.array(rr) < me.num_rows))
+
+        for cc in me.patch_col_inds:
+            assert(np.all(np.array(cc) >= 0))
+            assert(np.all(np.array(cc) < me.num_cols))
+
+    @ft.cached_property
+    def num_patches(me) -> int:
+        return len(me.patch_matrices)
+
+    def matvec(
+            me,
+            X: np.ndarray,  # shape=(me.num_cols, K) or (me.num_cols,)
+    ) -> np.ndarray:        # shape=(me.num_rows, K) or (me.num_rows,)
+        if len(X.shape) == 1: # only one vector to matvec
+            return me.matvec(X.reshape((-1,1))).reshape(-1)
+
+        assert(len(X.shape) == 2)
+        K = X.shape[1]
+        assert(X.shape == (me.num_cols, K))
+
+        Y = np.zeros(me.num_rows, K)
+        for M, rr, cc in zip(me.patch_matrices, me.patch_row_inds, me.patch_col_inds):
+            Y[rr, :] += M @ X[cc, :]
+        return Y
+
+    def rmatvec(
+            me,
+            Y: np.ndarray,  # shape=(me.num_rows, K) or (me.num_rows,)
+    ) -> np.ndarray:        # shape=(me.num_cols, K) or (me.num_cols,)
+        if len(Y.shape) == 1: # only one vector to matvec
+            return me.matvec(Y.reshape((-1,1))).reshape(-1)
+
+        assert(len(Y.shape) == 2)
+        K = Y.shape[1]
+        assert(Y.shape == (me.num_rows, K))
+
+        X = np.zeros(me.num_cols, K)
+        for M, rr, cc in zip(me.patch_matrices, me.patch_row_inds, me.patch_col_inds):
+            X[cc, :] += M.T @ Y[rr, :]
+        return Y
+
+    def to_dense(me) -> np.ndarray: # shape=(me.num_rows, me.num_cols)
+        A = np.zeros((me.num_rows, me.num_cols))
+        for M, rr, cc in zip(me.patch_matrices, me.patch_row_inds, me.patch_col_inds):
+            A[np.ix_(rr, cc)] += M
+        return A
+
+    def get_patch_contribution(me, ind: int) -> np.ndarray: # shape=(me.num_rows, me.num_cols)
+        Ai = np.zeros((me.num_rows, me.num_cols))
+        Ai[np.ix_(me.patch_row_inds[ind], me.patch_col_inds[ind])] = me.patch_matrices[ind]
+        return Ai
+
+    def make_patches_positive_semidefinite(me) -> 'PatchDenseMatrix':
+        MM_plus: typ.List[np.ndarray] = []
+        for M in me.patch_matrices:
+            ee, P = np.linalg.eigh(0.5 * (M + M.T))
+            M_plus = P @ np.diag(ee * (ee > 0)) @ P.T
+            MM_plus.append(M_plus)
+        return PatchDenseMatrix(me.num_rows, me.num_cols, tuple(MM_plus), me.patch_row_inds, me.patch_col_inds)
+
+
+def Gaussian_Psi_func(
+        row_centroid: np.ndarray, # shape=(dr,)
+        col_centroid: np.ndarray, # shape=(dc,)
+        row_length_scales: np.ndarray, # shape=(dr,)
+        col_length_scales: np.ndarray, # shape=(dc,)
+        yy_row: np.ndarray, # shape=(nr, dr)
+        xx_col: np.ndarray, # shape=(nc, dc)
+) -> np.ndarray: # shape=(nr, nc)
+    dr = len(row_centroid)
+    dc = len(col_centroid)
+    nr = yy_row.shape[0]
+    nc = xx_col.shape[0]
+    assert(row_centroid.shape == (dr,))
+    assert(col_centroid.shape == (dc,))
+    assert(row_length_scales.shape == (dr,))
+    assert(col_length_scales.shape == (dc,))
+    assert(yy_row.shape == (nr, dr))
+    assert(xx_col.shape == (nc, dc))
+    pp_row = (yy_row - row_centroid.reshape(1, dr)) / row_length_scales.reshape((1, dr))
+    pp_col = (xx_col - col_centroid.reshape(1, dc)) / col_length_scales.reshape((1, dc))
+    row_factor = np.exp(-0.5 * np.sum(pp_row**2, axis=1))
+    col_factor = np.exp(-0.5 * np.sum(pp_col**2, axis=1))
+    return np.outer(row_factor, col_factor)
+
+
+def make_matrix_partition_of_unity(
+        row_coords: np.ndarray, # shape=(num_rows, dr)
+        col_coords: np.ndarray, # shape=(num_cols, dc)
+        patch_row_inds: typ.Sequence[typ.Sequence[int]],
+        patch_col_inds: typ.Sequence[typ.Sequence[int]],
+        length_scale_factor = 0.333,
+        normalize: bool = True,
+) -> PatchDenseMatrix:
+    patch_row_inds = tuple([tuple(x) for x in patch_row_inds])
+    patch_col_inds = tuple([tuple(x) for x in patch_col_inds])
+
+    num_rows, dr = row_coords.shape
+    num_cols, dc = col_coords.shape
+    num_patches = len(patch_row_inds)
+    assert(row_coords.shape == (num_rows, dr))
+    assert(col_coords.shape == (num_cols, dc))
+    assert(len(patch_row_inds) == num_patches)
+    assert(len(patch_col_inds) == num_patches)
+
+    for rr in patch_row_inds:
+        assert(np.all(np.array(rr) >= 0))
+        assert(np.all(np.array(rr) < num_rows))
+
+    for cc in patch_col_inds:
+        assert(np.all(np.array(cc) >= 0))
+        assert(np.all(np.array(cc) < num_cols))
+
+    patch_row_maxes = [np.max(row_coords[rr, :], axis=0) for rr in patch_row_inds]
+    patch_row_mins  = [np.min(row_coords[rr, :], axis=0) for rr in patch_row_inds]
+
+    patch_col_maxes = [np.max(col_coords[cc, :], axis=0) for cc in patch_col_inds]
+    patch_col_mins  = [np.min(col_coords[cc, :], axis=0) for cc in patch_col_inds]
+
+    patch_row_centroids = [(a + b) / 2 for a, b in zip(patch_row_mins, patch_row_maxes)]
+    patch_col_centroids = [(a + b) / 2 for a, b in zip(patch_col_mins, patch_col_maxes)]
+
+    all_Psi_hat: typ.List[np.ndarray] = []
+    for ii in range(num_patches):
+        patch_nr = len(patch_row_inds[ii])
+        patch_nc = len(patch_col_inds[ii])
+        Psi_hat = np.zeros((patch_nr, patch_nc))
+        Psi_sum = np.zeros((patch_nr, patch_nc))
+        for jj in range(num_patches):
+            rows_overlap = (np.all(patch_row_mins[ii] <= patch_row_maxes[jj]) and
+                            np.all(patch_row_mins[jj] <= patch_row_maxes[ii]))
+
+            cols_overlap = (np.all(patch_col_mins[ii] <= patch_col_maxes[jj]) and
+                            np.all(patch_col_mins[jj] <= patch_col_maxes[ii]))
+
+            patches_overlap = (rows_overlap and cols_overlap)
+            if patches_overlap or (ii==jj): # ii==jj condition shouldn't be necessary
+                row_length_scales = length_scale_factor * (patch_row_maxes[jj] - patch_row_mins[jj]) / 2
+                col_length_scales = length_scale_factor * (patch_col_maxes[jj] - patch_col_mins[jj]) / 2
+                Psi_ij = Gaussian_Psi_func(
+                    patch_row_centroids[jj],
+                    patch_col_centroids[jj],
+                    row_length_scales,
+                    col_length_scales,
+                    row_coords[patch_row_inds[ii], :],
+                    col_coords[patch_col_inds[ii], :],
+                )
+                Psi_sum += Psi_ij
+                if ii == jj:
+                    Psi_hat = Psi_ij
+        if normalize:
+            Psi_hat = Psi_hat / Psi_sum
+        all_Psi_hat.append(Psi_hat)
+
+    return PatchDenseMatrix(num_rows, num_cols, tuple(all_Psi_hat), patch_row_inds, patch_col_inds)
+
+
+tt = np.linspace(0, 10, 1000)
+patch_inds = [
+    list(np.arange(0,400, dtype=int)),
+    list(np.arange(200,600, dtype=int)),
+    list(np.arange(400,800, dtype=int)),
+    list(np.arange(600,1000, dtype=int)),
+]
+
+row_coords = tt.reshape((-1,1))
+col_coords = row_coords
+patch_row_inds = patch_inds
+patch_col_inds = patch_inds
+
+all_Psi = make_matrix_partition_of_unity(
+        row_coords,
+        col_coords,
+        patch_row_inds,
+        patch_col_inds,
+        normalize=False,
+)
+
+plt.figure(figsize=(12,5))
+for ii in range(all_Psi.num_patches):
+    plt.subplot(1,all_Psi.num_patches,ii+1)
+    plt.imshow(all_Psi.get_patch_contribution(ii))
+    plt.title('Psi'+str(ii))
+
+all_Psi_hat = make_matrix_partition_of_unity(
+        row_coords,
+        col_coords,
+        patch_row_inds,
+        patch_col_inds,
+        normalize=True,
+)
+
+plt.figure(figsize=(12,5))
+for ii in range(all_Psi_hat.num_patches):
+    plt.subplot(1,all_Psi_hat.num_patches,ii+1)
+    plt.imshow(all_Psi_hat.get_patch_contribution(ii))
+    plt.title('Psi_hat'+str(ii))
+
+plt.figure()
+plt.imshow(all_Psi_hat.to_dense())
+plt.title('Sum of all Psi_hat')
