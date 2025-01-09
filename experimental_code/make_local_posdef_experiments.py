@@ -232,28 +232,54 @@ class PatchDenseMatrix:
 
 
 def Gaussian_Psi_func(
-        row_centroid: np.ndarray, # shape=(dr,)
-        col_centroid: np.ndarray, # shape=(dc,)
-        row_length_scales: np.ndarray, # shape=(dr,)
-        col_length_scales: np.ndarray, # shape=(dc,)
+        # row_centroid: np.ndarray, # shape=(dr,)
+        # col_centroid: np.ndarray, # shape=(dc,)
+        row_min: np.ndarray, # shape=(dr,)
+        row_max: np.ndarray, # shape=(dr,)
+        col_min: np.ndarray, # shape=(dc,)
+        col_max: np.ndarray, # shape=(dc,)
+        length_scale_factor: float,
+        # row_length_scales: np.ndarray, # shape=(dr,)
+        # col_length_scales: np.ndarray, # shape=(dc,)
         yy_row: np.ndarray, # shape=(nr, dr)
         xx_col: np.ndarray, # shape=(nc, dc)
 ) -> np.ndarray: # shape=(nr, nc)
-    dr = len(row_centroid)
-    dc = len(col_centroid)
+    # dr = len(row_centroid)
+    # dc = len(col_centroid)
+    dr = len(row_min)
+    dc = len(col_min)
     nr = yy_row.shape[0]
     nc = xx_col.shape[0]
-    assert(row_centroid.shape == (dr,))
-    assert(col_centroid.shape == (dc,))
-    assert(row_length_scales.shape == (dr,))
-    assert(col_length_scales.shape == (dc,))
+    # assert(row_centroid.shape == (dr,))
+    # assert(col_centroid.shape == (dc,))
+    assert(row_min.shape == (dr,))
+    assert(row_max.shape == (dr,))
+    assert(col_min.shape == (dc,))
+    assert(col_max.shape == (dc,))
+    # assert(row_length_scales.shape == (dr,))
+    # assert(col_length_scales.shape == (dc,))
     assert(yy_row.shape == (nr, dr))
     assert(xx_col.shape == (nc, dc))
+    row_centroid = (row_max + row_min) / 2
+    col_centroid = (col_max + col_min) / 2
+
+    row_length_scales = length_scale_factor * (row_max - row_min) / 2
+    col_length_scales = length_scale_factor * (col_max - col_min) / 2
+
     pp_row = (yy_row - row_centroid.reshape(1, dr)) / row_length_scales.reshape((1, dr))
     pp_col = (xx_col - col_centroid.reshape(1, dc)) / col_length_scales.reshape((1, dc))
     row_factor = np.exp(-0.5 * np.sum(pp_row**2, axis=1))
     col_factor = np.exp(-0.5 * np.sum(pp_col**2, axis=1))
-    return np.outer(row_factor, col_factor)
+    row_mask = np.logical_and(
+        np.all(row_min.reshape((1,-1)) <= yy_row, axis=1),
+        np.all(yy_row <= row_max.reshape((1,-1)), axis=1)
+    )
+    col_mask = np.logical_and(
+        np.all(col_min.reshape((1, -1)) <= xx_col, axis=1),
+        np.all(xx_col <= col_max.reshape((1, -1)), axis=1)
+    )
+
+    return np.outer(row_factor * row_mask, col_factor * col_mask)
 
 
 def make_matrix_partition_of_unity(
@@ -261,7 +287,7 @@ def make_matrix_partition_of_unity(
         col_coords: np.ndarray, # shape=(num_cols, dc)
         patch_row_inds: typ.Sequence[typ.Sequence[int]],
         patch_col_inds: typ.Sequence[typ.Sequence[int]],
-        length_scale_factor = 0.333,
+        length_scale_factor = 0.33,
         normalize: bool = True,
 ) -> PatchDenseMatrix:
     patch_row_inds = tuple([tuple(x) for x in patch_row_inds])
@@ -289,8 +315,8 @@ def make_matrix_partition_of_unity(
     patch_col_maxes = [np.max(col_coords[cc, :], axis=0) for cc in patch_col_inds]
     patch_col_mins  = [np.min(col_coords[cc, :], axis=0) for cc in patch_col_inds]
 
-    patch_row_centroids = [(a + b) / 2 for a, b in zip(patch_row_mins, patch_row_maxes)]
-    patch_col_centroids = [(a + b) / 2 for a, b in zip(patch_col_mins, patch_col_maxes)]
+    # patch_row_centroids = [(a + b) / 2 for a, b in zip(patch_row_mins, patch_row_maxes)]
+    # patch_col_centroids = [(a + b) / 2 for a, b in zip(patch_col_mins, patch_col_maxes)]
 
     all_Psi_hat: typ.List[np.ndarray] = []
     for ii in range(num_patches):
@@ -306,14 +332,19 @@ def make_matrix_partition_of_unity(
                             np.all(patch_col_mins[jj] <= patch_col_maxes[ii]))
 
             patches_overlap = (rows_overlap and cols_overlap)
+            print('ii=', ii, ', jj=', jj, 'patches_overlap=', patches_overlap)
+
             if patches_overlap or (ii==jj): # ii==jj condition shouldn't be necessary
                 row_length_scales = length_scale_factor * (patch_row_maxes[jj] - patch_row_mins[jj]) / 2
                 col_length_scales = length_scale_factor * (patch_col_maxes[jj] - patch_col_mins[jj]) / 2
                 Psi_ij = Gaussian_Psi_func(
-                    patch_row_centroids[jj],
-                    patch_col_centroids[jj],
-                    row_length_scales,
-                    col_length_scales,
+                    # patch_row_centroids[jj],
+                    # patch_col_centroids[jj],
+                    patch_row_mins[jj], patch_row_maxes[jj],
+                    patch_col_mins[jj], patch_col_maxes[jj],
+                    length_scale_factor,
+                    # row_length_scales,
+                    # col_length_scales,
                     row_coords[patch_row_inds[ii], :],
                     col_coords[patch_col_inds[ii], :],
                 )
