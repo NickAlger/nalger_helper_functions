@@ -37,7 +37,7 @@ class LowRankMatrix:
         if len(X.shape) == 1:
             return me.matvec(X.reshape(-1,1)).reshape(-1)
         assert(len(X.shape) == 2)
-        assert(X.shape[0] == (me.shape[1],))
+        assert(X.shape[0] == me.shape[1])
         return me.left_factor @ (me.right_factor @ X)
 
     def rmatvec(
@@ -47,7 +47,7 @@ class LowRankMatrix:
         if len(Y.shape) == 1:
             return me.matvec(Y.reshape(-1, 1)).reshape(-1)
         assert(len(Y.shape) == 2)
-        assert(Y.shape[0] == (me.shape[0],))
+        assert(Y.shape[0] == me.shape[0])
         return me.right_factor.T @ (me.left_factor.T @ Y)
 
 
@@ -106,7 +106,7 @@ class PatchLowRankMatrix:
         K = X.shape[1]
         assert (X.shape == (me.shape[1], K))
 
-        Y = np.zeros(me.shape[0], K)
+        Y = np.zeros((me.shape[0], K))
         for M, rr, cc in zip(
                 me.patch_matrices,
                 me.patch_row_inds,
@@ -126,14 +126,14 @@ class PatchLowRankMatrix:
         K = Y.shape[1]
         assert (Y.shape == (me.shape[0], K))
 
-        X = np.zeros(me.shape[1], K)
+        X = np.zeros((me.shape[1], K))
         for M, rr, cc in zip(
                 me.patch_matrices,
                 me.patch_row_inds,
                 me.patch_col_inds
         ):
             X[cc, :] += M.rmatvec(Y[rr, :])
-        return Y
+        return X
 
 
 def Gaussian_Psi_func(
@@ -441,6 +441,18 @@ A2 = A_patchwise.to_dense()
 
 partition_error = np.linalg.norm(A2 - A) / np.linalg.norm(A)
 print('partition_error=', partition_error)
+
+X = np.random.randn(A2.shape[1], 13)
+Y = A2 @ X
+Y2 = A_patchwise.matvec(X)
+err_matvec = np.linalg.norm(Y - Y2) / np.linalg.norm(Y)
+print('err_matvec=', err_matvec)
+
+Y = np.random.randn(A2.shape[0], 11)
+X = A2.T @ Y
+X2 = A_patchwise.rmatvec(Y)
+err_rmatvec = np.linalg.norm(X - X2) / np.linalg.norm(X)
+print('err_rmatvec=', err_rmatvec)
 
 #### Break symmetrized matrix, A_sym, into pieces using partition of unity.
 
