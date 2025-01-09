@@ -232,32 +232,22 @@ class PatchDenseMatrix:
 
 
 def Gaussian_Psi_func(
-        # row_centroid: np.ndarray, # shape=(dr,)
-        # col_centroid: np.ndarray, # shape=(dc,)
         row_min: np.ndarray, # shape=(dr,)
         row_max: np.ndarray, # shape=(dr,)
         col_min: np.ndarray, # shape=(dc,)
         col_max: np.ndarray, # shape=(dc,)
         length_scale_factor: float,
-        # row_length_scales: np.ndarray, # shape=(dr,)
-        # col_length_scales: np.ndarray, # shape=(dc,)
         yy_row: np.ndarray, # shape=(nr, dr)
         xx_col: np.ndarray, # shape=(nc, dc)
 ) -> np.ndarray: # shape=(nr, nc)
-    # dr = len(row_centroid)
-    # dc = len(col_centroid)
     dr = len(row_min)
     dc = len(col_min)
     nr = yy_row.shape[0]
     nc = xx_col.shape[0]
-    # assert(row_centroid.shape == (dr,))
-    # assert(col_centroid.shape == (dc,))
     assert(row_min.shape == (dr,))
     assert(row_max.shape == (dr,))
     assert(col_min.shape == (dc,))
     assert(col_max.shape == (dc,))
-    # assert(row_length_scales.shape == (dr,))
-    # assert(col_length_scales.shape == (dc,))
     assert(yy_row.shape == (nr, dr))
     assert(xx_col.shape == (nc, dc))
     row_centroid = (row_max + row_min) / 2
@@ -280,6 +270,7 @@ def Gaussian_Psi_func(
     )
 
     return np.outer(row_factor * row_mask, col_factor * col_mask)
+    # return np.outer(row_factor, col_factor)
 
 
 def make_matrix_partition_of_unity(
@@ -315,9 +306,6 @@ def make_matrix_partition_of_unity(
     patch_col_maxes = [np.max(col_coords[cc, :], axis=0) for cc in patch_col_inds]
     patch_col_mins  = [np.min(col_coords[cc, :], axis=0) for cc in patch_col_inds]
 
-    # patch_row_centroids = [(a + b) / 2 for a, b in zip(patch_row_mins, patch_row_maxes)]
-    # patch_col_centroids = [(a + b) / 2 for a, b in zip(patch_col_mins, patch_col_maxes)]
-
     all_Psi_hat: typ.List[np.ndarray] = []
     for ii in range(num_patches):
         patch_nr = len(patch_row_inds[ii])
@@ -332,19 +320,12 @@ def make_matrix_partition_of_unity(
                             np.all(patch_col_mins[jj] <= patch_col_maxes[ii]))
 
             patches_overlap = (rows_overlap and cols_overlap)
-            print('ii=', ii, ', jj=', jj, 'patches_overlap=', patches_overlap)
 
             if patches_overlap or (ii==jj): # ii==jj condition shouldn't be necessary
-                row_length_scales = length_scale_factor * (patch_row_maxes[jj] - patch_row_mins[jj]) / 2
-                col_length_scales = length_scale_factor * (patch_col_maxes[jj] - patch_col_mins[jj]) / 2
                 Psi_ij = Gaussian_Psi_func(
-                    # patch_row_centroids[jj],
-                    # patch_col_centroids[jj],
                     patch_row_mins[jj], patch_row_maxes[jj],
                     patch_col_mins[jj], patch_col_maxes[jj],
                     length_scale_factor,
-                    # row_length_scales,
-                    # col_length_scales,
                     row_coords[patch_row_inds[ii], :],
                     col_coords[patch_col_inds[ii], :],
                 )
@@ -358,13 +339,106 @@ def make_matrix_partition_of_unity(
     return PatchDenseMatrix(num_rows, num_cols, tuple(all_Psi_hat), patch_row_inds, patch_col_inds)
 
 
+def make_partitioned_matrix(
+        get_matrix_block: typ.Callable[
+            [
+                typ.List[int], # row inds, len=nrow_block
+                typ.List[int], # col_inds, len=ncol_block
+            ],
+            np.ndarray, # A[np.ix_(row_inds, col_inds)], shape=(nrow_block, ncol_block)
+        ],
+        partition_of_unity: PatchDenseMatrix,
+) -> PatchDenseMatrix:
+    masked_AA = []
+    for rr, cc, mask in zip(
+            partition_of_unity.patch_row_inds,
+            partition_of_unity.patch_col_inds,
+            partition_of_unity.patch_matrices
+    ):
+        masked_AA.append(get_matrix_block(list(rr), list(cc)) * mask)
+
+    return PatchDenseMatrix(
+        partition_of_unity.num_rows, partition_of_unity.num_cols,
+        tuple(masked_AA),
+        partition_of_unity.patch_row_inds, partition_of_unity.patch_col_inds,
+    )
+
+#
+
 tt = np.linspace(0, 10, 1000)
+
+V = np.sqrt(1.0 - tt/1.5 + tt**2/3.1 - tt**3/50) # spatially varying volume
+mu = tt + 0.1 * np.sin(5*tt) # spatially varying mean
+Sigma = (0.5 + (10-tt)/30)**2
+
+plt.figure()
+plt.plot(tt, V)
+plt.plot(tt, mu)
+plt.plot(tt, Sigma)
+plt.title('spatially varying moments')
+plt.legend(['V', 'mu', 'Sigma'])
+
+def get_A_block(rr, cc):
+    block = np.zeros((len(rr), len(cc)))
+    for i in range(len(rr)):
+        r = rr[i]
+        pp = tt[list(cc)] - mu[r]
+        block[i,:] = V[r]*np.exp(-0.5 * pp**2 / Sigma[r])
+    return block
+
+all_inds = np.arange(len(tt), dtype=int)
+A = get_A_block(all_inds, all_inds)
+
+plt.figure(figsize=(12,5))
+plt.subplot(1,2,1)
+for ii in [0,200,400,800,999]:
+    plt.plot(tt, A[ii,:])
+plt.title('rows of A')
+
+plt.subplot(1,2,2)
+for jj in [0,200,400,800,999]:
+    plt.plot(tt, A[:,jj])
+plt.title('cols of A')
+
+#
+
 patch_inds = [
     list(np.arange(0,400, dtype=int)),
     list(np.arange(200,600, dtype=int)),
     list(np.arange(400,800, dtype=int)),
     list(np.arange(600,1000, dtype=int)),
 ]
+
+# patch_inds = [
+#     list(np.arange(0,300, dtype=int)),
+#     list(np.arange(200,500, dtype=int)),
+#     list(np.arange(400,700, dtype=int)),
+#     list(np.arange(600,900, dtype=int)),
+#     list(np.arange(800,1000, dtype=int)),
+# ]
+
+# patch_inds = [
+#     list(np.arange(0,300, dtype=int)),
+#     list(np.arange(100,400, dtype=int)),
+#     list(np.arange(200,500, dtype=int)),
+#     list(np.arange(300,600, dtype=int)),
+#     list(np.arange(400,700, dtype=int)),
+#     list(np.arange(500,800, dtype=int)),
+#     list(np.arange(600,900, dtype=int)),
+#     list(np.arange(700,1000, dtype=int)),
+# ]
+
+# patch_inds = [
+#     list(np.arange(0,200, dtype=int)),
+#     list(np.arange(100,300, dtype=int)),
+#     list(np.arange(200,400, dtype=int)),
+#     list(np.arange(300,500, dtype=int)),
+#     list(np.arange(400,600, dtype=int)),
+#     list(np.arange(500,700, dtype=int)),
+#     list(np.arange(600,800, dtype=int)),
+#     list(np.arange(700,900, dtype=int)),
+#     list(np.arange(800,1000, dtype=int)),
+# ]
 
 row_coords = tt.reshape((-1,1))
 col_coords = row_coords
@@ -402,3 +476,47 @@ for ii in range(all_Psi_hat.num_patches):
 plt.figure()
 plt.imshow(all_Psi_hat.to_dense())
 plt.title('Sum of all Psi_hat')
+
+#
+
+A_partitioned = make_partitioned_matrix(get_A_block, all_Psi_hat)
+
+A2 = A_partitioned.to_dense()
+
+partition_error = np.linalg.norm(A2 - A) / np.linalg.norm(A)
+print('partition_error=', partition_error)
+
+#
+
+Asym = 0.5 * (A + A.T)
+
+get_Asym_block = lambda rr, cc: 0.5 * (get_A_block(rr,cc) + get_A_block(cc,rr).T)
+
+Asym_partitioned = make_partitioned_matrix(get_Asym_block, all_Psi_hat)
+
+Asym2 = Asym_partitioned.to_dense()
+
+sym_partition_error = np.linalg.norm(Asym2 - Asym) / np.linalg.norm(Asym)
+print('sym_partition_error=', sym_partition_error)
+
+#
+
+ee, P = np.linalg.eigh(Asym)
+Asym_plus = P @ np.diag(ee * (ee > 0)) @ P.T
+
+Asym_plus_partitioned = Asym_partitioned.make_patches_positive_semidefinite()
+Asym_plus2 = Asym_plus_partitioned.to_dense()
+
+plus_partition_err = np.linalg.norm(Asym_plus2 - Asym_plus) / np.linalg.norm(Asym_plus)
+print('plus_partition_err=', plus_partition_err)
+
+plt.figure(figsize=(12,5))
+plt.subplot(1,3,1)
+plt.imshow(Asym_plus)
+plt.title('A_sym_plus')
+plt.subplot(1,3,2)
+plt.imshow(Asym_plus2)
+plt.title('Asym_plus2')
+plt.subplot(1,3,3)
+plt.imshow(Asym_plus-Asym_plus2)
+plt.title('Asym_plus-Asym_plus2')
