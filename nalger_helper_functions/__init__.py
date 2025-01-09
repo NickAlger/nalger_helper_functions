@@ -321,3 +321,8 @@ try:
     from .cross_approximation import aca_full, aca_partial, recompress_low_rank_approximation
 except ImportError:
     print('aca_full, aca_partial not loaded')
+
+try:
+    from .low_rank_approximation import low_rank_approximation
+except ImportError:
+    print('low_rank_approximation not loaded')

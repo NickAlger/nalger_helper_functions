@@ -11,10 +11,50 @@ import matplotlib.pyplot as plt
 #  3) adding the semi-definite pieces back together
 
 @dataclass(frozen=True)
-class PatchDenseMatrix:
-    num_rows: int
-    num_cols: int
-    patch_matrices: typ.Tuple[np.ndarray]
+class LowRankMatrix:
+    left_factor: np.ndarray
+    right_factor: np.ndarray
+
+    def __post_init__(me):
+        assert(me.left_factor.shape == (me.shape[0], me.rank))
+        assert(me.right_factor.shape == (me.rank, me.shape[1]))
+
+    @ft.cached_property
+    def shape(me) -> typ.Tuple[int, int]:
+        return (me.left_factor.shape[0], me.right_factor.shape[1])
+
+    @ft.cached_property
+    def rank(me) -> int:
+        return me.left_factor.shape[1]
+
+    def to_dense(me) -> np.ndarray:
+        return me.left_factor @ me.right_factor
+
+    def matvec(
+            me,
+            X: np.ndarray,  # shape=(num_cols, K) or (num_cols,)
+    ) -> np.ndarray:        # shape=(num_rows, K) or (num_rows,)
+        if len(X.shape) == 1:
+            return me.matvec(X.reshape(-1,1)).reshape(-1)
+        assert(len(X.shape) == 2)
+        assert(X.shape[0] == (me.shape[1],))
+        return me.left_factor @ (me.right_factor @ X)
+
+    def rmatvec(
+            me,
+            Y: np.ndarray,  # shape=(num_rows, K) or (num_rows,)
+    ) -> np.ndarray:  # shape=(num_cols, K) or (num_cols,)
+        if len(Y.shape) == 1:
+            return me.matvec(Y.reshape(-1, 1)).reshape(-1)
+        assert(len(Y.shape) == 2)
+        assert(Y.shape[0] == (me.shape[0],))
+        return me.right_factor.T @ (me.left_factor.T @ Y)
+
+
+@dataclass(frozen=True)
+class PatchLowRankMatrix:
+    shape: typ.Tuple[int, int]
+    patch_matrices: typ.Tuple[LowRankMatrix]
     patch_row_inds: typ.Tuple[typ.Tuple[int]]
     patch_col_inds: typ.Tuple[typ.Tuple[int]]
 
@@ -22,34 +62,78 @@ class PatchDenseMatrix:
         assert(len(me.patch_matrices) == me.num_patches)
         assert(len(me.patch_row_inds) == me.num_patches)
         assert(len(me.patch_col_inds) == me.num_patches)
-        assert(me.num_rows >= 0)
-        assert(me.num_cols >= 0)
+        assert(me.shape[0] >= 0)
+        assert(me.shape[1] >= 0)
 
         for M, rr, cc in zip(me.patch_matrices, me.patch_row_inds, me.patch_col_inds):
             assert(M.shape == (len(rr), len(cc)))
 
         for rr in me.patch_row_inds:
             assert(np.all(np.array(rr) >= 0))
-            assert(np.all(np.array(rr) < me.num_rows))
+            assert(np.all(np.array(rr) < me.shape[0]))
 
         for cc in me.patch_col_inds:
             assert(np.all(np.array(cc) >= 0))
-            assert(np.all(np.array(cc) < me.num_cols))
+            assert(np.all(np.array(cc) < me.shape[1]))
 
     @ft.cached_property
     def num_patches(me) -> int:
         return len(me.patch_matrices)
 
+    @ft.cached_property
+    def patch_ranks(me) -> typ.Tuple[int]:
+        return tuple([M.rank for M in me.patch_matrices])
+
     def to_dense(me) -> np.ndarray: # shape=(me.num_rows, me.num_cols)
-        A = np.zeros((me.num_rows, me.num_cols))
+        A = np.zeros(me.shape)
         for M, rr, cc in zip(me.patch_matrices, me.patch_row_inds, me.patch_col_inds):
-            A[np.ix_(rr, cc)] += M
+            A[np.ix_(rr, cc)] += M.to_dense()
         return A
 
     def get_patch_contribution(me, ind: int) -> np.ndarray: # shape=(me.num_rows, me.num_cols)
-        Ai = np.zeros((me.num_rows, me.num_cols))
-        Ai[np.ix_(me.patch_row_inds[ind], me.patch_col_inds[ind])] = me.patch_matrices[ind]
+        Ai = np.zeros(me.shape)
+        Ai[np.ix_(me.patch_row_inds[ind], me.patch_col_inds[ind])] = me.patch_matrices[ind].to_dense()
         return Ai
+
+    def matvec(
+            me,
+            X: np.ndarray,  # shape=(me.num_cols, K) or (me.num_cols,)
+    ) -> np.ndarray:  # shape=(me.num_rows, K) or (me.num_rows,)
+        if len(X.shape) == 1:  # only one vector to matvec
+            return me.matvec(X.reshape((-1, 1))).reshape(-1)
+
+        assert (len(X.shape) == 2)
+        K = X.shape[1]
+        assert (X.shape == (me.shape[1], K))
+
+        Y = np.zeros(me.shape[0], K)
+        for M, rr, cc in zip(
+                me.patch_matrices,
+                me.patch_row_inds,
+                me.patch_col_inds
+        ):
+            Y[rr, :] += M.matvec(X[cc, :])
+        return Y
+
+    def rmatvec(
+            me,
+            Y: np.ndarray,  # shape=(me.num_rows, K) or (me.num_rows,)
+    ) -> np.ndarray:  # shape=(me.num_cols, K) or (me.num_cols,)
+        if len(Y.shape) == 1:  # only one vector to matvec
+            return me.matvec(Y.reshape((-1, 1))).reshape(-1)
+
+        assert (len(Y.shape) == 2)
+        K = Y.shape[1]
+        assert (Y.shape == (me.shape[0], K))
+
+        X = np.zeros(me.shape[1], K)
+        for M, rr, cc in zip(
+                me.patch_matrices,
+                me.patch_row_inds,
+                me.patch_col_inds
+        ):
+            X[cc, :] += M.rmatvec(Y[rr, :])
+        return Y
 
 
 def Gaussian_Psi_func(
@@ -93,6 +177,24 @@ def Gaussian_Psi_func(
     return np.outer(row_factor * row_mask, col_factor * col_mask)
 
 
+def make_low_rank(
+        A: np.ndarray, # shape=(N, M)
+        rtol: float = 1e-5,
+        max_rank: int = 100,
+) -> LowRankMatrix:
+    '''||A - left_factor @ right_factor|| <= rtol * ||A|| in induced norm'''
+    U, ss, Vt = np.linalg.svd(A, full_matrices=False)
+    rank0 = np.sum(ss > rtol * ss[0])
+    if rank0 == 0:
+        left_factor = np.zeros((A.shape[0],1))
+        right_factor = np.zeros((1, A.shape[1]))
+    else:
+        rank = np.minimum(rank0, max_rank)
+        left_factor = U[:, :rank]
+        right_factor = ss[:rank].reshape((-1,1)) * Vt[:rank, :]
+    return LowRankMatrix(left_factor, right_factor)
+
+
 def make_matrix_partition_of_unity(
         row_coords: np.ndarray, # shape=(num_rows, dr)
         col_coords: np.ndarray, # shape=(num_cols, dc)
@@ -100,7 +202,9 @@ def make_matrix_partition_of_unity(
         patch_col_inds: typ.Sequence[typ.Sequence[int]],
         length_scale_factor = 0.33,
         normalize: bool = True,
-) -> PatchDenseMatrix:
+        low_rank_rtol: float = 1e-4,
+        low_rank_max_rank: int = 100,
+) -> PatchLowRankMatrix:
     patch_row_inds = tuple([tuple(x) for x in patch_row_inds])
     patch_col_inds = tuple([tuple(x) for x in patch_col_inds])
 
@@ -126,7 +230,7 @@ def make_matrix_partition_of_unity(
     patch_col_maxes = [np.max(col_coords[cc, :], axis=0) for cc in patch_col_inds]
     patch_col_mins  = [np.min(col_coords[cc, :], axis=0) for cc in patch_col_inds]
 
-    all_Psi_hat: typ.List[np.ndarray] = []
+    all_Psi_hat: typ.List[LowRankMatrix] = []
     for ii in range(num_patches):
         patch_nr = len(patch_row_inds[ii])
         patch_nc = len(patch_col_inds[ii])
@@ -154,91 +258,70 @@ def make_matrix_partition_of_unity(
                     Psi_hat = Psi_ij
         if normalize:
             Psi_hat = Psi_hat / Psi_sum
-        all_Psi_hat.append(Psi_hat)
+        all_Psi_hat.append(
+            make_low_rank(Psi_hat, rtol=low_rank_rtol, max_rank=low_rank_max_rank)
+        )
 
-    return PatchDenseMatrix(num_rows, num_cols, tuple(all_Psi_hat), patch_row_inds, patch_col_inds)
+    return PatchLowRankMatrix((num_rows, num_cols), tuple(all_Psi_hat), patch_row_inds, patch_col_inds)
 
 
 @dataclass(frozen=True)
-class PartitionedPatchDenseMatrix:
-    partition_of_unity: PatchDenseMatrix
-    patch_matrices: typ.Tuple[np.ndarray]
+class WeightedPatchLowRankMatrix:
+    weights: PatchLowRankMatrix # weights
+    patch_matrices: typ.Tuple[LowRankMatrix]
 
     def __post_init__(me):
-        assert(len(me.patch_matrices) == me.partition_of_unity.num_patches)
-        for M, A in zip(me.partition_of_unity.patch_matrices, me.patch_matrices):
+        assert(len(me.patch_matrices) == me.weights.num_patches)
+        for M, A in zip(me.weights.patch_matrices, me.patch_matrices):
             assert(M.shape == A.shape)
 
-    @ft.cached_property
-    def weighted_patch_matrices(me) -> typ.Tuple[np.ndarray]:
-        return tuple([M*A for M, A in zip(me.partition_of_unity.patch_matrices, me.patch_matrices)])
-
-    def to_dense(me) -> np.ndarray: # shape=(me.num_rows, me.num_cols)
-        Mat = np.zeros((me.partition_of_unity.num_rows, me.partition_of_unity.num_cols))
-        for MA, rr, cc in zip(
-                me.weighted_patch_matrices,
-                me.partition_of_unity.patch_row_inds,
-                me.partition_of_unity.patch_col_inds
-        ):
-            Mat[np.ix_(rr, cc)] += MA
-        return Mat
-
-    def get_patch_contribution(me, ind: int) -> np.ndarray: # shape=(me.num_rows, me.num_cols)
-        Ak = np.zeros((me.partition_of_unity.num_rows, me.partition_of_unity.num_cols))
-        ij = np.ix_(
-            me.partition_of_unity.patch_row_inds[ind],
-            me.partition_of_unity.patch_col_inds[ind],
+    def compute_weighted_patch_matrices(
+            me,
+            low_rank_max_rank: int = 100,
+            low_rank_rtol: float = 1e-5,
+    ) -> PatchLowRankMatrix:
+        all_MA_LR = []
+        for M_LR, A_LR in zip(me.weights.patch_matrices, me.patch_matrices):
+            MA_dense = M_LR.to_dense() * A_LR.to_dense()
+            MA_LR = make_low_rank(MA_dense, rtol=low_rank_rtol, max_rank=low_rank_max_rank)
+            all_MA_LR.append(MA_LR)
+        return PatchLowRankMatrix(
+            me.weights.shape, tuple(all_MA_LR), me.weights.patch_row_inds, me.weights.patch_col_inds
         )
-        Ak[ij] = me.weighted_patch_matrices[ind]
-        return Ak
 
-    def matvec(
+    # def to_dense(me) -> np.ndarray: # shape=(me.num_rows, me.num_cols)
+    #     Mat = np.zeros((me.weights.num_rows, me.weights.num_cols))
+    #     for MA, rr, cc in zip(
+    #             me.weighted_patch_matrices,
+    #             me.weights.patch_row_inds,
+    #             me.weights.patch_col_inds
+    #     ):
+    #         Mat[np.ix_(rr, cc)] += MA
+    #     return Mat
+    #
+    # def get_patch_contribution(me, ind: int) -> np.ndarray: # shape=(me.num_rows, me.num_cols)
+    #     Ak = np.zeros((me.weights.num_rows, me.weights.num_cols))
+    #     ij = np.ix_(
+    #         me.weights.patch_row_inds[ind],
+    #         me.weights.patch_col_inds[ind],
+    #     )
+    #     Ak[ij] = me.weighted_patch_matrices[ind]
+    #     return Ak
+
+    def make_patches_positive_semidefinite(
             me,
-            X: np.ndarray,  # shape=(me.num_cols, K) or (me.num_cols,)
-    ) -> np.ndarray:  # shape=(me.num_rows, K) or (me.num_rows,)
-        if len(X.shape) == 1:  # only one vector to matvec
-            return me.matvec(X.reshape((-1, 1))).reshape(-1)
-
-        assert (len(X.shape) == 2)
-        K = X.shape[1]
-        assert (X.shape == (me.partition_of_unity.num_cols, K))
-
-        Y = np.zeros(me.partition_of_unity.num_rows, K)
-        for MA, rr, cc in zip(
-                me.weighted_patch_matrices,
-                me.partition_of_unity.patch_row_inds,
-                me.partition_of_unity.patch_col_inds
-        ):
-            Y[rr, :] += MA @ X[cc, :]
-        return Y
-
-    def rmatvec(
-            me,
-            Y: np.ndarray,  # shape=(me.num_rows, K) or (me.num_rows,)
-    ) -> np.ndarray:  # shape=(me.num_cols, K) or (me.num_cols,)
-        if len(Y.shape) == 1:  # only one vector to matvec
-            return me.matvec(Y.reshape((-1, 1))).reshape(-1)
-
-        assert (len(Y.shape) == 2)
-        K = Y.shape[1]
-        assert (Y.shape == (me.partition_of_unity.num_rows, K))
-
-        X = np.zeros(me.partition_of_unity.num_cols, K)
-        for MA, rr, cc in zip(
-                me.weighted_patch_matrices,
-                me.partition_of_unity.patch_row_inds,
-                me.partition_of_unity.patch_col_inds
-        ):
-            X[cc, :] += MA.T @ Y[rr, :]
-        return Y
-
-    def make_patches_positive_semidefinite(me) -> 'PartitionedPatchDenseMatrix':
-        AA_plus: typ.List[np.ndarray] = []
-        for A in me.patch_matrices:
+            low_rank_max_rank: int = 100,
+            low_rank_rtol: float = 1e-5,
+    ) -> 'WeightedPatchLowRankMatrix':
+        AA_plus_LR: typ.List[LowRankMatrix] = []
+        for A_LR in me.patch_matrices:
+            A = A_LR.to_dense()
             ee, P = np.linalg.eigh(0.5 * (A + A.T))
             A_plus = P @ np.diag(ee * (ee > 0)) @ P.T
-            AA_plus.append(A_plus)
-        return PartitionedPatchDenseMatrix(me.partition_of_unity, tuple(AA_plus))
+            AA_plus_LR.append(
+                make_low_rank(A_plus, rtol=low_rank_rtol, max_rank=low_rank_max_rank)
+            )
+        return WeightedPatchLowRankMatrix(me.weights, tuple(AA_plus_LR))
 
 def make_partitioned_matrix(
         get_matrix_block: typ.Callable[
@@ -248,16 +331,21 @@ def make_partitioned_matrix(
             ],
             np.ndarray, # A[np.ix_(row_inds, col_inds)], shape=(nrow_block, ncol_block)
         ],
-        partition_of_unity: PatchDenseMatrix,
-) -> PartitionedPatchDenseMatrix:
-    AA = []
+        weights: PatchLowRankMatrix,
+        low_rank_max_rank: int = 100,
+        low_rank_rtol: float = 1e-4,
+) -> WeightedPatchLowRankMatrix:
+    AA_LR = []
     for rr, cc in zip(
-            partition_of_unity.patch_row_inds,
-            partition_of_unity.patch_col_inds
+            weights.patch_row_inds,
+            weights.patch_col_inds
     ):
-        AA.append(get_matrix_block(list(rr), list(cc)))
+        A = get_matrix_block(list(rr), list(cc))
+        AA_LR.append(
+            make_low_rank(A, rtol=low_rank_rtol, max_rank=low_rank_max_rank)
+        )
 
-    return PartitionedPatchDenseMatrix(partition_of_unity, tuple(AA))
+    return WeightedPatchLowRankMatrix(weights, tuple(AA_LR))
 
 
 #### Create spatially varying Gaussian kernel matrix, 'A', in 1D
@@ -346,9 +434,10 @@ plt.title('Sum of all Psi_hat')
 
 #### Break matrix, A, into pieces using partition of unity.
 
-A_partitioned = make_partitioned_matrix(get_A_block, all_Psi_hat)
+A_paritioned = make_partitioned_matrix(get_A_block, all_Psi_hat)
+A_patchwise = A_paritioned.compute_weighted_patch_matrices()
 
-A2 = A_partitioned.to_dense()
+A2 = A_patchwise.to_dense()
 
 partition_error = np.linalg.norm(A2 - A) / np.linalg.norm(A)
 print('partition_error=', partition_error)
@@ -360,8 +449,9 @@ Asym = 0.5 * (A + A.T)
 get_Asym_block = lambda rr, cc: 0.5 * (get_A_block(rr,cc) + get_A_block(cc,rr).T)
 
 Asym_partitioned = make_partitioned_matrix(get_Asym_block, all_Psi_hat)
+Asym_patchwise = Asym_partitioned.compute_weighted_patch_matrices()
 
-Asym2 = Asym_partitioned.to_dense()
+Asym2 = Asym_patchwise.to_dense()
 
 sym_partition_error = np.linalg.norm(Asym2 - Asym) / np.linalg.norm(Asym)
 print('sym_partition_error=', sym_partition_error)
@@ -372,7 +462,9 @@ ee, P = np.linalg.eigh(Asym)
 Asym_plus = P @ np.diag(ee * (ee > 0)) @ P.T
 
 Asym_plus_partitioned = Asym_partitioned.make_patches_positive_semidefinite()
-Asym_plus2 = Asym_plus_partitioned.to_dense()
+Asym_plus_patchwise = Asym_plus_partitioned.compute_weighted_patch_matrices()
+
+Asym_plus2 = Asym_plus_patchwise.to_dense()
 
 plus_partition_err = np.linalg.norm(Asym_plus2 - Asym_plus) / np.linalg.norm(Asym_plus)
 print('plus_partition_err=', plus_partition_err)
@@ -388,142 +480,3 @@ plt.subplot(1,3,3)
 plt.imshow(Asym_plus-Asym_plus2)
 plt.title('Asym_plus-Asym_plus2')
 
-######## OLD CODE BELOW HERE ########
-
-#### Create spatially varying Gaussian kernel matrix, 'A', in 1D
-
-# tt = np.linspace(0, 10, 1000)
-#
-# V = np.sqrt(1.0 - tt/1.5 + tt**2/3.1 - tt**3/50) # spatially varying volume
-# mu = tt + 0.1 * np.sin(5*tt) # spatially varying mean
-# Sigma = (0.5 + (10-tt)/30)**2
-#
-# plt.figure()
-# plt.plot(tt, V)
-# plt.plot(tt, mu)
-# plt.plot(tt, Sigma)
-# plt.title('spatially varying moments')
-# plt.legend(['V', 'mu', 'Sigma'])
-#
-# A = np.zeros((len(tt), len(tt)))
-# for ii in range(A.shape[0]):
-#     pp = tt - mu[ii]
-#     A[ii,:] = V[ii]*np.exp(-0.5 * pp**2 / Sigma[ii])
-#
-# plt.figure(figsize=(12,5))
-# plt.subplot(1,2,1)
-# for ii in [0,200,400,800,999]:
-#     plt.plot(tt, A[ii,:])
-# plt.title('rows of A')
-#
-# plt.subplot(1,2,2)
-# for jj in [0,200,400,800,999]:
-#     plt.plot(tt, A[:,jj])
-# plt.title('cols of A')
-#
-# A_sym = 0.5 * (A + A.T)
-# ee, P = np.linalg.eigh(A_sym)
-# A_sym_plus = P @ np.diag(ee * (ee > 0)) @ P.T
-#
-#
-# #### Create partition of unity on matrix space, Psik_hat
-#
-# # landmark points
-# p0 = 0.0
-# p1 = 2.0
-# p2 = 4.0
-# p3 = 6.0
-# p4 = 8.0
-# p5 = 10.0
-#
-# # un-normalized partition functions
-# psi_func = lambda x,y,p: np.exp(-0.5 * np.linalg.norm(np.array([x,y]) - np.array([p,p]))**2/(1.0**2))
-# Psi0 = np.array([[psi_func(tt[ii], tt[jj], p0) for jj in range(len(tt))] for ii in range(len(tt))])
-# Psi1 = np.array([[psi_func(tt[ii], tt[jj], p1) for jj in range(len(tt))] for ii in range(len(tt))])
-# Psi2 = np.array([[psi_func(tt[ii], tt[jj], p2) for jj in range(len(tt))] for ii in range(len(tt))])
-# Psi3 = np.array([[psi_func(tt[ii], tt[jj], p3) for jj in range(len(tt))] for ii in range(len(tt))])
-# Psi4 = np.array([[psi_func(tt[ii], tt[jj], p4) for jj in range(len(tt))] for ii in range(len(tt))])
-# Psi5 = np.array([[psi_func(tt[ii], tt[jj], p5) for jj in range(len(tt))] for ii in range(len(tt))])
-# all_Psi = [Psi0, Psi1, Psi2, Psi3, Psi4, Psi5]
-#
-# plt.figure(figsize=(12,5))
-# for ii, Psi in enumerate(all_Psi):
-#     plt.subplot(1,len(all_Psi),ii+1)
-#     plt.imshow(Psi)
-#     plt.title('Psi'+str(ii))
-#
-# # partition of unity on matrix space
-# Psi_sum = Psi0 + Psi1 + Psi2 + Psi3 + Psi4 + Psi5
-# Psi0_hat = Psi0 / Psi_sum
-# Psi1_hat = Psi1 / Psi_sum
-# Psi2_hat = Psi2 / Psi_sum
-# Psi3_hat = Psi3 / Psi_sum
-# Psi4_hat = Psi4 / Psi_sum
-# Psi5_hat = Psi5 / Psi_sum
-# all_Psi_hat = [Psi0_hat, Psi1_hat, Psi2_hat, Psi3_hat, Psi4_hat, Psi5_hat]
-#
-# plt.figure(figsize=(12,5))
-# for ii, Psi_hat in enumerate(all_Psi_hat):
-#     plt.subplot(1,len(all_Psi_hat),ii+1)
-#     plt.imshow(Psi_hat)
-#     plt.title('Psi'+str(ii)+'_hat')
-#
-# #### Break symmetrized matrix, A_sym, into pieces using partition of unity.
-#
-# A_sym0 = Psi0_hat * A_sym
-# A_sym1 = Psi1_hat * A_sym
-# A_sym2 = Psi2_hat * A_sym
-# A_sym3 = Psi3_hat * A_sym
-# A_sym4 = Psi4_hat * A_sym
-# A_sym5 = Psi5_hat * A_sym
-# all_A_sym = [A_sym0, A_sym1, A_sym2, A_sym3, A_sym4, A_sym5]
-#
-# plt.figure(figsize=(12,5))
-# for ii, A_symk in enumerate(all_A_sym):
-#     plt.subplot(1,len(all_A_sym),ii+1)
-#     plt.imshow(A_symk)
-#     plt.title('A_sym'+str(ii))
-#
-# #### Make each piece of matrix positive definite and add back together
-#
-# ee0, P0 = np.linalg.eigh(A_sym0)
-# ee1, P1 = np.linalg.eigh(A_sym1)
-# ee2, P2 = np.linalg.eigh(A_sym2)
-# ee3, P3 = np.linalg.eigh(A_sym3)
-# ee4, P4 = np.linalg.eigh(A_sym4)
-# ee5, P5 = np.linalg.eigh(A_sym5)
-#
-# plt.figure()
-# plt.plot(ee0)
-# plt.plot(ee1)
-# plt.plot(ee2)
-# plt.plot(ee3)
-# plt.plot(ee4)
-# plt.plot(ee5)
-# plt.title('eigenvalues of components of A_sym')
-# plt.legend(['A_sym0', 'A_sym1', 'A_sym2', 'A_sym3', 'A_sym4', 'A_sym5'])
-#
-# A_sym0_plus = P0 @ np.diag(ee0 * (ee0 > 0)) @ P0.T
-# A_sym1_plus = P1 @ np.diag(ee1 * (ee1 > 0)) @ P1.T
-# A_sym2_plus = P2 @ np.diag(ee2 * (ee2 > 0)) @ P2.T
-# A_sym3_plus = P3 @ np.diag(ee3 * (ee3 > 0)) @ P3.T
-# A_sym4_plus = P4 @ np.diag(ee4 * (ee4 > 0)) @ P4.T
-# A_sym5_plus = P5 @ np.diag(ee5 * (ee5 > 0)) @ P5.T
-#
-# A_sym_plus_tilde = A_sym0_plus + A_sym1_plus + A_sym2_plus + A_sym3_plus + A_sym4_plus + A_sym5_plus
-#
-# plt.figure(figsize=(12,5))
-# plt.subplot(1,3,1)
-# plt.imshow(A_sym_plus)
-# plt.title('A_sym_plus')
-# plt.subplot(1,3,2)
-# plt.imshow(A_sym_plus_tilde)
-# plt.title('A_sym_plus_tilde')
-# plt.subplot(1,3,3)
-# plt.imshow(A_sym_plus_tilde-A_sym_plus)
-# plt.title('A_sym_plus_tilde-A_sym_plus')
-#
-# err = np.linalg.norm(A_sym_plus_tilde - A_sym_plus) / np.linalg.norm(A_sym_plus)
-# print('err=', err)
-#
-# ####
