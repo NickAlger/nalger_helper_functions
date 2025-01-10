@@ -164,8 +164,8 @@ class PatchLowRankMatrix:
 
 
 def Gaussian_Psi_func(
-        row_min: np.ndarray, # shape=(dr,)
-        row_max: np.ndarray, # shape=(dr,)
+        row_min: np.ndarray, # shape=(dr,) <-- box min in physical space
+        row_max: np.ndarray, # shape=(dr,) <-- box
         col_min: np.ndarray, # shape=(dc,)
         col_max: np.ndarray, # shape=(dc,)
         length_scale_factor: float,
@@ -320,6 +320,10 @@ def make_low_rank_matrices_positive_semidefinite(
     ) for A in matrices])
 
 
+# Tu = convolve(phi, u)
+# T(y,x) = phi(y-x)
+# T( . , x) = phi( . - x) = translate phi
+
 def partition_matrix(
         get_matrix_block: typ.Callable[
             [
@@ -328,14 +332,15 @@ def partition_matrix(
             ],
             np.ndarray, # A[np.ix_(row_inds, col_inds)], shape=(nrow_block, ncol_block)
         ],
-        weights: PatchLowRankMatrix,
+        patch_row_inds: typ.Sequence[typ.Sequence[int]],
+        patch_col_inds: typ.Sequence[typ.Sequence[int]],
         low_rank_max_rank: int = 100,
         low_rank_rtol: float = 1e-4,
 ) -> typ.Tuple[LowRankMatrix]: # patch_matrices
     patch_matrices: typ.List[LowRankMatrix] = []
     for rr, cc in zip(
-            weights.patch_row_inds,
-            weights.patch_col_inds
+            patch_row_inds,
+            patch_col_inds
     ):
         A = get_matrix_block(list(rr), list(cc))
         patch_matrices.append(
@@ -398,7 +403,7 @@ patch_row_inds = patch_inds
 patch_col_inds = patch_inds
 
 all_Psi = make_matrix_partition_of_unity(
-        row_coords,
+        row_coords, # shape=(num_dofs, spatial_dim) physical coordinates, used for evaluating gaussian
         col_coords,
         patch_row_inds,
         patch_col_inds,
@@ -441,7 +446,7 @@ plt.title('Sum of all Psi_hat')
 
 #### Break matrix, A, into pieces using partition of unity.
 
-A_patches = partition_matrix(get_A_block, all_Psi_hat_PLRM)
+A_patches = partition_matrix(get_A_block, patch_row_inds, patch_col_inds)
 A_patchwise = all_Psi_hat_PLRM.pointwise_multiply_patches(A_patches)
 
 A2 = A_patchwise.to_dense()
@@ -467,7 +472,7 @@ Asym = 0.5 * (A + A.T)
 
 get_Asym_block = lambda rr, cc: 0.5 * (get_A_block(rr,cc) + get_A_block(cc,rr).T)
 
-Asym_patches = partition_matrix(get_Asym_block, all_Psi_hat_PLRM)
+Asym_patches = partition_matrix(get_Asym_block, patch_row_inds, patch_col_inds)
 Asym_patchwise = all_Psi_hat_PLRM.pointwise_multiply_patches(Asym_patches)
 
 Asym2 = Asym_patchwise.to_dense()
@@ -498,4 +503,91 @@ plt.title('Asym_plus2')
 plt.subplot(1,3,3)
 plt.imshow(Asym_plus-Asym_plus2)
 plt.title('Asym_plus-Asym_plus2')
+
+######## Tutorial:
+
+#### Create spatially varying Gaussian kernel matrix, 'A', in 1D
+
+tt = np.linspace(0, 10, 1000)
+
+V = np.sqrt(1.0 - tt/1.5 + tt**2/3.1 - tt**3/50) # spatially varying volume
+mu = tt + 0.1 * np.sin(5*tt) # spatially varying mean
+Sigma = (0.5 + (10-tt)/30)**2
+
+def get_A_block(rr, cc):
+    block = np.zeros((len(rr), len(cc)))
+    for i in range(len(rr)):
+        r = rr[i]
+        pp = tt[list(cc)] - mu[r]
+        block[i,:] = V[r]*np.exp(-0.5 * pp**2 / Sigma[r])
+    return block
+
+all_inds = np.arange(len(tt), dtype=int)
+A = get_A_block(all_inds, all_inds)
+
+#### Create partition of unity on matrix space,
+
+patch_inds = [
+    list(np.arange(0,400, dtype=int)),
+    list(np.arange(200,600, dtype=int)),
+    list(np.arange(400,800, dtype=int)),
+    list(np.arange(600,1000, dtype=int)),
+]
+
+row_coords = tt.reshape((-1,1))
+col_coords = row_coords
+patch_row_inds = patch_inds
+patch_col_inds = patch_inds
+
+all_Psi = make_matrix_partition_of_unity(
+        row_coords, # shape=(num_dofs, spatial_dim) physical coordinates, used for evaluating gaussian
+        col_coords,
+        patch_row_inds,
+        patch_col_inds,
+        normalize=True,
+)
+
+all_Psi_PLRM = PatchLowRankMatrix(
+    (row_coords.shape[0], col_coords.shape[0]),
+    all_Psi, patch_row_inds, patch_col_inds
+)
+
+#### Break matrix, A, into pieces using partition of unity.
+
+A_patches = partition_matrix(get_A_block, patch_row_inds, patch_col_inds)
+A_patchwise = all_Psi_hat_PLRM.pointwise_multiply_patches(A_patches)
+
+A2 = A_patchwise.to_dense()
+
+partition_error = np.linalg.norm(A2 - A) / np.linalg.norm(A)
+print('partition_error=', partition_error)
+
+#### Break symmetrized matrix, A_sym, into pieces using partition of unity.
+
+Asym = 0.5 * (A + A.T)
+
+get_Asym_block = lambda rr, cc: 0.5 * (get_A_block(rr,cc) + get_A_block(cc,rr).T)
+
+Asym_patches = partition_matrix(get_Asym_block, patch_row_inds, patch_col_inds)
+Asym_patchwise = all_Psi_hat_PLRM.pointwise_multiply_patches(Asym_patches)
+
+Asym2 = Asym_patchwise.to_dense()
+
+sym_partition_error = np.linalg.norm(Asym2 - Asym) / np.linalg.norm(Asym)
+print('sym_partition_error=', sym_partition_error)
+
+#### Make each piece of partitioned matrix positive definite independently
+
+ee, P = np.linalg.eigh(Asym)
+Asym_plus = P @ np.diag(ee * (ee > 0)) @ P.T
+
+Asym_plus_patches = make_low_rank_matrices_positive_semidefinite(Asym_patches)
+Asym_plus_patchwise = all_Psi_hat_PLRM.pointwise_multiply_patches(Asym_plus_patches)
+
+Asym_plus2 = Asym_plus_patchwise.to_dense()
+
+plus_partition_err = np.linalg.norm(Asym_plus2 - Asym_plus) / np.linalg.norm(Asym_plus)
+print('plus_partition_err=', plus_partition_err)
+
+
 
