@@ -231,7 +231,7 @@ def make_matrix_partition_of_unity(
         normalize: bool = True,
         low_rank_rtol: float = 1e-4,
         low_rank_max_rank: int = 100,
-) -> PatchLowRankMatrix:
+) -> typ.Tuple[LowRankMatrix]:
     patch_row_inds = tuple([tuple(x) for x in patch_row_inds])
     patch_col_inds = tuple([tuple(x) for x in patch_col_inds])
 
@@ -289,7 +289,7 @@ def make_matrix_partition_of_unity(
             make_low_rank(Psi_hat, rtol=low_rank_rtol, max_rank=low_rank_max_rank)
         )
 
-    return PatchLowRankMatrix((num_rows, num_cols), tuple(all_Psi_hat), patch_row_inds, patch_col_inds)
+    return tuple(all_Psi_hat)
 
 
 def make_low_rank_matrix_positive_semidefinite(
@@ -405,10 +405,15 @@ all_Psi = make_matrix_partition_of_unity(
         normalize=False,
 )
 
+all_Psi_PLRM = PatchLowRankMatrix(
+    (row_coords.shape[0], col_coords.shape[0]),
+    all_Psi, patch_row_inds, patch_col_inds
+)
+
 plt.figure(figsize=(12,5))
-for ii in range(all_Psi.num_patches):
-    plt.subplot(1,all_Psi.num_patches,ii+1)
-    plt.imshow(all_Psi.get_patch_contribution(ii))
+for ii in range(all_Psi_PLRM.num_patches):
+    plt.subplot(1,all_Psi_PLRM.num_patches,ii+1)
+    plt.imshow(all_Psi_PLRM.get_patch_contribution(ii))
     plt.title('Psi'+str(ii))
 
 all_Psi_hat = make_matrix_partition_of_unity(
@@ -419,20 +424,25 @@ all_Psi_hat = make_matrix_partition_of_unity(
         normalize=True,
 )
 
+all_Psi_hat_PLRM = PatchLowRankMatrix(
+    (row_coords.shape[0], col_coords.shape[0]),
+    all_Psi_hat, patch_row_inds, patch_col_inds
+)
+
 plt.figure(figsize=(12,5))
-for ii in range(all_Psi_hat.num_patches):
-    plt.subplot(1,all_Psi_hat.num_patches,ii+1)
-    plt.imshow(all_Psi_hat.get_patch_contribution(ii))
+for ii in range(all_Psi_hat_PLRM.num_patches):
+    plt.subplot(1,all_Psi_hat_PLRM.num_patches,ii+1)
+    plt.imshow(all_Psi_hat_PLRM.get_patch_contribution(ii))
     plt.title('Psi_hat'+str(ii))
 
 plt.figure()
-plt.imshow(all_Psi_hat.to_dense())
+plt.imshow(all_Psi_hat_PLRM.to_dense())
 plt.title('Sum of all Psi_hat')
 
 #### Break matrix, A, into pieces using partition of unity.
 
-A_patches = partition_matrix(get_A_block, all_Psi_hat)
-A_patchwise = all_Psi_hat.pointwise_multiply_patches(A_patches)
+A_patches = partition_matrix(get_A_block, all_Psi_hat_PLRM)
+A_patchwise = all_Psi_hat_PLRM.pointwise_multiply_patches(A_patches)
 
 A2 = A_patchwise.to_dense()
 
@@ -457,8 +467,8 @@ Asym = 0.5 * (A + A.T)
 
 get_Asym_block = lambda rr, cc: 0.5 * (get_A_block(rr,cc) + get_A_block(cc,rr).T)
 
-Asym_patches = partition_matrix(get_Asym_block, all_Psi_hat)
-Asym_patchwise = all_Psi_hat.pointwise_multiply_patches(Asym_patches)
+Asym_patches = partition_matrix(get_Asym_block, all_Psi_hat_PLRM)
+Asym_patchwise = all_Psi_hat_PLRM.pointwise_multiply_patches(Asym_patches)
 
 Asym2 = Asym_patchwise.to_dense()
 
@@ -471,7 +481,7 @@ ee, P = np.linalg.eigh(Asym)
 Asym_plus = P @ np.diag(ee * (ee > 0)) @ P.T
 
 Asym_plus_patches = make_low_rank_matrices_positive_semidefinite(Asym_patches)
-Asym_plus_patchwise = all_Psi_hat.pointwise_multiply_patches(Asym_plus_patches)
+Asym_plus_patchwise = all_Psi_hat_PLRM.pointwise_multiply_patches(Asym_plus_patches)
 
 Asym_plus2 = Asym_plus_patchwise.to_dense()
 
