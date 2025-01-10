@@ -51,6 +51,17 @@ class LowRankMatrix:
         return me.right_factor.T @ (me.left_factor.T @ Y)
 
 
+def pointwise_multiply_low_rank_matrices(
+        A: LowRankMatrix, # shape=(N,M)
+        B: LowRankMatrix, # shape=(N,M)
+        rtol: float = 1e-5,
+        max_rank: int = 100,
+) -> LowRankMatrix: # shape=(N,M)
+    assert(A.shape == B.shape)
+    # This can be done faster without going to dense. Hope to improve implement this improvement later
+    return make_low_rank(A.to_dense() * B.to_dense(), rtol=rtol, max_rank=max_rank)
+
+
 @dataclass(frozen=True)
 class PatchLowRankMatrix:
     shape: typ.Tuple[int, int]
@@ -94,6 +105,22 @@ class PatchLowRankMatrix:
         Ai = np.zeros(me.shape)
         Ai[np.ix_(me.patch_row_inds[ind], me.patch_col_inds[ind])] = me.patch_matrices[ind].to_dense()
         return Ai
+
+    def pointwise_multiply_patches(
+            me,
+            other_patch_matrices: typ.Tuple[LowRankMatrix],
+            low_rank_max_rank: int = 100,
+            low_rank_rtol: float = 1e-5,
+    ) -> 'PatchLowRankMatrix':
+        assert(len(other_patch_matrices) == me.num_patches)
+        for A, B in zip(me.patch_matrices, other_patch_matrices):
+            assert(A.shape == B.shape)
+
+        all_AB = [pointwise_multiply_low_rank_matrices(A, B, rtol=low_rank_rtol, max_rank=low_rank_max_rank)
+                  for A, B in zip(me.patch_matrices, other_patch_matrices)]
+        return PatchLowRankMatrix(
+            me.shape, tuple(all_AB), me.patch_row_inds, me.patch_col_inds
+        )
 
     def matvec(
             me,
@@ -265,65 +292,35 @@ def make_matrix_partition_of_unity(
     return PatchLowRankMatrix((num_rows, num_cols), tuple(all_Psi_hat), patch_row_inds, patch_col_inds)
 
 
-@dataclass(frozen=True)
-class WeightedPatchLowRankMatrix:
-    weights: PatchLowRankMatrix # weights
-    patch_matrices: typ.Tuple[LowRankMatrix]
+def make_low_rank_matrix_positive_semidefinite(
+        A: LowRankMatrix, # shape=(N,N)
+        low_rank_rtol: float = 1e-5,
+        low_rank_max_rank: int = 100,
+        use_abs: bool = False,
+) -> LowRankMatrix: # shape=(N,N)
+    assert(A.shape[0] == A.shape[1])
+    # This can be done more efficiently without going to dense. Hope to implement this improvement later
+    A_dense = A.to_dense()
+    ee, P = np.linalg.eigh(0.5 * (A_dense + A_dense.T))
+    if use_abs:
+        A_plus_dense = P @ np.diag(np.abs(ee)) @ P.T # take absolute value of eigs
+    else:
+        A_plus_dense = P @ np.diag(ee * (ee > 0)) @ P.T # threshold eigs at zero
+    A_plus = make_low_rank(A_plus_dense, rtol=low_rank_rtol, max_rank=low_rank_max_rank)
+    return A_plus
 
-    def __post_init__(me):
-        assert(len(me.patch_matrices) == me.weights.num_patches)
-        for M, A in zip(me.weights.patch_matrices, me.patch_matrices):
-            assert(M.shape == A.shape)
 
-    def compute_weighted_patch_matrices(
-            me,
-            low_rank_max_rank: int = 100,
-            low_rank_rtol: float = 1e-5,
-    ) -> PatchLowRankMatrix:
-        all_MA_LR = []
-        for M_LR, A_LR in zip(me.weights.patch_matrices, me.patch_matrices):
-            MA_dense = M_LR.to_dense() * A_LR.to_dense()
-            MA_LR = make_low_rank(MA_dense, rtol=low_rank_rtol, max_rank=low_rank_max_rank)
-            all_MA_LR.append(MA_LR)
-        return PatchLowRankMatrix(
-            me.weights.shape, tuple(all_MA_LR), me.weights.patch_row_inds, me.weights.patch_col_inds
-        )
+def make_low_rank_matrices_positive_semidefinite(
+        matrices: typ.Sequence[LowRankMatrix],
+        low_rank_max_rank: int = 100,
+        low_rank_rtol: float = 1e-5,
+) -> typ.Tuple[LowRankMatrix]:
+    return tuple([make_low_rank_matrix_positive_semidefinite(
+        A, low_rank_rtol=low_rank_rtol, low_rank_max_rank=low_rank_max_rank,
+    ) for A in matrices])
 
-    # def to_dense(me) -> np.ndarray: # shape=(me.num_rows, me.num_cols)
-    #     Mat = np.zeros((me.weights.num_rows, me.weights.num_cols))
-    #     for MA, rr, cc in zip(
-    #             me.weighted_patch_matrices,
-    #             me.weights.patch_row_inds,
-    #             me.weights.patch_col_inds
-    #     ):
-    #         Mat[np.ix_(rr, cc)] += MA
-    #     return Mat
-    #
-    # def get_patch_contribution(me, ind: int) -> np.ndarray: # shape=(me.num_rows, me.num_cols)
-    #     Ak = np.zeros((me.weights.num_rows, me.weights.num_cols))
-    #     ij = np.ix_(
-    #         me.weights.patch_row_inds[ind],
-    #         me.weights.patch_col_inds[ind],
-    #     )
-    #     Ak[ij] = me.weighted_patch_matrices[ind]
-    #     return Ak
 
-    def make_patches_positive_semidefinite(
-            me,
-            low_rank_max_rank: int = 100,
-            low_rank_rtol: float = 1e-5,
-    ) -> 'WeightedPatchLowRankMatrix':
-        AA_plus_LR: typ.List[LowRankMatrix] = []
-        for A_LR in me.patch_matrices:
-            A = A_LR.to_dense()
-            ee, P = np.linalg.eigh(0.5 * (A + A.T))
-            A_plus = P @ np.diag(ee * (ee > 0)) @ P.T
-            AA_plus_LR.append(
-                make_low_rank(A_plus, rtol=low_rank_rtol, max_rank=low_rank_max_rank)
-            )
-        return WeightedPatchLowRankMatrix(me.weights, tuple(AA_plus_LR))
-
-def make_partitioned_matrix(
+def partition_matrix(
         get_matrix_block: typ.Callable[
             [
                 typ.List[int], # row inds, len=nrow_block
@@ -334,18 +331,18 @@ def make_partitioned_matrix(
         weights: PatchLowRankMatrix,
         low_rank_max_rank: int = 100,
         low_rank_rtol: float = 1e-4,
-) -> WeightedPatchLowRankMatrix:
-    AA_LR = []
+) -> typ.Tuple[LowRankMatrix]: # patch_matrices
+    patch_matrices: typ.List[LowRankMatrix] = []
     for rr, cc in zip(
             weights.patch_row_inds,
             weights.patch_col_inds
     ):
         A = get_matrix_block(list(rr), list(cc))
-        AA_LR.append(
+        patch_matrices.append(
             make_low_rank(A, rtol=low_rank_rtol, max_rank=low_rank_max_rank)
         )
 
-    return WeightedPatchLowRankMatrix(weights, tuple(AA_LR))
+    return tuple(patch_matrices)
 
 
 #### Create spatially varying Gaussian kernel matrix, 'A', in 1D
@@ -434,8 +431,8 @@ plt.title('Sum of all Psi_hat')
 
 #### Break matrix, A, into pieces using partition of unity.
 
-A_paritioned = make_partitioned_matrix(get_A_block, all_Psi_hat)
-A_patchwise = A_paritioned.compute_weighted_patch_matrices()
+A_patches = partition_matrix(get_A_block, all_Psi_hat)
+A_patchwise = all_Psi_hat.pointwise_multiply_patches(A_patches)
 
 A2 = A_patchwise.to_dense()
 
@@ -460,8 +457,8 @@ Asym = 0.5 * (A + A.T)
 
 get_Asym_block = lambda rr, cc: 0.5 * (get_A_block(rr,cc) + get_A_block(cc,rr).T)
 
-Asym_partitioned = make_partitioned_matrix(get_Asym_block, all_Psi_hat)
-Asym_patchwise = Asym_partitioned.compute_weighted_patch_matrices()
+Asym_patches = partition_matrix(get_Asym_block, all_Psi_hat)
+Asym_patchwise = all_Psi_hat.pointwise_multiply_patches(Asym_patches)
 
 Asym2 = Asym_patchwise.to_dense()
 
@@ -473,8 +470,8 @@ print('sym_partition_error=', sym_partition_error)
 ee, P = np.linalg.eigh(Asym)
 Asym_plus = P @ np.diag(ee * (ee > 0)) @ P.T
 
-Asym_plus_partitioned = Asym_partitioned.make_patches_positive_semidefinite()
-Asym_plus_patchwise = Asym_plus_partitioned.compute_weighted_patch_matrices()
+Asym_plus_patches = make_low_rank_matrices_positive_semidefinite(Asym_patches)
+Asym_plus_patchwise = all_Psi_hat.pointwise_multiply_patches(Asym_plus_patches)
 
 Asym_plus2 = Asym_plus_patchwise.to_dense()
 
