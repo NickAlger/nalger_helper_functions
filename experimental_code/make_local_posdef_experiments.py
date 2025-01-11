@@ -12,6 +12,33 @@ import matplotlib.pyplot as plt
 #  2) making each piece of the matrix positive semi-definite
 #  3) adding the semi-definite pieces back together
 
+def method_vectorized_or_unvectorized(
+        method: typ.Callable[
+            [
+                typ.Any, # obj
+                np.ndarray, # X, shape=(M,k)
+            ],
+            np.ndarray, # shape=(N,k)
+        ]
+) -> typ.Callable[
+    [
+        np.ndarray, # shape=(M,k) or shape=(M,)
+    ],
+    np.ndarray, # shape=(N,k) or shape=(N,)
+]:
+    '''obj.method(X) expects M-by-k matrix X as input, and returns a N-by-k matrix as output.
+    Users want to call obj.method(x) where x is length-M vector, and get length-N vector output.
+    This wraps obj.method() to seamlessly do either of these, depending on the shape of the input.'''
+    def method_vec_or_unvec(
+            obj,
+            X: np.ndarray, # shape=(M,k) or shape=(M,)
+    ):
+        if len(X.shape) == 1:
+            return method(obj, X.reshape((-1,1))).reshape(-1)
+        assert(len(X.shape) == 2)
+        return method(obj, X)
+    return method_vec_or_unvec
+
 @dataclass(frozen=True)
 class LowRankMatrix:
     left_factor: np.ndarray
@@ -32,23 +59,19 @@ class LowRankMatrix:
     def to_dense(me) -> np.ndarray:
         return me.left_factor @ me.right_factor
 
+    @method_vectorized_or_unvectorized
     def matvec(
             me,
             X: np.ndarray,  # shape=(num_cols, K) or (num_cols,)
     ) -> np.ndarray:        # shape=(num_rows, K) or (num_rows,)
-        if len(X.shape) == 1:
-            return me.matvec(X.reshape(-1,1)).reshape(-1)
-        assert(len(X.shape) == 2)
         assert(X.shape[0] == me.shape[1])
         return me.left_factor @ (me.right_factor @ X)
 
+    @method_vectorized_or_unvectorized
     def rmatvec(
             me,
             Y: np.ndarray,  # shape=(num_rows, K) or (num_rows,)
     ) -> np.ndarray:  # shape=(num_cols, K) or (num_cols,)
-        if len(Y.shape) == 1:
-            return me.rmatvec(Y.reshape(-1, 1)).reshape(-1)
-        assert(len(Y.shape) == 2)
         assert(Y.shape[0] == me.shape[0])
         return me.right_factor.T @ (me.left_factor.T @ Y)
 
@@ -117,14 +140,11 @@ class PatchMatrix:
         Ai[np.ix_(me.patch_row_inds[ind], me.patch_col_inds[ind])] = me.patch_matrices[ind].to_dense()
         return Ai
 
+    @method_vectorized_or_unvectorized
     def matvec(
             me,
             X: np.ndarray,  # shape=(me.num_cols, K) or (me.num_cols,)
     ) -> np.ndarray:  # shape=(me.num_rows, K) or (me.num_rows,)
-        if len(X.shape) == 1:  # only one vector to matvec
-            return me.matvec(X.reshape((-1, 1))).reshape(-1)
-
-        assert (len(X.shape) == 2)
         K = X.shape[1]
         assert (X.shape == (me.shape[1], K))
 
@@ -137,14 +157,11 @@ class PatchMatrix:
             Y[rr, :] += M.matvec(X[cc, :])
         return Y
 
+    @method_vectorized_or_unvectorized
     def rmatvec(
             me,
             Y: np.ndarray,  # shape=(me.num_rows, K) or (me.num_rows,)
     ) -> np.ndarray:  # shape=(me.num_cols, K) or (me.num_cols,)
-        if len(Y.shape) == 1:  # only one vector to matvec
-            return me.rmatvec(Y.reshape((-1, 1))).reshape(-1)
-
-        assert (len(Y.shape) == 2)
         K = Y.shape[1]
         assert (Y.shape == (me.shape[0], K))
 
@@ -157,14 +174,11 @@ class PatchMatrix:
             X[cc, :] += M.rmatvec(Y[rr, :])
         return X
 
+    @method_vectorized_or_unvectorized
     def rsolve(
             me,
             X: np.ndarray,  # shape=(me.num_cols, K) or (me.num_cols,)
     ) -> np.ndarray:  # shape=(me.num_rows, K) or (me.num_rows,)
-        if len(X.shape) == 1:  # only one vector to matvec
-            return me.matvec(X.reshape((-1, 1))).reshape(-1)
-
-        assert (len(X.shape) == 2)
         K = X.shape[1]
         assert (X.shape == (me.shape[1], K))
 
@@ -177,14 +191,11 @@ class PatchMatrix:
             Y[rr, :] += M.rsolve(X[cc, :])
         return Y
 
+    @method_vectorized_or_unvectorized
     def solve(
             me,
             Y: np.ndarray,  # shape=(me.num_rows, K) or (me.num_rows,)
     ) -> np.ndarray:  # shape=(me.num_cols, K) or (me.num_cols,)
-        if len(Y.shape) == 1:  # only one vector to matvec
-            return me.rmatvec(Y.reshape((-1, 1))).reshape(-1)
-
-        assert (len(Y.shape) == 2)
         K = Y.shape[1]
         assert (Y.shape == (me.shape[0], K))
 
@@ -429,26 +440,23 @@ class SparsePlusLowRankMatrix:
     def to_dense(me) -> np.ndarray:
         return me.sparse_matrix.toarray() + me.left_factor @ me.right_factor
 
+    @method_vectorized_or_unvectorized
     def matvec(
             me,
             X: np.ndarray,  # shape=(num_cols, K) or (num_cols,)
     ) -> np.ndarray:        # shape=(num_rows, K) or (num_rows,)
-        if len(X.shape) == 1:
-            return me.matvec(X.reshape(-1,1)).reshape(-1)
-        assert(len(X.shape) == 2)
         assert(X.shape[0] == me.shape[1])
         return me.sparse_matrix @ X + me.left_factor @ (me.right_factor @ X)
 
+    @method_vectorized_or_unvectorized
     def rmatvec(
             me,
             Y: np.ndarray,  # shape=(num_rows, K) or (num_rows,)
     ) -> np.ndarray:  # shape=(num_cols, K) or (num_cols,)
-        if len(Y.shape) == 1:
-            return me.rmatvec(Y.reshape(-1, 1)).reshape(-1)
-        assert(len(Y.shape) == 2)
         assert(Y.shape[0] == me.shape[0])
         return me.sparse_matrix.T @ Y + me.right_factor.T @ (me.left_factor.T @ Y)
 
+    @method_vectorized_or_unvectorized
     def solve(
             me,
             Y: np.ndarray,  # shape=(num_cols, K) or (num_cols,)
@@ -457,9 +465,6 @@ class SparsePlusLowRankMatrix:
         (A + LR)^-1 = A^-1 (I - L (I + R A^-1 L)^-1 R A^-1)
         '''
         assert(me.shape[0] == me.shape[1])
-        if len(Y.shape) == 1:
-            return me.solve(Y.reshape(-1,1)).reshape(-1)
-        assert(len(Y.shape) == 2)
         assert(Y.shape[0] == me.shape[0])
         N = me.shape[0]
         k = Y.shape[1]
@@ -475,6 +480,7 @@ class SparsePlusLowRankMatrix:
 
         return X
 
+    @method_vectorized_or_unvectorized
     def rsolve(
             me,
             Y: np.ndarray,  # shape=(num_cols, K) or (num_cols,)
@@ -483,9 +489,6 @@ class SparsePlusLowRankMatrix:
         (A + LR)^-T = A^-T (I - R^T (I + R A^-1 L)^-T L^T A^-T)
         '''
         assert(me.shape[0] == me.shape[1])
-        if len(Y.shape) == 1:
-            return me.rsolve(Y.reshape(-1,1)).reshape(-1)
-        assert(len(Y.shape) == 2)
         assert(Y.shape[0] == me.shape[0])
         N = me.shape[0]
         k = Y.shape[1]
@@ -515,6 +518,81 @@ def partition_sparse_matrix(
         Mi = ((M[rr,:].tocsc())[:,cc]).tocsr()
         patch_matrices.append(Mi)
     return tuple(patch_matrices)
+
+
+def apply_weighted_linop(
+        linop: typ.Callable[
+            [
+                np.ndarray, # shape=(M,k)
+             ],
+            np.ndarray, # shape=(N,k)
+        ],
+        weight_left_factor: np.ndarray, # shape=(N, rw)
+        weight_right_factor: np.ndarray, # shape=(rw, M)
+        X: np.ndarray, # shape=(M,k)
+) -> np.ndarray: # # shape=(N,k)
+    N, rw = weight_left_factor.shape
+    M = weight_right_factor.shape[1]
+    k = X.shape[1]
+    assert(weight_right_factor.shape == (rw, M))
+    assert(X.shape == (M,k))
+
+    Y = np.zeros((N,k))
+    for ii in range(rw):
+        Y += weight_left_factor[:,ii].reshape((N,1)) * linop(weight_right_factor[ii,:].reshape((M,1)) * X)
+    return Y
+
+
+@dataclass(frozen=True)
+class WeightedSparsePlusLowRankMatrix:
+    matrix: SparsePlusLowRankMatrix # shape=(N,M)
+    weights: LowRankMatrix # shape=(N,M)
+
+    def __post_init__(me):
+        assert(me.matrix.shape == me.shape)
+        assert(me.weights.shape == me.shape)
+
+    @ft.cached_property
+    def shape(me) -> typ.Tuple[int, int]:
+        return me.matrix.shape
+
+    def to_dense(me) -> np.ndarray: # shape=me.shape
+        return me.matrix.to_dense() * me.weights.to_dense()
+
+    @method_vectorized_or_unvectorized
+    def matvec(
+            me,
+            X: np.ndarray, # shape=(M,k) or shape=(M,)
+    ) -> np.ndarray: # shape=(N,k) or shape=(N,)
+        assert(X.shape[0] == me.shape[1])
+        return apply_weighted_linop(me.matrix.matvec, me.weights.left_factor, me.weights.right_factor, X)
+
+    @method_vectorized_or_unvectorized
+    def rmatvec(
+            me,
+            Y: np.ndarray, # shape=(N,k) or shape=(N,)
+    ) -> np.ndarray: # shape=(M,k) or shape=(M,)
+        assert(Y.shape[0] == me.shape[0])
+        return apply_weighted_linop(me.matrix.rmatvec, me.weights.right_factor.T, me.weights.left_factor.T, Y)
+
+    @method_vectorized_or_unvectorized
+    def solve(
+            me,
+            Y: np.ndarray, # shape=(N,k) or shape=(N,)
+    ) -> np.ndarray: # shape=(N,k) or shape=(N,)
+        assert(me.shape[0] == me.shape[1])
+        assert(Y.shape[0] == me.shape[1])
+        return apply_weighted_linop(me.matrix.solve, me.weights.left_factor, me.weights.right_factor, Y)
+
+    @method_vectorized_or_unvectorized
+    def rsolve(
+            me,
+            X: np.ndarray, # shape=(N,k) or shape=(N,)
+    ) -> np.ndarray: # shape=(N,k) or shape=(N,)
+        assert(me.shape[0] == me.shape[1])
+        assert(X.shape[0] == me.shape[0])
+        return apply_weighted_linop(me.matrix.rsolve, me.weights.right_factor.T, me.weights.left_factor.T, X)
+
 
 
 #### Create spatially varying Gaussian kernel matrix, 'A', in 1D
@@ -727,12 +805,45 @@ print('err_woodburyrsolve=', err_woodburyrsolve)
 
 #
 
-L_pieces = partition_sparse_matrix(0.0*L, patch_row_inds, patch_col_inds)
-LA_pieces = tuple([SparsePlusLowRankMatrix(Li, X.left_factor, X.right_factor) for Li, X in zip(L_pieces, Asym_plus_pieces)])
-LA_patchmatrix = PatchMatrix((N,N), LA_pieces, patch_row_inds, patch_col_inds)
+rw = 3
+W = LowRankMatrix(np.random.randn(N, rw), np.random.randn(rw, N))
+MW = WeightedSparsePlusLowRankMatrix(M, W)
+
+MW_dense = M.to_dense() * W.to_dense()
 
 xi = np.random.randn(N)
-eta1 = 0.0*L @ xi + Asym_plus_patchmatrix.matvec(xi)
-eta2 = LA_patchmatrix.matvec(xi)
-err_slr_patchmatrix_matvec = np.linalg.norm(eta2 - eta1) / np.linalg.norm(eta1)
-print('err_slr_patchmatrix_matvec=', err_slr_patchmatrix_matvec)
+y1 = MW_dense @ xi
+y2 = MW.matvec(xi)
+err_wslr_matvec = np.linalg.norm(y2-y1) / np.linalg.norm(y1)
+print('err_wslr_matvec=', err_wslr_matvec)
+
+y1 = MW_dense.T @ xi
+y2 = MW.rmatvec(xi)
+err_wslr_rmatvec = np.linalg.norm(y2-y1) / np.linalg.norm(y1)
+print('err_wslr_rmatvec=', err_wslr_rmatvec)
+
+iM_dense = np.linalg.inv(M.to_dense())
+y1 = (W.to_dense() * iM_dense) @ xi
+y2 = MW.solve(xi)
+err_wslr_solve = np.linalg.norm(y2-y1) / np.linalg.norm(y1)
+print('err_wslr_solve=', err_wslr_solve)
+
+y1 = (W.to_dense() * iM_dense).T @ xi
+y2 = MW.rsolve(xi)
+err_wslr_rsolve = np.linalg.norm(y2-y1) / np.linalg.norm(y1)
+print('err_wslr_rsolve=', err_wslr_rsolve)
+
+
+
+#
+
+if False:
+    L_pieces = partition_sparse_matrix(0.0*L, patch_row_inds, patch_col_inds)
+    LA_pieces = tuple([SparsePlusLowRankMatrix(Li, X.left_factor, X.right_factor) for Li, X in zip(L_pieces, Asym_plus_pieces)])
+    LA_patchmatrix = PatchMatrix((N,N), LA_pieces, patch_row_inds, patch_col_inds)
+
+    xi = np.random.randn(N)
+    eta1 = 0.0*L @ xi + Asym_plus_patchmatrix.matvec(xi)
+    eta2 = LA_patchmatrix.matvec(xi)
+    err_slr_patchmatrix_matvec = np.linalg.norm(eta2 - eta1) / np.linalg.norm(eta1)
+    print('err_slr_patchmatrix_matvec=', err_slr_patchmatrix_matvec)
