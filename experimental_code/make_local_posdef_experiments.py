@@ -80,7 +80,7 @@ def pointwise_multiply_many_low_rank_matrices(
 @dataclass(frozen=True)
 class PatchMatrix:
     shape: typ.Tuple[int, int]
-    patch_matrices: typ.Tuple # elms must implement shape, matvec(), rmatvec(), and to_dense()
+    patch_matrices: typ.Tuple # elms ideally implement shape, matvec(), rmatvec(), and to_dense()
     patch_row_inds: typ.Tuple[typ.Tuple[int, ...], ...]
     patch_col_inds: typ.Tuple[typ.Tuple[int, ...], ...]
 
@@ -155,6 +155,46 @@ class PatchMatrix:
                 me.patch_col_inds
         ):
             X[cc, :] += M.rmatvec(Y[rr, :])
+        return X
+
+    def rsolve(
+            me,
+            X: np.ndarray,  # shape=(me.num_cols, K) or (me.num_cols,)
+    ) -> np.ndarray:  # shape=(me.num_rows, K) or (me.num_rows,)
+        if len(X.shape) == 1:  # only one vector to matvec
+            return me.matvec(X.reshape((-1, 1))).reshape(-1)
+
+        assert (len(X.shape) == 2)
+        K = X.shape[1]
+        assert (X.shape == (me.shape[1], K))
+
+        Y = np.zeros((me.shape[0], K))
+        for M, rr, cc in zip(
+                me.patch_matrices,
+                me.patch_row_inds,
+                me.patch_col_inds
+        ):
+            Y[rr, :] += M.rsolve(X[cc, :])
+        return Y
+
+    def solve(
+            me,
+            Y: np.ndarray,  # shape=(me.num_rows, K) or (me.num_rows,)
+    ) -> np.ndarray:  # shape=(me.num_cols, K) or (me.num_cols,)
+        if len(Y.shape) == 1:  # only one vector to matvec
+            return me.rmatvec(Y.reshape((-1, 1))).reshape(-1)
+
+        assert (len(Y.shape) == 2)
+        K = Y.shape[1]
+        assert (Y.shape == (me.shape[0], K))
+
+        X = np.zeros((me.shape[1], K))
+        for M, rr, cc in zip(
+                me.patch_matrices,
+                me.patch_row_inds,
+                me.patch_col_inds
+        ):
+            X[cc, :] += M.solve(Y[rr, :])
         return X
 
 
@@ -461,6 +501,22 @@ class SparsePlusLowRankMatrix:
 
         return X
 
+
+def partition_sparse_matrix(
+        M: sps.csr_matrix,
+        patch_row_inds: typ.Sequence[typ.Sequence[int]],
+        patch_col_inds: typ.Sequence[typ.Sequence[int]],
+) -> typ.Tuple[sps.csr_matrix]: # patch_matrices
+    patch_matrices: typ.List[sps.csr_matrix] = []
+    for rr, cc in zip(
+            patch_row_inds,
+            patch_col_inds
+    ):
+        Mi = ((M[rr,:].tocsc())[:,cc]).tocsr()
+        patch_matrices.append(Mi)
+    return tuple(patch_matrices)
+
+
 #### Create spatially varying Gaussian kernel matrix, 'A', in 1D
 
 tt = np.linspace(0, 10, 1000)
@@ -631,7 +687,8 @@ plt.subplot(1,3,3)
 plt.imshow(Asym_plus-Asym_plus2)
 plt.title('Asym_plus-Asym_plus2')
 
-# Sparse plus low rank stuff
+
+#### Sparse plus low rank stuff
 
 N = len(tt)
 L = sps.diags([-np.ones(N-1), 2*np.ones(N), -np.ones(N-1)], [-1,0,1], shape=(N,N)).tocsr()
@@ -667,3 +724,15 @@ z1 = np.linalg.solve(M_dense.T, xi)
 z2 = M.rsolve(xi)
 err_woodburyrsolve = np.linalg.norm(z2-z1) / np.linalg.norm(z1)
 print('err_woodburyrsolve=', err_woodburyrsolve)
+
+#
+
+L_pieces = partition_sparse_matrix(0.0*L, patch_row_inds, patch_col_inds)
+LA_pieces = tuple([SparsePlusLowRankMatrix(Li, X.left_factor, X.right_factor) for Li, X in zip(L_pieces, Asym_plus_pieces)])
+LA_patchmatrix = PatchMatrix((N,N), LA_pieces, patch_row_inds, patch_col_inds)
+
+xi = np.random.randn(N)
+eta1 = 0.0*L @ xi + Asym_plus_patchmatrix.matvec(xi)
+eta2 = LA_patchmatrix.matvec(xi)
+err_slr_patchmatrix_matvec = np.linalg.norm(eta2 - eta1) / np.linalg.norm(eta1)
+print('err_slr_patchmatrix_matvec=', err_slr_patchmatrix_matvec)
