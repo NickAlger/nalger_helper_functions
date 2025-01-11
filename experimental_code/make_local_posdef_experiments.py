@@ -377,10 +377,10 @@ class SparsePlusLowRankMatrix:
         assert(me.shape[0] == me.shape[1])
         N = me.shape[0]
         r = me.LR_rank
-        M1 = np.zeros(N, r)
+        M1 = np.zeros((N, r))
         for ii in range(r):
             M1[:,ii] = me.sparse_matrix_solve(me.left_factor[:,ii])
-        return np.eye(N) + me.right_factor @ M1
+        return np.eye(r) + me.right_factor @ M1
 
     @ft.cached_property
     def inv_capacitance_matrix(me) -> np.ndarray: # shape=(r,r)
@@ -422,17 +422,42 @@ class SparsePlusLowRankMatrix:
         assert(len(Y.shape) == 2)
         assert(Y.shape[0] == me.shape[0])
         N = me.shape[0]
-        r = me.LR_rank
         k = Y.shape[1]
 
-        M1 = np.zeros(N, k)
+        M1 = np.zeros((N, k))
         for ii in range(k):
             M1[:,ii] = me.sparse_matrix_solve(Y[:,ii])
         M2 = Y - me.left_factor @ (me.inv_capacitance_matrix @ (me.right_factor @ M1))
 
-        X = np.zeros(N,k)
+        X = np.zeros((N,k))
         for ii in range(k):
-            X[:,ii] = me.sparse_matrix_solve(M2[ii,:])
+            X[:,ii] = me.sparse_matrix_solve(M2[:,ii])
+
+        return X
+
+    def rsolve(
+            me,
+            Y: np.ndarray,  # shape=(num_cols, K) or (num_cols,)
+    ) -> np.ndarray:        # shape=(num_rows, K) or (num_rows,)
+        '''Use Woodbury formula to solve (A + LR)^T X = Y
+        (A + LR)^-T = A^-T (I - R^T (I + R A^-1 L)^-T L^T A^-T)
+        '''
+        assert(me.shape[0] == me.shape[1])
+        if len(Y.shape) == 1:
+            return me.rsolve(Y.reshape(-1,1)).reshape(-1)
+        assert(len(Y.shape) == 2)
+        assert(Y.shape[0] == me.shape[0])
+        N = me.shape[0]
+        k = Y.shape[1]
+
+        M1 = np.zeros((N, k))
+        for ii in range(k):
+            M1[:,ii] = me.sparse_matrix_solve(Y[:,ii], trans='T')
+        M2 = Y - me.right_factor.T @ (me.inv_capacitance_matrix.T @ (me.left_factor.T @ M1))
+
+        X = np.zeros((N,k))
+        for ii in range(k):
+            X[:,ii] = me.sparse_matrix_solve(M2[:,ii], trans='T')
 
         return X
 
@@ -628,9 +653,17 @@ y2 = M.matvec(xi)
 err_slr_matvec = np.linalg.norm(y2-y1) / np.linalg.norm(y1)
 print('err_slr_matvec=', err_slr_matvec)
 
-xi = xi.reshape((N,1))
 y1 = M_dense.T @ xi
 y2 = M.rmatvec(xi)
 err_slr_rmatvec = np.linalg.norm(y2-y1) / np.linalg.norm(y1)
 print('err_slr_rmatvec=', err_slr_rmatvec)
 
+z1 = np.linalg.solve(M_dense, xi)
+z2 = M.solve(xi)
+err_woodburysolve = np.linalg.norm(z2-z1) / np.linalg.norm(z1)
+print('err_woodburysolve=', err_woodburysolve)
+
+z1 = np.linalg.solve(M_dense.T, xi)
+z2 = M.rsolve(xi)
+err_woodburyrsolve = np.linalg.norm(z2-z1) / np.linalg.norm(z1)
+print('err_woodburyrsolve=', err_woodburyrsolve)
