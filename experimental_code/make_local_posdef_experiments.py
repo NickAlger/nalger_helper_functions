@@ -2,6 +2,8 @@ import numpy as np
 from dataclasses import dataclass
 import typing as typ
 import functools as ft
+import scipy.sparse as sps
+import scipy.sparse.linalg as spla
 import matplotlib.pyplot as plt
 
 # Experimental
@@ -45,7 +47,7 @@ class LowRankMatrix:
             Y: np.ndarray,  # shape=(num_rows, K) or (num_rows,)
     ) -> np.ndarray:  # shape=(num_cols, K) or (num_cols,)
         if len(Y.shape) == 1:
-            return me.matvec(Y.reshape(-1, 1)).reshape(-1)
+            return me.rmatvec(Y.reshape(-1, 1)).reshape(-1)
         assert(len(Y.shape) == 2)
         assert(Y.shape[0] == me.shape[0])
         return me.right_factor.T @ (me.left_factor.T @ Y)
@@ -140,7 +142,7 @@ class PatchMatrix:
             Y: np.ndarray,  # shape=(me.num_rows, K) or (me.num_rows,)
     ) -> np.ndarray:  # shape=(me.num_cols, K) or (me.num_cols,)
         if len(Y.shape) == 1:  # only one vector to matvec
-            return me.matvec(Y.reshape((-1, 1))).reshape(-1)
+            return me.rmatvec(Y.reshape((-1, 1))).reshape(-1)
 
         assert (len(Y.shape) == 2)
         K = Y.shape[1]
@@ -342,6 +344,97 @@ def partition_matrix(
 
     return tuple(patch_matrices)
 
+#
+
+@dataclass(frozen=True)
+class SparsePlusLowRankMatrix:
+    sparse_matrix:  sps.csr_matrix # shape=(N,M)
+    left_factor:    np.ndarray # shape=(N,r)
+    right_factor:   np.ndarray # shape=(r,M)
+
+    def __post_init__(me):
+        assert(me.sparse_matrix.shape == me.shape)
+        assert(me.left_factor.shape == (me.shape[0], me.LR_rank))
+        assert(me.right_factor.shape == (me.LR_rank, me.shape[1]))
+
+    @ft.cached_property
+    def shape(me) -> typ.Tuple[int, int]:
+        return me.sparse_matrix.shape
+
+    @ft.cached_property
+    def LR_rank(me) -> int:
+        return me.left_factor.shape[1]
+
+    @ft.cached_property
+    def sparse_matrix_solve(me) -> typ.Callable:
+        return spla.factorized(me.sparse_matrix)
+
+    @ft.cached_property
+    def capacitance_matrix(me) -> np.ndarray: # shape=(r,r)
+        '''Computes matrix (I + R A^-1 L) from woodbury formula:
+        (A + LR)^-1 = A^-1 - A^-1 L (I + R A^-1 L)^-1 R A^-1
+        '''
+        assert(me.shape[0] == me.shape[1])
+        N = me.shape[0]
+        r = me.LR_rank
+        M1 = np.zeros(N, r)
+        for ii in range(r):
+            M1[:,ii] = me.sparse_matrix_solve(me.left_factor[:,ii])
+        return np.eye(N) + me.right_factor @ M1
+
+    @ft.cached_property
+    def inv_capacitance_matrix(me) -> np.ndarray: # shape=(r,r)
+        return np.linalg.inv(me.capacitance_matrix)
+
+    def to_dense(me) -> np.ndarray:
+        return me.sparse_matrix.toarray() + me.left_factor @ me.right_factor
+
+    def matvec(
+            me,
+            X: np.ndarray,  # shape=(num_cols, K) or (num_cols,)
+    ) -> np.ndarray:        # shape=(num_rows, K) or (num_rows,)
+        if len(X.shape) == 1:
+            return me.matvec(X.reshape(-1,1)).reshape(-1)
+        assert(len(X.shape) == 2)
+        assert(X.shape[0] == me.shape[1])
+        return me.sparse_matrix @ X + me.left_factor @ (me.right_factor @ X)
+
+    def rmatvec(
+            me,
+            Y: np.ndarray,  # shape=(num_rows, K) or (num_rows,)
+    ) -> np.ndarray:  # shape=(num_cols, K) or (num_cols,)
+        if len(Y.shape) == 1:
+            return me.rmatvec(Y.reshape(-1, 1)).reshape(-1)
+        assert(len(Y.shape) == 2)
+        assert(Y.shape[0] == me.shape[0])
+        return me.sparse_matrix.T @ Y + me.right_factor.T @ (me.left_factor.T @ Y)
+
+    def solve(
+            me,
+            Y: np.ndarray,  # shape=(num_cols, K) or (num_cols,)
+    ) -> np.ndarray:        # shape=(num_rows, K) or (num_rows,)
+        '''Use Woodbury formula to solve (A + LR)X = Y
+        (A + LR)^-1 = A^-1 (I - L (I + R A^-1 L)^-1 R A^-1)
+        '''
+        assert(me.shape[0] == me.shape[1])
+        if len(Y.shape) == 1:
+            return me.solve(Y.reshape(-1,1)).reshape(-1)
+        assert(len(Y.shape) == 2)
+        assert(Y.shape[0] == me.shape[0])
+        N = me.shape[0]
+        r = me.LR_rank
+        k = Y.shape[1]
+
+        M1 = np.zeros(N, k)
+        for ii in range(k):
+            M1[:,ii] = me.sparse_matrix_solve(Y[:,ii])
+        M2 = Y - me.left_factor @ (me.inv_capacitance_matrix @ (me.right_factor @ M1))
+
+        X = np.zeros(N,k)
+        for ii in range(k):
+            X[:,ii] = me.sparse_matrix_solve(M2[ii,:])
+
+        return X
 
 #### Create spatially varying Gaussian kernel matrix, 'A', in 1D
 
@@ -513,4 +606,31 @@ plt.subplot(1,3,3)
 plt.imshow(Asym_plus-Asym_plus2)
 plt.title('Asym_plus-Asym_plus2')
 
+# Sparse plus low rank stuff
+
+N = len(tt)
+L = sps.diags([-np.ones(N-1), 2*np.ones(N), -np.ones(N-1)], [-1,0,1], shape=(N,N)).tocsr()
+
+xi = np.random.randn(N)
+eta = spla.spsolve(L, xi)
+plt.figure()
+plt.plot(eta)
+
+r = 12
+left_factor = np.random.randn(N,r)
+right_factor = np.random.randn(r,N)
+M = SparsePlusLowRankMatrix(L, left_factor, right_factor)
+
+M_dense = M.to_dense()
+
+y1 = M_dense @ xi
+y2 = M.matvec(xi)
+err_slr_matvec = np.linalg.norm(y2-y1) / np.linalg.norm(y1)
+print('err_slr_matvec=', err_slr_matvec)
+
+xi = xi.reshape((N,1))
+y1 = M_dense.T @ xi
+y2 = M.rmatvec(xi)
+err_slr_rmatvec = np.linalg.norm(y2-y1) / np.linalg.norm(y1)
+print('err_slr_rmatvec=', err_slr_rmatvec)
 
