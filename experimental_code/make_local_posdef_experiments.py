@@ -595,6 +595,78 @@ class WeightedSparsePlusLowRankMatrix:
         return apply_weighted_linop(me.matrix.rsolve, me.weights.right_factor.T, me.weights.left_factor.T, X)
 
 
+def compute_patch_overlaps(
+        patch_row_inds: typ.Sequence[typ.Sequence[int]],
+        patch_col_inds: typ.Sequence[typ.Sequence[int]],
+) -> typ.Tuple[
+    typ.Tuple[typ.Tuple[typ.Tuple[int, ...], ...], ...], # row overlaps
+    typ.Tuple[typ.Tuple[typ.Tuple[int, ...], ...], ...], # col overlaps
+]:
+# ) -> typ.Tuple[typ.Tuple[int], ...]: # j in neighbors[i] iff patch i overlaps patch j
+    num_patches = len(patch_row_inds)
+    assert(len(patch_col_inds) == num_patches)
+    row_overlaps = []
+    col_overlaps = []
+    for ii in range(num_patches):
+        row_overlaps_i = []
+        col_overlaps_i = []
+        row_i_set = set(patch_row_inds[ii])
+        col_i_set = set(patch_col_inds[ii])
+        for jj in range(num_patches):
+            row_j_set = set(patch_row_inds[jj])
+            col_j_set = set(patch_col_inds[jj])
+            row_overlaps_ij = row_i_set.intersection(row_j_set)
+            col_overlaps_ij = col_i_set.intersection(col_j_set)
+            row_overlaps_i.append(tuple(row_overlaps_ij))
+            col_overlaps_i.append(tuple(col_overlaps_ij))
+        row_overlaps.append(tuple(row_overlaps_i))
+        col_overlaps.append(tuple(col_overlaps_i))
+    return tuple(row_overlaps), tuple(col_overlaps)
+
+    #         if row_i_set.intersection(row_j_set):
+    #
+    #             if col_i_set.intersection(col_j_set):
+    #                 neighbors_i.append(jj)
+    #     neighbors.append(tuple(neighbors_i))
+    # return tuple(neighbors)
+
+
+def normalize_weights(
+        weights: typ.Sequence[LowRankMatrix],
+        patch_row_inds: typ.Sequence[int],
+        patch_col_inds: typ.Sequence[int],
+        row_overlaps: typ.Sequence[typ.Sequence[typ.Sequence[int]]],
+        col_overlaps: typ.Sequence[typ.Sequence[typ.Sequence[int]]],
+        low_rank_rtol: float = 1e-5,
+        low_rank_max_rank: int = 10,
+) -> typ.Tuple[LowRankMatrix, ...]:
+    num_patches = len(weights)
+    assert(len(row_overlaps) == num_patches)
+    assert(len(col_overlaps) == num_patches)
+    normalized_weights = []
+    for ii in range(num_patches):
+        Wi = weights[ii].to_dense()
+        Wi_sum = np.zeros(Wi.shape)
+        for jj in range(num_patches):
+            rr_global = row_overlaps[ii][jj]
+            cc_global = col_overlaps[ii][jj]
+            if rr_global and cc_global:
+                Wj = weights[ii].to_dense()
+                rr_local_i = np.searchsorted(np.sort(patch_row_inds[ii]), rr_global)
+                rr_local_j = np.searchsorted(np.sort(patch_row_inds[jj]), rr_global)
+                cc_local_i = np.searchsorted(np.sort(patch_col_inds[ii]), cc_global)
+                cc_local_j = np.searchsorted(np.sort(patch_col_inds[jj]), cc_global)
+                Wi_sum[np.ix_(rr_local_i, cc_local_i)] += Wj[np.ix_(rr_local_j, cc_local_j)]
+        Wi_normalized = Wi / Wi_sum
+        normalized_weights.append(make_low_rank(
+            Wi_normalized, rtol=low_rank_rtol, max_rank=low_rank_max_rank,
+        ))
+    return tuple(normalized_weights)
+
+
+
+
+
 
 #### Create spatially varying Gaussian kernel matrix, 'A', in 1D
 
@@ -648,6 +720,12 @@ col_coords = row_coords
 patch_row_inds = patch_inds
 patch_col_inds = patch_inds
 
+#
+
+row_overlaps, col_overlaps = compute_patch_overlaps(patch_row_inds, patch_col_inds)
+
+#
+
 all_Psi = make_matrix_partition_of_unity(
         row_coords, # shape=(num_dofs, spatial_dim) physical coordinates, used for evaluating gaussian
         col_coords,
@@ -692,6 +770,30 @@ for ii in range(all_Psi_hat_PLRM.num_patches):
 plt.figure()
 plt.imshow(all_Psi_hat_PLRM.to_dense())
 plt.title('Sum of all Psi_hat')
+
+#
+
+all_Psik = all_Psi
+for k in range(10):
+    all_Psik = normalize_weights(
+        all_Psik, patch_row_inds, patch_col_inds, row_overlaps, col_overlaps, low_rank_max_rank=1
+    )
+
+    all_Psik_PLRM = PatchMatrix(
+        (row_coords.shape[0], col_coords.shape[0]),
+        all_Psik, patch_row_inds, patch_col_inds
+    )
+
+    plt.figure(figsize=(12,5))
+    for ii in range(all_Psik_PLRM.num_patches):
+        plt.subplot(1,all_Psik_PLRM.num_patches,ii+1)
+        plt.imshow(all_Psik_PLRM.get_patch_contribution(ii))
+        plt.title('Psik'+str(ii))
+
+    plt.figure()
+    plt.imshow(all_Psik_PLRM.to_dense())
+    plt.title('Sum of all Psik')
+
 
 #### Break matrix, A, into pieces using partition of unity.
 
@@ -750,8 +852,8 @@ Asym_plus_pieces_weighted = pointwise_multiply_many_low_rank_matrices(Asym_plus_
 Asym_plus_pieces_weighted_plus = make_low_rank_matrices_positive_semidefinite(Asym_plus_pieces_weighted)
 Asym_plus_patchmatrix = PatchMatrix(
     (len(row_coords), len(col_coords)),
-    # Asym_plus_pieces_weighted_plus,
-    Asym_plus_pieces_weighted,
+    Asym_plus_pieces_weighted_plus,
+    # Asym_plus_pieces_weighted,
     patch_row_inds, patch_col_inds,
 )
 
