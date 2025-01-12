@@ -4,6 +4,7 @@ import typing as typ
 import functools as ft
 import scipy.sparse as sps
 import scipy.sparse.linalg as spla
+import scipy.linalg as sla
 import matplotlib.pyplot as plt
 
 # Experimental
@@ -674,6 +675,8 @@ all_Psi_hat = make_matrix_partition_of_unity(
         normalize=True,
 )
 
+# all_Psi_hat = make_low_rank_matrices_positive_semidefinite(all_Psi_hat)
+
 all_Psi_hat_PLRM = PatchMatrix(
     (row_coords.shape[0], col_coords.shape[0]),
     all_Psi_hat, patch_row_inds, patch_col_inds
@@ -834,14 +837,16 @@ err_wslr_rsolve = np.linalg.norm(y2-y1) / np.linalg.norm(y1)
 print('err_wslr_rsolve=', err_wslr_rsolve)
 
 #
+a = 1e-2
+aL = a * L
 
-L_pieces = partition_sparse_matrix(L, patch_row_inds, patch_col_inds)
+L_pieces = partition_sparse_matrix(aL, patch_row_inds, patch_col_inds)
 LA_pieces = tuple([SparsePlusLowRankMatrix(Li, X.left_factor, X.right_factor) for Li, X in zip(L_pieces, Asym_plus_pieces)])
 WLA_pieces = tuple([WeightedSparsePlusLowRankMatrix(LA, PSI) for LA, PSI in zip(LA_pieces, all_Psi_hat)])
 WLA_patchmatrix = PatchMatrix((N,N), WLA_pieces, patch_row_inds, patch_col_inds)
 
 WLA_dense = WLA_patchmatrix.to_dense()
-LA_dense = L.toarray() + Asym_plus
+LA_dense = aL.toarray() + Asym_plus
 
 plt.figure(figsize=(12,5))
 plt.subplot(1,3,1)
@@ -854,10 +859,61 @@ plt.subplot(1,3,3)
 plt.imshow(LA_dense - WLA_dense)
 plt.title('LA_dense - WLA_dense')
 
+#
+
 xi = np.random.randn(N)
-eta1 = L @ xi + Asym_plus @ xi
-# eta1 = 0*L @ xi + Asym_plus_patchmatrix.matvec(xi)
-eta2 = WLA_dense @ xi
-# eta2 = WLA_patchmatrix.matvec(xi)
+eta1 = aL @ xi + Asym_plus_patchmatrix.matvec(xi)
+eta2 = WLA_patchmatrix.matvec(xi)
 err_wslr_patchmatrix_matvec = np.linalg.norm(eta2 - eta1) / np.linalg.norm(eta1)
 print('err_wslr_patchmatrix_matvec=', err_wslr_patchmatrix_matvec)
+
+eta1 = aL.T @ xi + Asym_plus_patchmatrix.rmatvec(xi)
+eta2 = WLA_patchmatrix.rmatvec(xi)
+err_wslr_patchmatrix_rmatvec = np.linalg.norm(eta2 - eta1) / np.linalg.norm(eta1)
+print('err_wslr_patchmatrix_rmatvec=', err_wslr_patchmatrix_rmatvec)
+
+eta1 = np.linalg.solve(aL.toarray() + Asym_plus, xi)
+eta2 = WLA_patchmatrix.solve(xi)
+err_wslr_patchmatrix_solve = np.linalg.norm(eta2 - eta1) / np.linalg.norm(eta1)
+print('err_wslr_patchmatrix_solve=', err_wslr_patchmatrix_solve)
+
+plt.figure()
+plt.plot(eta1)
+plt.plot(eta2)
+
+#
+
+iWLA_patchmatrix_dense = np.zeros((N,N))
+for ii in range(N):
+    ei = np.zeros(N)
+    ei[ii] = 1.0
+    iWLA_patchmatrix_dense[:,ii] = WLA_patchmatrix.solve(ei)
+
+WLA_dense = aL.toarray() + Asym_plus
+iWLA_dense = np.linalg.inv(WLA_dense)
+
+plt.figure(figsize=(12,5))
+plt.subplot(1,3,1)
+plt.imshow(iWLA_dense)
+plt.title('iWLA_dense')
+plt.subplot(1,3,2)
+plt.imshow(iWLA_patchmatrix_dense)
+plt.title('iWLA_patchmatrix_dense')
+plt.subplot(1,3,3)
+plt.imshow(iWLA_dense - iWLA_patchmatrix_dense)
+plt.title('iWLA_dense - iWLA_patchmatrix_dense')
+
+X = iWLA_patchmatrix_dense @ WLA_dense
+
+U, ss, Vt = np.linalg.svd(X)
+plt.figure()
+plt.semilogy(ss)
+plt.figure()
+plt.plot(U[:,0])
+plt.figure()
+plt.plot(U[:,999])
+
+
+ee, P = sla.eigh(iWLA_patchmatrix_dense, iWLA_dense)
+
+
