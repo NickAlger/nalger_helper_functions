@@ -673,6 +673,7 @@ all_Psi_hat = make_matrix_partition_of_unity(
         patch_row_inds,
         patch_col_inds,
         normalize=True,
+        low_rank_max_rank=10,
 )
 
 # all_Psi_hat = make_low_rank_matrices_positive_semidefinite(all_Psi_hat)
@@ -746,8 +747,10 @@ Asym_plus = P @ np.diag(ee * (ee > 0)) @ P.T
 Asym_plus_pieces = make_low_rank_matrices_positive_semidefinite(Asym_pieces)
 
 Asym_plus_pieces_weighted = pointwise_multiply_many_low_rank_matrices(Asym_plus_pieces, all_Psi_hat)
+Asym_plus_pieces_weighted_plus = make_low_rank_matrices_positive_semidefinite(Asym_plus_pieces_weighted)
 Asym_plus_patchmatrix = PatchMatrix(
     (len(row_coords), len(col_coords)),
+    # Asym_plus_pieces_weighted_plus,
     Asym_plus_pieces_weighted,
     patch_row_inds, patch_col_inds,
 )
