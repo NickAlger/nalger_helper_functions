@@ -114,6 +114,7 @@ def make_inner_product_helper_matrix(
             jnp.ndarray,  # Y, shape=(r,M)
         ],
 ) -> jnp.ndarray: # inner_product_helper_matrix=YY^T, shape=(r,r)
+    Q, Y = left_orthogonal_base
     return Y @ Y.T
 
 
