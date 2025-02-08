@@ -507,3 +507,251 @@ for scaling in [0.1, 0.5, 0.9, 0.99]:
     norm_p = np.linalg.norm(p)
     print('trust_radius=', trust_radius, ', norm_p=', norm_p)
 
+
+######## Low rank matvecs objective function
+
+@jax.jit
+def low_rank_matvecs(
+        factors: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        Omega, # shape=(M,k)
+) -> jnp.ndarray: # Z = X Y Omega. shape=(N,k)
+    X, Y = factors
+    return X @ (Y @ Omega)
+
+
+@jax.jit
+def low_rank_rmatvecs(
+        factors: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        Omega, # shape=(k,N)
+) -> jnp.ndarray: # Z = Omega X Y. shape=(k,M)
+    X, Y = factors
+    return Omega @ (X @ Y)
+
+
+# @jax.jit
+# def tangent_affine_matvecs(
+#         base: typ.Tuple[
+#             jnp.ndarray,  # X, shape=(N,r)
+#             jnp.ndarray,  # Y, shape=(r,M)
+#         ],
+#         perturbation: typ.Tuple[
+#             jnp.ndarray,  # dX, shape=(N,r)
+#             jnp.ndarray,  # dY, shape=(r,M)
+#         ],
+#         Omega,  # shape=(M,k)
+# ) -> jnp.ndarray: # Z = (X Y + dX Y + X dY) Omega. shape=(N,k)
+#     X, Y = base
+#     dX, dY = perturbation
+#     return low_rank_matvecs((X, Y), Omega) + low_rank_matvecs((dX, Y), Omega) + low_rank_matvecs((X, dY), Omega)
+#
+#
+# @jax.jit
+# def tangent_affine_rmatvecs(
+#         base: typ.Tuple[
+#             jnp.ndarray,  # X, shape=(N,r)
+#             jnp.ndarray,  # Y, shape=(r,M)
+#         ],
+#         perturbation: typ.Tuple[
+#             jnp.ndarray,  # dX, shape=(N,r)
+#             jnp.ndarray,  # dY, shape=(r,M)
+#         ],
+#         Omega,  # shape=(M,k)
+# ) -> jnp.ndarray: # Z = Omega (X Y + dX Y + X dY). shape=(k,M)
+#     X, Y = base
+#     dX, dY = perturbation
+#     return low_rank_rmatvecs((X, Y), Omega) + low_rank_rmatvecs((dX, Y), Omega) + low_rank_rmatvecs((X, dY), Omega)
+#
+#
+# @jax.jit
+# def tangent_residual_norms_squared(
+#         base: typ.Tuple[
+#             jnp.ndarray,  # X, shape=(N,r)
+#             jnp.ndarray,  # Y, shape=(r,M)
+#         ],
+#         perturbation: typ.Tuple[
+#             jnp.ndarray,  # dX, shape=(N,r)
+#             jnp.ndarray,  # dY, shape=(r,M)
+#         ],
+#         Omega,  # shape=(M,k)
+#         Omega_r, # shape=(k_r,N)
+#         Z,  # shape=(M,k)
+#         Z_r, # shape=(k_r,N)
+# ) -> typ.Tuple[
+#     jnp.ndarray, # matvec residual norms squared. shape=(k)
+#     jnp.ndarray, # rmatvec residual norms squared. shape=(k_r)
+# ]:
+#     R = Z - tangent_affine_rmatvecs(base, perturbation, Omega)
+#     R_r = Z_r - tangent_affine_rmatvecs(base, perturbation, Omega)
+#     rsq = np.linalg.norm(R, axis=0) ** 2
+#     rsq_r = np.linalg.norm(R_r, axis=1) ** 2
+#     return rsq, rqs_r
+#
+#
+# def objective(
+#         base: typ.Tuple[
+#             jnp.ndarray,  # X, shape=(N,r)
+#             jnp.ndarray,  # Y, shape=(r,M)
+#         ],
+#         perturbation: typ.Tuple[
+#             jnp.ndarray,  # dX, shape=(N,r)
+#             jnp.ndarray,  # dY, shape=(r,M)
+#         ],
+#         Omega,  # shape=(M,k)
+#         Omega_r,  # shape=(k_r,N)
+#         Z,  # shape=(M,k)
+#         Z_r,  # shape=(k_r,N)
+# ) -> typ.Tuple[
+#     jnp.ndarray, # J, scalar, shape=()
+#     typ.Tuple[
+#         jnp.ndarray,  # matvec residual norms squared. shape=(k)
+#         jnp.ndarray,  # rmatvec residual norms squared. shape=(k_r)
+#     ]
+# ]:
+#     rsq, rsq_r = tangent_residual_norms_squared(base, perturbation, Omega, Omega_r, Z, Zr)
+#     J = 0.5 * np.linalg.norm(rsq) + 0.5 * np.linalg.norm(rsq)
+#     return J, rsq, rsq_r
+
+
+def forward_map(
+        base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray, # Omega, shape=(M,k)
+            jnp.ndarray, # Omega_r, shape=(k_r,N)
+        ],
+) -> typ.Tuple[
+    jnp.ndarray,  # Z, shape=(N,k)
+    jnp.ndarray,  # Z_r, shape=(k_r,M)
+]: # outputs
+    X, Y = base
+    Omega, Omega_r = inputs
+    Z = X @ (Y @ Omega))
+    Z_r = Omega @ (X @ Y)
+    outputs = Z, Z_r
+    return outputs
+
+
+def objective(
+        base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray, # Omega, shape=(M,k)
+            jnp.ndarray, # Omega_r, shape=(k_r,N)
+        ],
+        true_outputs: typ.Tuple[
+            jnp.ndarray,  # Ytrue, shape=(N,k)
+            jnp.ndarray,  # Ytrue_r, shape=(k_r,M)
+        ],
+) -> typ.Tuple[
+    jnp.ndarray,  # J, scalar, shape=()
+    typ.Tuple[
+        jnp.ndarray,  # matvec residual norms squared. shape=(k)
+        jnp.ndarray,  # rmatvec residual norms squared. shape=(k_r)
+    ]
+]:
+    Ytrue, Ytrue_r = true_outputs
+    Y, Y_r = forward_map(base, inputs)
+    rsq = np.linalg.norm(Y - Ytrue, axis=0)**2
+    rsq_r = np.linalg.norm(Y_r - Ytrue_r, axis=0)**2
+    J = 0.5 * np.sum(rsq) + 0.5 * np.sum(rsq_r)
+    return J, rsq, rsq_r
+
+
+gradient = jax.grad(objective, argnums=0, has_aux=True)
+
+def hessian_matvec(
+        base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        perturbation: typ.Tuple[
+            jnp.ndarray,  # dX, shape=(N,r)
+            jnp.ndarray,  # dY, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray, # Omega, shape=(M,k)
+            jnp.ndarray, # Omega_r, shape=(k_r,N)
+        ],
+        true_outputs: typ.Tuple[
+            jnp.ndarray,  # Ytrue, shape=(N,k)
+            jnp.ndarray,  # Ytrue_r, shape=(k_r,M)
+        ],
+):
+    func = lambda b: gradient(b, inputs, true_outputs)
+    return jax.jvp(func, (base,), (perturbation,))
+
+
+def forward_map_jvp(
+        base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        perturbation: typ.Tuple[
+            jnp.ndarray,  # dX, shape=(N,r)
+            jnp.ndarray,  # dY, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray, # Omega, shape=(M,k)
+            jnp.ndarray, # Omega_r, shape=(k_r,N)
+        ],
+) -> typ.Tuple[
+    jnp.ndarray,  # Z, shape=(M,k)
+    jnp.ndarray,  # Z_r, shape=(k_r,N)
+]:
+    X, Y = base
+    dX, dY = perturbation
+    Omega, Omega_r = inputs
+    Z = dX @ (Y @ Omega) + X @ (dY @ Omega)
+    Z_r = (Omega @ dX) @ Y + (Omega @ X) @ dY
+    return Z, Z_r
+
+
+def forward_map_vjp(
+        base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray, # Omega, shape=(M,k)
+            jnp.ndarray, # Omega_r, shape=(k_r,N)
+        ],
+        ZZ: typ.Tuple[
+            jnp.ndarray,  # Z, shape=(N,k)
+            jnp.ndarray,  # Z_r, shape=(k_r,M)
+        ],
+) -> typ.Tuple[
+    jnp.ndarray, # shape=(N,r)
+    jnp.ndarray, # shape=(r,M)
+]:
+    func = lambda x: forward_map(base, x)
+    _, vjp_func = jax.vjp(func, inputs)
+    return vjp_func(ZZ)
+
+
+def gn_hessian_matvec(
+        base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        perturbation: typ.Tuple[
+            jnp.ndarray,  # dX, shape=(N,r)
+            jnp.ndarray,  # dY, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray, # Omega, shape=(M,k)
+            jnp.ndarray, # Omega_r, shape=(k_r,N)
+        ],
+):
+    return forward_map_vjp(base, inputs, forward_map_jvp(base, perturbation, inputs))
+
+
