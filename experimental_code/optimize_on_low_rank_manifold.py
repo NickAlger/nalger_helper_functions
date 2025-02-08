@@ -138,18 +138,32 @@ def inner_product_of_tangent_vectors(
 
 
 @jax.jit
-def normsquared_of_tangent_vector(
-        standard_perturbation1: typ.Tuple[
-            jnp.ndarray,  # dX1_perp, shape=(N,r)
-            jnp.ndarray,  # dY1, shape=(r,M)
+def retract_tangent_vector(
+        base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
         ],
-        standard_perturbation2: typ.Tuple[
-            jnp.ndarray,  # dX2_perp, shape=(N,r)
-            jnp.ndarray,  # dY2, shape=(r,M)
+        perturbation: typ.Tuple[
+            jnp.ndarray,  # dX, shape=(N,r)
+            jnp.ndarray,  # dY, shape=(r,M)
         ],
-        inner_product_helper_matrix: jnp.ndarray, # shape=(r,r)
-) -> jnp.ndarray: # scalar, shape=()
-    return inner_product_of_tangent_vectors(standard_perturbation1, standard_perturbation2, inner_product_helper_matrix)
+) -> typ.Tuple[
+    jnp.ndarray,  # Q2, shape=(N,r), Q2^T Q2 = I
+    jnp.ndarray,  # Y2, shape=(r,M)
+]: # retracted_vector based on truncated SVD of dX Y + Y dX. Is left orthogonal, even if base is not
+    X, Y = base
+    dX, dY = perturbation
+    r = X.shape[1]
+
+    bigX = jnp.hstack([X, X, dX])
+    bigY = jnp.vstack([Y, dY, Y])
+    QX, RX = jnp.linalg.qr(bigX, mode='reduced')
+    QYT, RYT = jnp.linalg.qr(bigY.T, mode='reduced')
+    U, ss, Vt = jnp.linalg.svd(RX @ RYT.T, full_matrices=False)
+    Q = QX @ U[:,:r]
+    Y2 = (ss[:r].reshape(-1,1) * Vt[:r,:]) @ (QYT.T)
+    retracted_vector = (Q, Y2)
+    return retracted_vector
 
 
 #### Tests
@@ -254,3 +268,160 @@ IP_true = np.sum(v1 * v2)
 
 err_inner_product_of_tangent_vectors = np.linalg.norm(IP - IP_true) / np.linalg.norm(IP_true)
 print('err_inner_product_of_tangent_vectors=', err_inner_product_of_tangent_vectors)
+
+# Test retract_tangent_vector()
+
+retracted_vector = retract_tangent_vector(base, perturbation)
+v = base_to_full(retracted_vector)
+
+U, ss, Vt = np.linalg.svd(base_to_full(base) + tangent_vector_to_full(base, perturbation))
+v_true = U[:,:r] @ np.diag(ss[:r]) @ Vt[:r,:]
+
+err_retract_vector = np.linalg.norm(v - v_true) / np.linalg.norm(v_true)
+print('err_retract_vector=', err_retract_vector)
+
+
+
+#### CG Steihaug
+
+def cg_steihaug(
+        hessian_matvec:         typ.Callable[[typ.Any], typ.Any], # u -> H @ u
+        gradient:               typ.Any,
+        trust_region_radius:    typ.Union[float, jnp.ndarray],
+        rtol:                   typ.Union[float, jnp.ndarray],
+        max_iter:               int     = 250,
+        display:                bool    = True,
+        add:                    typ.Callable[[typ.Any, typ.Any], typ.Any],                          # (u, v) -> u+v
+        scale_vector:           typ.Callable[[typ.Any, typ.Union[float, jnp.ndarray]], typ.Any],    # (u, c) -> c*u
+        inner_product:          typ.Callable[[typ.Any, typ.Any], typ.Union[float, jnp.ndarray]],    # (u, v) -> <u,v>
+) -> typ.Tuple[
+    typ.Any, # optimal search direction. same type as gradient
+    typ.Tuple[
+        int, # number of iterations
+        str, # termination reason
+    ]
+]:
+    '''Algorithm 7.2 in Nocedal and Wright, page 171. See also: equation 4.5 on page 69.
+    Approximately solves quadratic minimization problem:
+        argmin_p f + g^T p + 0.5 * p^T H P
+    '''
+    def _print():
+        if display:
+            print(s)
+
+    def normsquared(u, u):
+        return inner_product(u,u)
+
+    def make_zero_vector(u):
+        return scalar_mult(u, 0)
+
+    gradnorm_squared = inner_product(gradient, gradient)
+    atol_squared = rtol**2 * gradnorm_squared
+
+    z = make_zero_vector(gradient)
+    r = gradient
+    d = scale_vector(gradient, -1.0)
+
+    z_normsquared = 0.0
+    r_normsquared = inner_product(r, r)
+    _print('initial ||r||/||g||=' + str(jnp.sqrt(r_normsquared / gradnorm_squared)))
+
+    if r_normsquared < atol_squared:
+        return z, (0, 'tolerance_achieved')  # currently zero; take no steps
+
+    for jj in range(max_iter):
+        Bd  = hessian_matvec(d)
+        dBd = inner_product(d, Bd)
+        if dBd <= 0.0:
+            if np.isinf(trust_region_radius):
+                if jj == 0:
+                    p = gradient
+                    _print('gradient points downhill. Probably due to numerical errors. dBd=' + str(dBd))
+                    return p, (jj + 1, 'gradient_points_downhill')
+                else:
+                    p = z
+                    _print('Iterate ' + str(jj) + ' encountered negative curvature. dBd=' + str(dBd))
+                    return p, (jj + 1, 'encountered_negative_curvature')
+
+            tau1, tau2 = _interpolate_to_trust_region_boundary(z, d, z_normsquared, trust_region_radius, display=True)
+            p1 = _add_vector_trees(z, _scale_vector_tree(tau1, d)) # p = z + tau1*d
+            p2 = _add_vector_trees(z, _scale_vector_tree(tau2, d)) # p = z + tau2*d
+            m1 = _dot_product_vector_trees(gradient, p1) + 0.5 * _dot_product_vector_trees(p1, hessian_matvec(p1))
+            m2 = _dot_product_vector_trees(gradient, p2) + 0.5 * _dot_product_vector_trees(p2, hessian_matvec(p2))
+            if m1 <= m2:
+                tau = tau1
+                p = p1
+            else:
+                tau = tau2
+                p = p2
+            _print('m1=' + str(m1) + ', m2=' + str(m2))
+            _print('Iterate ' + str(jj) + ' encountered negative curvature. tau=' + str(tau))
+            return p, (jj+1, 'encountered_negative_curvature')
+
+        alpha:                  jnp.ndarray = r_normsquared / dBd                       # scalar. shape=()
+        z_next:                 VectorTree  = _add_vector_trees(z, _scale_vector_tree(alpha, d)) # z_next = z + alpha*d
+        z_next_normsquared:     jnp.ndarray = _dot_product_vector_trees(z_next, z_next)  # scalar. shape=()
+
+        if z_next_normsquared >= trust_region_radius ** 2:
+            tau, _ = _interpolate_to_trust_region_boundary(z, d, z_normsquared, trust_region_radius, display)
+            p = _add_vector_trees(z, _scale_vector_tree(tau, d)) # p = z + tau*d
+            _print(
+                'Iterate ' + str(jj)
+                + ' exited trust region. trust_region_radius=' + str(trust_region_radius)
+                + ', tau=' + str(tau)
+            )
+            return p, (jj+1, 'exited_trust_region')
+
+        r_next = _add_vector_trees(r, _scale_vector_tree(alpha, Bd)) # r_next = r + alpha*Bd
+        r_next_normsquared: jnp.ndarray = _dot_product_vector_trees(r_next, r_next) # scalar, shape=()
+        _print(
+            'CG Iter:' + str(jj)
+            + ', ||r||/||g||=' + str(jnp.sqrt(jnp.sqrt(r_next_normsquared / gradnorm_squared)))
+            + ', ||z||=' + str(jnp.sqrt(z_next_normsquared))
+            + ', Delta=' + str(trust_region_radius)
+        )
+        if r_next_normsquared < atol_squared:
+            _print('rtol=' + str(rtol) + ' achieved. ||r||/||g||=' + str(jnp.sqrt(r_next_normsquared / gradnorm_squared)))
+            return z_next, (jj+1, 'tolerance_achieved')
+
+        beta: jnp.ndarray = r_next_normsquared / r_normsquared # scalar, shape=()
+        d = _add_vector_trees(_scale_vector_tree(-1.0, r_next), _scale_vector_tree(beta, d))
+
+        r = r_next
+        z = z_next
+        z_normsquared = z_next_normsquared
+        r_normsquared = r_next_normsquared
+
+        _print('Reached max_iter=' + str(max_iter) + ' without converging or exiting trust region.')
+
+    return z, (max_iter, 'performed_maximum_iterations')
+
+
+def _interpolate_to_trust_region_boundary(
+        z: VectorTree,
+        d: VectorTree,
+        z_normsquared: jnp.ndarray, # scalar, shape=()
+        trust_region_radius: jnp.ndarray, # shape=()
+        display: bool,
+) -> typ.Tuple[jnp.ndarray, jnp.ndarray]: # (tau1, tau2), scalars, elm_shape=()
+    '''Find tau such that:
+        Delta^2 = ||z + tau*d||^2
+                = ||z||^2 + tau*2*(z, d) + tau^2*||d||^2
+    which is:,
+      tau^2 * ||d||^2 + tau * 2*(z, d) + ||z||^2-Delta^2 = 0
+              |--a--|         |--b---|   |------c------|
+    Note that c is negative since we were inside trust region last step
+    '''
+    d_normsquared = _dot_product_vector_trees(d, d)
+    z_dot_d = _dot_product_vector_trees(z, d)
+
+    a = d_normsquared
+    b = 2.0 * z_dot_d
+    c = z_normsquared - trust_region_radius ** 2
+
+    tau1 = (-b + jnp.sqrt(b ** 2 - 4.0 * a * c)) / (2.0 * a)  # quadratic formula, first root
+    tau2 = (-b - jnp.sqrt(b ** 2 - 4.0 * a * c)) / (2.0 * a)  # quadratic formula, second root
+    if display:
+        print('a=', a, ', b=', b, ', c=', c, ', tau1=', tau1, ', tau2=', tau2)
+    return tau1, tau2
+
