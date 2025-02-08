@@ -426,9 +426,8 @@ def _interpolate_to_trust_region_boundary(
         print('a=', a, ', b=', b, ', c=', c, ', tau1=', tau1, ', tau2=', tau2)
     return tau1, tau2
 
-# Test cg_steihaug
 
-import scipy.sparse.linalg as spla
+# Test cg_steihaug
 
 N = 100
 cond = 50
@@ -443,7 +442,7 @@ add = lambda u,v: u+v
 scale = lambda u,c: c*u
 inner_product = lambda u,v: np.dot(u,v)
 
-# Check that this generates the same iterates as scipy CG if:
+# Check that this generates the same iterates as reference CG from stackoverflow if:
 #  - trust region is infinite,
 #  - Hessian is positive definite,
 #  - tolerance is zero
@@ -458,28 +457,10 @@ p, aux = cg_steihaug(
     trust_region_radius=np.inf, rtol=0.0, max_iter=max_iter, callback=callback,
 )
 
-hessian_linop = spla.LinearOperator((N, N), matvec=hessian_matvec)
 
-x0=np.zeros(N)
-# x0 = -gradient
-
-pp_scipy = []
-callback_scipy = lambda z: pp_scipy.append(z)
-
-p_scipy, aux = spla.cg(hessian_linop, -gradient, x0=x0, maxiter=max_iter, tol=0.0, callback=callback_scipy)
-
-p_true = np.linalg.solve(H, -gradient)
-
-print('||p_true - p||/||p_true||=', np.linalg.norm(p_true - p) / np.linalg.norm(p_true))
-print('||p_true - p_scipy||/||p_true||=', np.linalg.norm(p_true - p_scipy) / np.linalg.norm(p_true))
-
-pp = np.array(pp)
-pp_scipy = np.array(pp_scipy)
-
-err_iterates_vs_scipy = np.linalg.norm(pp - pp_scipy, axis=1) / np.linalg.norm(pp_scipy, axis=1)
-print('err_iterates_vs_scipy=', err_iterates_vs_scipy)
-
-#
+# This basic implementation from stackoverflow agrees with me to machine precision.
+# Scipy's CG doesn't seem to agree with me, although the two converge to each other.
+# I think this has something to so with where the callback is called in the scipy implementation.
 
 A = H
 b = -gradient
@@ -487,7 +468,6 @@ x = x0
 tol = 0.0
 
 pp_so = []
-
 # https://stackoverflow.com/a/60847526/484944
 r = b - A.dot(x)
 p = r.copy()
@@ -497,17 +477,33 @@ for i in range(max_iter):
     x = x + alpha * p
     pp_so.append(x)
     r = b - A.dot(x)
-    if np.sqrt(np.sum((r ** 2))) < tol:
-        print('Itr:', i)
-        break
-    else:
-        beta = -np.dot(r, Ap) / np.dot(p, Ap)
-        p = r + beta * p
+    beta = -np.dot(r, Ap) / np.dot(p, Ap)
+    p = r + beta * p
 
-pp_so = np.array(pp_so)
 
-err_iterates_vs_stackoverflow = np.linalg.norm(pp - pp_so, axis=1) / np.linalg.norm(pp_so, axis=1)
-print('err_iterates_vs_stackoverflow=', err_iterates_vs_stackoverflow)
+err_CG_iterates = np.linalg.norm(np.array(pp) - np.array(pp_so), axis=1) / np.linalg.norm(np.array(pp_so), axis=1)
+print('err_CG_iterates=', err_CG_iterates)
 
-err_iterates_vs_stackoverflow_vs_scipy = np.linalg.norm(pp_scipy - pp_so, axis=1) / np.linalg.norm(pp_scipy, axis=1)
-print('err_iterates_vs_stackoverflow_vs_scipy=', err_iterates_vs_stackoverflow_vs_scipy)
+# Check that we stop when the tolerance is reached
+
+for rtol in [1e-1, 1e-2, 1e-3]:
+    p, aux = cg_steihaug(
+        hessian_matvec, gradient, add, scale, inner_product,
+        trust_region_radius=np.inf, rtol=rtol, max_iter=N,
+    )
+    relres = np.linalg.norm(H @ p + gradient) / np.linalg.norm(gradient)
+    print('rtol=', rtol, ', relres=', relres)
+
+# Check that we stop when we exit the trust region
+
+norm_p_true = np.linalg.norm(np.linalg.solve(H, -gradient))
+
+for scaling in [0.1, 0.5, 0.9, 0.99]:
+    trust_radius = scaling * norm_p_true
+    p, aux = cg_steihaug(
+        hessian_matvec, gradient, add, scale, inner_product,
+        trust_region_radius=trust_radius, rtol=0.0, max_iter=N,
+    )
+    norm_p = np.linalg.norm(p)
+    print('trust_radius=', trust_radius, ', norm_p=', norm_p)
+
