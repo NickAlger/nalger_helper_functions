@@ -287,13 +287,14 @@ print('err_retract_vector=', err_retract_vector)
 def cg_steihaug(
         hessian_matvec:         typ.Callable[[typ.Any], typ.Any], # u -> H @ u
         gradient:               typ.Any,
+        add:            typ.Callable[[typ.Any, typ.Any], typ.Any],                          # (u, v) -> u+v
+        scale:          typ.Callable[[typ.Any, typ.Union[float, jnp.ndarray]], typ.Any],    # (u, c) -> c*u
+        inner_product:  typ.Callable[[typ.Any, typ.Any], typ.Union[float, jnp.ndarray]],    # (u, v) -> <u,v>
         trust_region_radius:    typ.Union[float, jnp.ndarray],
         rtol:                   typ.Union[float, jnp.ndarray],
-        max_iter:               int     = 250,
-        display:                bool    = True,
-        add:                    typ.Callable[[typ.Any, typ.Any], typ.Any],                          # (u, v) -> u+v
-        scale_vector:           typ.Callable[[typ.Any, typ.Union[float, jnp.ndarray]], typ.Any],    # (u, c) -> c*u
-        inner_product:          typ.Callable[[typ.Any, typ.Any], typ.Union[float, jnp.ndarray]],    # (u, v) -> <u,v>
+        max_iter:               int  = 250,
+        display:                bool = True,
+        callback:               typ.Callable = None,
 ) -> typ.Tuple[
     typ.Any, # optimal search direction. same type as gradient
     typ.Tuple[
@@ -305,22 +306,19 @@ def cg_steihaug(
     Approximately solves quadratic minimization problem:
         argmin_p f + g^T p + 0.5 * p^T H P
     '''
-    def _print():
+    def _print(s: str):
         if display:
             print(s)
 
-    def normsquared(u, u):
-        return inner_product(u,u)
-
-    def make_zero_vector(u):
-        return scalar_mult(u, 0)
+    if callback is None:
+        callback = lambda z: None
 
     gradnorm_squared = inner_product(gradient, gradient)
     atol_squared = rtol**2 * gradnorm_squared
 
-    z = make_zero_vector(gradient)
+    z = scale(gradient, 0.0)
     r = gradient
-    d = scale_vector(gradient, -1.0)
+    d = scale(gradient, -1.0)
 
     z_normsquared = 0.0
     r_normsquared = inner_product(r, r)
@@ -343,11 +341,11 @@ def cg_steihaug(
                     _print('Iterate ' + str(jj) + ' encountered negative curvature. dBd=' + str(dBd))
                     return p, (jj + 1, 'encountered_negative_curvature')
 
-            tau1, tau2 = _interpolate_to_trust_region_boundary(z, d, z_normsquared, trust_region_radius, display=True)
-            p1 = _add_vector_trees(z, _scale_vector_tree(tau1, d)) # p = z + tau1*d
-            p2 = _add_vector_trees(z, _scale_vector_tree(tau2, d)) # p = z + tau2*d
-            m1 = _dot_product_vector_trees(gradient, p1) + 0.5 * _dot_product_vector_trees(p1, hessian_matvec(p1))
-            m2 = _dot_product_vector_trees(gradient, p2) + 0.5 * _dot_product_vector_trees(p2, hessian_matvec(p2))
+            tau1, tau2 = _interpolate_to_trust_region_boundary(z, d, z_normsquared, trust_region_radius, inner_product, display=True)
+            p1 = add(z, scale(d, tau1)) # p = z + tau1*d
+            p2 = add(z, scale(d, tau2)) # p = z + tau2*d
+            m1 = inner_product(gradient, p1) + 0.5 * inner_product(p1, hessian_matvec(p1))
+            m2 = inner_product(gradient, p2) + 0.5 * inner_product(p2, hessian_matvec(p2))
             if m1 <= m2:
                 tau = tau1
                 p = p1
@@ -358,13 +356,13 @@ def cg_steihaug(
             _print('Iterate ' + str(jj) + ' encountered negative curvature. tau=' + str(tau))
             return p, (jj+1, 'encountered_negative_curvature')
 
-        alpha:                  jnp.ndarray = r_normsquared / dBd                       # scalar. shape=()
-        z_next:                 VectorTree  = _add_vector_trees(z, _scale_vector_tree(alpha, d)) # z_next = z + alpha*d
-        z_next_normsquared:     jnp.ndarray = _dot_product_vector_trees(z_next, z_next)  # scalar. shape=()
+        alpha = r_normsquared / dBd
+        z_next = add(z, scale(d, alpha)) # z_next = z + alpha*d
+        z_next_normsquared = inner_product(z_next, z_next)
 
         if z_next_normsquared >= trust_region_radius ** 2:
-            tau, _ = _interpolate_to_trust_region_boundary(z, d, z_normsquared, trust_region_radius, display)
-            p = _add_vector_trees(z, _scale_vector_tree(tau, d)) # p = z + tau*d
+            tau, _ = _interpolate_to_trust_region_boundary(z, d, z_normsquared, trust_region_radius, inner_product, display)
+            p = add(z, scale(d, tau)) # p = z + tau*d
             _print(
                 'Iterate ' + str(jj)
                 + ' exited trust region. trust_region_radius=' + str(trust_region_radius)
@@ -372,8 +370,8 @@ def cg_steihaug(
             )
             return p, (jj+1, 'exited_trust_region')
 
-        r_next = _add_vector_trees(r, _scale_vector_tree(alpha, Bd)) # r_next = r + alpha*Bd
-        r_next_normsquared: jnp.ndarray = _dot_product_vector_trees(r_next, r_next) # scalar, shape=()
+        r_next = add(r, scale(Bd, alpha)) # r_next = r + alpha*Bd
+        r_next_normsquared: jnp.ndarray = inner_product(r_next, r_next) # scalar, shape=()
         _print(
             'CG Iter:' + str(jj)
             + ', ||r||/||g||=' + str(jnp.sqrt(jnp.sqrt(r_next_normsquared / gradnorm_squared)))
@@ -382,27 +380,30 @@ def cg_steihaug(
         )
         if r_next_normsquared < atol_squared:
             _print('rtol=' + str(rtol) + ' achieved. ||r||/||g||=' + str(jnp.sqrt(r_next_normsquared / gradnorm_squared)))
+            callback(z_next)
             return z_next, (jj+1, 'tolerance_achieved')
 
         beta: jnp.ndarray = r_next_normsquared / r_normsquared # scalar, shape=()
-        d = _add_vector_trees(_scale_vector_tree(-1.0, r_next), _scale_vector_tree(beta, d))
+        d = add(scale(r_next, -1.0), scale(d, beta))
 
         r = r_next
         z = z_next
+        callback(z)
         z_normsquared = z_next_normsquared
         r_normsquared = r_next_normsquared
 
-        _print('Reached max_iter=' + str(max_iter) + ' without converging or exiting trust region.')
+    _print('Reached max_iter=' + str(max_iter) + ' without converging or exiting trust region.')
 
     return z, (max_iter, 'performed_maximum_iterations')
 
 
 def _interpolate_to_trust_region_boundary(
-        z: VectorTree,
-        d: VectorTree,
-        z_normsquared: jnp.ndarray, # scalar, shape=()
-        trust_region_radius: jnp.ndarray, # shape=()
-        display: bool,
+        z:                      typ.Any,
+        d:                      typ.Any,
+        z_normsquared:          jnp.ndarray, # scalar, shape=()
+        trust_region_radius:    jnp.ndarray, # shape=()
+        inner_product:          typ.Callable[[typ.Any, typ.Any], typ.Union[float, jnp.ndarray]],  # (u, v) -> <u,v>
+        display:                bool,
 ) -> typ.Tuple[jnp.ndarray, jnp.ndarray]: # (tau1, tau2), scalars, elm_shape=()
     '''Find tau such that:
         Delta^2 = ||z + tau*d||^2
@@ -412,8 +413,8 @@ def _interpolate_to_trust_region_boundary(
               |--a--|         |--b---|   |------c------|
     Note that c is negative since we were inside trust region last step
     '''
-    d_normsquared = _dot_product_vector_trees(d, d)
-    z_dot_d = _dot_product_vector_trees(z, d)
+    d_normsquared = inner_product(d, d)
+    z_dot_d = inner_product(z, d)
 
     a = d_normsquared
     b = 2.0 * z_dot_d
@@ -425,3 +426,88 @@ def _interpolate_to_trust_region_boundary(
         print('a=', a, ', b=', b, ', c=', c, ', tau1=', tau1, ', tau2=', tau2)
     return tau1, tau2
 
+# Test cg_steihaug
+
+import scipy.sparse.linalg as spla
+
+N = 100
+cond = 50
+
+U, _, _ = np.linalg.svd(np.random.randn(N, N))
+ss = 1 + np.logspace(0, np.log10(cond), N)
+H = U @ np.diag(ss) @ U.T
+
+hessian_matvec = lambda x: H @ x
+gradient = np.random.randn(N)
+add = lambda u,v: u+v
+scale = lambda u,c: c*u
+inner_product = lambda u,v: np.dot(u,v)
+
+# Check that this generates the same iterates as scipy CG if:
+#  - trust region is infinite,
+#  - Hessian is positive definite,
+#  - tolerance is zero
+
+max_iter=25
+
+pp = []
+callback = lambda z: pp.append(z)
+
+p, aux = cg_steihaug(
+    hessian_matvec, gradient, add, scale, inner_product,
+    trust_region_radius=np.inf, rtol=0.0, max_iter=max_iter, callback=callback,
+)
+
+hessian_linop = spla.LinearOperator((N, N), matvec=hessian_matvec)
+
+x0=np.zeros(N)
+# x0 = -gradient
+
+pp_scipy = []
+callback_scipy = lambda z: pp_scipy.append(z)
+
+p_scipy, aux = spla.cg(hessian_linop, -gradient, x0=x0, maxiter=max_iter, tol=0.0, callback=callback_scipy)
+
+p_true = np.linalg.solve(H, -gradient)
+
+print('||p_true - p||/||p_true||=', np.linalg.norm(p_true - p) / np.linalg.norm(p_true))
+print('||p_true - p_scipy||/||p_true||=', np.linalg.norm(p_true - p_scipy) / np.linalg.norm(p_true))
+
+pp = np.array(pp)
+pp_scipy = np.array(pp_scipy)
+
+err_iterates_vs_scipy = np.linalg.norm(pp - pp_scipy, axis=1) / np.linalg.norm(pp_scipy, axis=1)
+print('err_iterates_vs_scipy=', err_iterates_vs_scipy)
+
+#
+
+A = H
+b = -gradient
+x = x0
+tol = 0.0
+
+pp_so = []
+
+# https://stackoverflow.com/a/60847526/484944
+r = b - A.dot(x)
+p = r.copy()
+for i in range(max_iter):
+    Ap = A.dot(p)
+    alpha = np.dot(p, r) / np.dot(p, Ap)
+    x = x + alpha * p
+    pp_so.append(x)
+    r = b - A.dot(x)
+    if np.sqrt(np.sum((r ** 2))) < tol:
+        print('Itr:', i)
+        break
+    else:
+        beta = -np.dot(r, Ap) / np.dot(p, Ap)
+        p = r + beta * p
+
+pp_so = np.array(pp_so)
+
+err_iterates_vs_stackoverflow = np.linalg.norm(pp - pp_so, axis=1) / np.linalg.norm(pp_so, axis=1)
+print('err_iterates_vs_stackoverflow=', err_iterates_vs_stackoverflow)
+
+err_iterates_vs_stackoverflow_vs_scipy = np.linalg.norm(pp_scipy - pp_so, axis=1) / np.linalg.norm(pp_scipy, axis=1)
+print('err_iterates_vs_stackoverflow_vs_scipy=', err_iterates_vs_stackoverflow_vs_scipy)
