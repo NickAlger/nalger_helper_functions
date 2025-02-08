@@ -2,6 +2,7 @@ import numpy as np
 import jax.numpy as jnp
 import jax
 import typing as typ
+from functools import partial
 
 import matplotlib.pyplot as plt
 
@@ -464,7 +465,7 @@ p, aux = cg_steihaug(
 
 A = H
 b = -gradient
-x = x0
+x = b
 tol = 0.0
 
 pp_so = []
@@ -510,114 +511,7 @@ for scaling in [0.1, 0.5, 0.9, 0.99]:
 
 ######## Low rank matvecs objective function
 
-@jax.jit
-def low_rank_matvecs(
-        factors: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        Omega, # shape=(M,k)
-) -> jnp.ndarray: # Z = X Y Omega. shape=(N,k)
-    X, Y = factors
-    return X @ (Y @ Omega)
-
-
-@jax.jit
-def low_rank_rmatvecs(
-        factors: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        Omega, # shape=(k,N)
-) -> jnp.ndarray: # Z = Omega X Y. shape=(k,M)
-    X, Y = factors
-    return Omega @ (X @ Y)
-
-
 # @jax.jit
-# def tangent_affine_matvecs(
-#         base: typ.Tuple[
-#             jnp.ndarray,  # X, shape=(N,r)
-#             jnp.ndarray,  # Y, shape=(r,M)
-#         ],
-#         perturbation: typ.Tuple[
-#             jnp.ndarray,  # dX, shape=(N,r)
-#             jnp.ndarray,  # dY, shape=(r,M)
-#         ],
-#         Omega,  # shape=(M,k)
-# ) -> jnp.ndarray: # Z = (X Y + dX Y + X dY) Omega. shape=(N,k)
-#     X, Y = base
-#     dX, dY = perturbation
-#     return low_rank_matvecs((X, Y), Omega) + low_rank_matvecs((dX, Y), Omega) + low_rank_matvecs((X, dY), Omega)
-#
-#
-# @jax.jit
-# def tangent_affine_rmatvecs(
-#         base: typ.Tuple[
-#             jnp.ndarray,  # X, shape=(N,r)
-#             jnp.ndarray,  # Y, shape=(r,M)
-#         ],
-#         perturbation: typ.Tuple[
-#             jnp.ndarray,  # dX, shape=(N,r)
-#             jnp.ndarray,  # dY, shape=(r,M)
-#         ],
-#         Omega,  # shape=(M,k)
-# ) -> jnp.ndarray: # Z = Omega (X Y + dX Y + X dY). shape=(k,M)
-#     X, Y = base
-#     dX, dY = perturbation
-#     return low_rank_rmatvecs((X, Y), Omega) + low_rank_rmatvecs((dX, Y), Omega) + low_rank_rmatvecs((X, dY), Omega)
-#
-#
-# @jax.jit
-# def tangent_residual_norms_squared(
-#         base: typ.Tuple[
-#             jnp.ndarray,  # X, shape=(N,r)
-#             jnp.ndarray,  # Y, shape=(r,M)
-#         ],
-#         perturbation: typ.Tuple[
-#             jnp.ndarray,  # dX, shape=(N,r)
-#             jnp.ndarray,  # dY, shape=(r,M)
-#         ],
-#         Omega,  # shape=(M,k)
-#         Omega_r, # shape=(k_r,N)
-#         Z,  # shape=(M,k)
-#         Z_r, # shape=(k_r,N)
-# ) -> typ.Tuple[
-#     jnp.ndarray, # matvec residual norms squared. shape=(k)
-#     jnp.ndarray, # rmatvec residual norms squared. shape=(k_r)
-# ]:
-#     R = Z - tangent_affine_rmatvecs(base, perturbation, Omega)
-#     R_r = Z_r - tangent_affine_rmatvecs(base, perturbation, Omega)
-#     rsq = np.linalg.norm(R, axis=0) ** 2
-#     rsq_r = np.linalg.norm(R_r, axis=1) ** 2
-#     return rsq, rqs_r
-#
-#
-# def objective(
-#         base: typ.Tuple[
-#             jnp.ndarray,  # X, shape=(N,r)
-#             jnp.ndarray,  # Y, shape=(r,M)
-#         ],
-#         perturbation: typ.Tuple[
-#             jnp.ndarray,  # dX, shape=(N,r)
-#             jnp.ndarray,  # dY, shape=(r,M)
-#         ],
-#         Omega,  # shape=(M,k)
-#         Omega_r,  # shape=(k_r,N)
-#         Z,  # shape=(M,k)
-#         Z_r,  # shape=(k_r,N)
-# ) -> typ.Tuple[
-#     jnp.ndarray, # J, scalar, shape=()
-#     typ.Tuple[
-#         jnp.ndarray,  # matvec residual norms squared. shape=(k)
-#         jnp.ndarray,  # rmatvec residual norms squared. shape=(k_r)
-#     ]
-# ]:
-#     rsq, rsq_r = tangent_residual_norms_squared(base, perturbation, Omega, Omega_r, Z, Zr)
-#     J = 0.5 * np.linalg.norm(rsq) + 0.5 * np.linalg.norm(rsq)
-#     return J, rsq, rsq_r
-
-
 def forward_map(
         base: typ.Tuple[
             jnp.ndarray,  # X, shape=(N,r)
@@ -633,12 +527,13 @@ def forward_map(
 ]: # outputs
     X, Y = base
     Omega, Omega_r = inputs
-    Z = X @ (Y @ Omega))
-    Z_r = Omega @ (X @ Y)
+    Z = X @ (Y @ Omega)
+    Z_r = Omega_r @ (X @ Y)
     outputs = Z, Z_r
     return outputs
 
 
+# @jax.jit
 def objective(
         base: typ.Tuple[
             jnp.ndarray,  # X, shape=(N,r)
@@ -661,10 +556,10 @@ def objective(
 ]:
     Ytrue, Ytrue_r = true_outputs
     Y, Y_r = forward_map(base, inputs)
-    rsq = np.linalg.norm(Y - Ytrue, axis=0)**2
-    rsq_r = np.linalg.norm(Y_r - Ytrue_r, axis=0)**2
-    J = 0.5 * np.sum(rsq) + 0.5 * np.sum(rsq_r)
-    return J, rsq, rsq_r
+    rsq = jnp.sum((Y - Ytrue)**2, axis=0)
+    rsq_r = jnp.sum((Y_r - Ytrue_r)**2, axis=1)
+    J = 0.5 * jnp.sum(rsq) + 0.5 * jnp.sum(rsq_r)
+    return J, (rsq, rsq_r)
 
 
 gradient = jax.grad(objective, argnums=0, has_aux=True)
@@ -712,7 +607,7 @@ def forward_map_jvp(
     dX, dY = perturbation
     Omega, Omega_r = inputs
     Z = dX @ (Y @ Omega) + X @ (dY @ Omega)
-    Z_r = (Omega @ dX) @ Y + (Omega @ X) @ dY
+    Z_r = (Omega_r @ dX) @ Y + (Omega_r @ X) @ dY
     return Z, Z_r
 
 
@@ -733,9 +628,23 @@ def forward_map_vjp(
     jnp.ndarray, # shape=(N,r)
     jnp.ndarray, # shape=(r,M)
 ]:
-    func = lambda x: forward_map(base, x)
-    _, vjp_func = jax.vjp(func, inputs)
-    return vjp_func(ZZ)
+    X, Y = base
+    Z, Z_r = ZZ
+    Omega, Omega_r = inputs
+    dX = jnp.einsum('ix,aj,jx->ia', Z, Y, Omega) + jnp.einsum('xi,aj,xj->ia', Omega_r, Y, Z_r)
+    dY = jnp.einsum('ix,ia,jx->aj', Z, X, Omega) + jnp.einsum('xi,ia,xj->aj', Omega_r, X, Z_r)
+    return dX, dY # <-- agrees with vjp autodiff
+
+    # X, Y = base
+    # Z, Z_r = ZZ
+    # Omega, Omega_r = inputs
+    # dX = (Y.T @ Omega) @ Z + (Omega_r.T @ Z_r) @ Y.T
+    # dY = (X.T @ Z) @ Omega.T + (Z_r @ Omega_r.T) @ X.T
+    # return dX, dY
+
+    # func = lambda b: forward_map(b, inputs)
+    # _, vjp_func = jax.vjp(func, base)
+    # return vjp_func(ZZ)[0]
 
 
 def gn_hessian_matvec(
@@ -754,4 +663,141 @@ def gn_hessian_matvec(
 ):
     return forward_map_vjp(base, inputs, forward_map_jvp(base, perturbation, inputs))
 
+
+def tangent_space_objective(
+        left_orthogonal_base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        perturbation: typ.Tuple[
+            jnp.ndarray,  # dX, shape=(N,r)
+            jnp.ndarray,  # dY, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray,  # Omega, shape=(M,k)
+            jnp.ndarray,  # Omega_r, shape=(k_r,N)
+        ],
+        true_outputs: typ.Tuple[
+            jnp.ndarray,  # Ztrue, shape=(N,k)
+            jnp.ndarray,  # Ztrue_r, shape=(k_r,M)
+        ],
+):
+    p = standardize_perturbation(perturbation)
+    g = standardize_perturbation(gradient(base, inputs, true_outputs))
+    gp = inner_product_of_tangent_vectors(g, p)
+
+    Hp = standardize_perturbation(gn_hessian_matvec(left_orthogonal_base, p, inputs))
+    pHp = inner_product_of_tangent_vectors(p, Hp)
+
+    return 0.5 * pHp + gp
+
+
+# Test
+
+N = 100
+M = 89
+r = 5
+
+U, _, Vt = np.linalg.svd(np.random.randn(N, M), full_matrices=False)
+ss = np.logspace(-30, 0, np.minimum(N,M))
+A = U @ np.diag(ss) @ Vt
+
+Omega = jnp.array(np.random.randn(M, r+5))
+Omega_r = jnp.array(np.random.randn(r+5, N))
+Ytrue = A @ Omega
+Ytrue_r = Omega_r @ A
+inputs = (Omega, Omega_r)
+true_outputs = (Ytrue, Ytrue_r)
+
+X = jnp.array(np.random.randn(N, r))
+Y = jnp.array(np.random.randn(r, M))
+base = (X, Y)
+
+Y2, Y2_r = forward_map(base, inputs)
+
+A2 = base_to_full(base)
+Y2true = A2 @ Omega
+Y2true_r = Omega_r @ A2
+
+err_forward_map = np.linalg.norm(Y2 - Y2true) / np.linalg.norm(Y2true)
+err_forward_map_r = np.linalg.norm(Y2_r - Y2true_r) / np.linalg.norm(Y2true_r)
+
+print('err_forward_map=', err_forward_map)
+print('err_forward_map_r=', err_forward_map_r)
+
+#
+
+J, (rsq, rsq_r) = objective(base, inputs, true_outputs)
+
+rsq_true = np.linalg.norm(Y2 - Ytrue, axis=0)**2
+rsq_true_r = np.linalg.norm(Y2_r - Ytrue_r, axis=1)**2
+Jtrue = 0.5 * np.linalg.norm(Y2 - Ytrue)**2 + 0.5 * np.linalg.norm(Y2_r - Ytrue_r)**2
+
+err_rsq_objective = np.linalg.norm(rsq - rsq_true)
+err_rsq_r_objective = np.linalg.norm(rsq_r - rsq_true_r)
+err_J_objective = np.linalg.norm(J - Jtrue) / np.linalg.norm(Jtrue)
+print('err_rsq_objective=', err_rsq_objective)
+print('err_rsq_r_objective=', err_rsq_r_objective)
+print('err_J_objective=', err_J_objective)
+
+#
+
+g, aux = gradient(base, inputs, true_outputs)
+
+#
+
+dX = np.random.randn(N, r)
+dY = np.random.randn(r, M)
+perturbation = (dX, dY)
+
+df = forward_map_jvp(base, perturbation, inputs)
+
+s = 1e-6
+f = forward_map(base, inputs)
+f2 = forward_map((base[0]+s*perturbation[0], base[1] + s*perturbation[1]), inputs)
+df_diff = ((f2[0] - f[0]) / s, (f2[1] - f[1]) / s)
+
+err_forward_map_jvp0 = np.linalg.norm(df[0] - df_diff[0]) / np.linalg.norm(df_diff[0])
+print('s=', s, ', err_forward_map_jvp0=', err_forward_map_jvp0)
+
+err_forward_map_jvp1 = np.linalg.norm(df[1] - df_diff[1]) / np.linalg.norm(df_diff[1])
+print('s=', s, ', err_forward_map_jvp1=', err_forward_map_jvp1)
+
+#
+
+left_orthogonal_base = left_orthogonalize_base(base)
+standard_perturbation = standardize_perturbation(left_orthogonal_base, perturbation)
+
+Z = np.random.randn(*Ytrue.shape)
+Z_r = np.random.randn(*Ytrue_r.shape)
+ZZ = (Z, Z_r)
+
+# Jp = forward_map_jvp(base, perturbation, inputs)
+Jp = forward_map_jvp(left_orthogonal_base, standard_perturbation, inputs)
+
+Jp_inner_Z = np.sum(Jp[0] * ZZ[0]) + np.sum(Jp[1] + ZZ[1])
+
+JtZ = forward_map_vjp(left_orthogonal_base, inputs, ZZ)
+
+JtZ_full = tangent_vector_to_full(left_orthogonal_base, JtZ)
+p_full = tangent_vector_to_full(left_orthogonal_base, standard_perturbation)
+
+inner_product_helper_matrix = make_inner_product_helper_matrix(left_orthogonal_base)
+
+p_inner_JtZ_full2 = inner_product_of_tangent_vectors(standard_perturbation, standardize_perturbation(left_orthogonal_base, JtZ), inner_product_helper_matrix)
+
+p_inner_JtZ_full = np.sum(JtZ_full * p_full)
+
+p_inner_JtZ = np.sum(JtZ[0] * standard_perturbation[0]) + np.sum(JtZ[1] + standard_perturbation[1])
+
+print('p_inner_JtZ_full2=', p_inner_JtZ_full2)
+print('p_inner_JtZ_full=', p_inner_JtZ_full)
+print('Z_inner_JtZ=', p_inner_JtZ)
+print('Jp_inner_Z=', Jp_inner_Z)
+
+
+#
+
+
+left_orthogonal_base = left_orthogonalize_base(base)
 
