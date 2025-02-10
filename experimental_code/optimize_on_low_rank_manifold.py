@@ -69,6 +69,20 @@ def add_tangent_vectors(
 
 
 @jax.jit
+def dumb_inner_product(
+        perturbation1: typ.Tuple[
+            jnp.ndarray, # dX1, shape=(N,r)
+            jnp.ndarray, # dY1, shape=(r,M)
+        ],
+        perturbation2: typ.Tuple[
+            jnp.ndarray,  # dX2, shape=(N,r)
+            jnp.ndarray,  # dY2, shape=(r,M)
+        ],
+) -> jnp.ndarray: # scalar, shape=()
+    return jnp.sum(perturbation1[0] * perturbation2[0]) + jnp.sum(perturbation1[1] * perturbation2[1])
+
+
+@jax.jit
 def scale_tangent_vector(
         perturbation: typ.Tuple[
             jnp.ndarray,  # dX, shape=(N,r)
@@ -109,6 +123,28 @@ def standardize_perturbation(
 
 
 @jax.jit
+def standardize_perturbation_transpose(
+        left_orthogonal_base: typ.Tuple[
+            jnp.ndarray,  # Q, shape=(N,r), Q^T Q = I
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        perturbation: typ.Tuple[
+            jnp.ndarray,  # dX, shape=(N,r), Q^T dX2 = 0
+            jnp.ndarray,  # dY, shape=(r,M)
+        ],
+) -> typ.Tuple[
+    jnp.ndarray,  # dX2, shape=(N,r)
+    jnp.ndarray,  # dY2, shape=(r,M)
+]: # perturbation2
+    Q, Y = left_orthogonal_base
+    dX, dY = perturbation
+    dY2 = dY
+    dX2 = dX - Q @ (Q.T @ dX) + Q @ (dY @ Y.T)
+    perturbation2 = (dX2, dY2)
+    return perturbation2
+
+
+@jax.jit
 def make_inner_product_helper_matrix(
         left_orthogonal_base: typ.Tuple[
             jnp.ndarray,  # Q, shape=(N,r), Q^T Q = I
@@ -117,6 +153,23 @@ def make_inner_product_helper_matrix(
 ) -> jnp.ndarray: # inner_product_helper_matrix=YY^T, shape=(r,r)
     Q, Y = left_orthogonal_base
     return Y @ Y.T
+
+
+@jax.jit
+def apply_tangent_mass_matrix(
+        perturbation: typ.Tuple[
+            jnp.ndarray,  # dX_perp, shape=(N,r)
+            jnp.ndarray,  # dY, shape=(r,M)
+        ],
+        inner_product_helper_matrix: jnp.ndarray,  # shape=(r,r)
+) ->  typ.Tuple[
+    jnp.ndarray,  # MdX_perp, shape=(N,r)
+    jnp.ndarray,  # MdY, shape=(r,M)
+]: # mass_matrix @ standard_perturbation1
+    dX_perp, dY = perturbation
+    MdY = dY
+    MdX = dX_perp @ inner_product_helper_matrix
+    return MdX, MdY
 
 
 @jax.jit
@@ -131,11 +184,7 @@ def inner_product_of_tangent_vectors(
         ],
         inner_product_helper_matrix: jnp.ndarray, # shape=(r,r)
 ) -> jnp.ndarray: # scalar, shape=()
-    dX1_perp, dY1 = standard_perturbation1
-    dX2_perp, dY2 = standard_perturbation2
-    t1 = jnp.einsum('ia,ab,ib', dX1_perp, inner_product_helper_matrix,  dX2_perp)
-    t2 = np.sum(dY1 * dY2)
-    return t1 + t2
+    return dumb_inner_product(apply_tangent_mass_matrix(standard_perturbation1, inner_product_helper_matrix), standard_perturbation2)
 
 
 @jax.jit
@@ -253,6 +302,20 @@ dX_perp, _ = standard_perturbation
 
 err_perp_standardize_perturbation = np.linalg.norm(Q.T @ dX_perp)
 print('err_perp_standardize_perturbation=', err_perp_standardize_perturbation)
+
+# Test standardize_perturbation_transpose()
+
+p = perturbation1
+q = perturbation2
+Fp = standardize_perturbation(left_orthogonal_base, p)
+FTq = standardize_perturbation_transpose(left_orthogonal_base, q)
+
+t1 = dumb_inner_product(Fp, q)
+t2 = dumb_inner_product(p, FTq)
+
+err_standardize_perturbation_transpose = np.abs(t1 - t2) / np.abs(t1 + t2)
+print('err_standardize_perturbation_transpose=', err_standardize_perturbation_transpose)
+
 
 # Test inner_product_of_tangent_vectors()
 
@@ -563,27 +626,27 @@ def objective(
 
 
 gradient = jax.grad(objective, argnums=0, has_aux=True)
-
-def hessian_matvec(
-        base: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        perturbation: typ.Tuple[
-            jnp.ndarray,  # dX, shape=(N,r)
-            jnp.ndarray,  # dY, shape=(r,M)
-        ],
-        inputs: typ.Tuple[
-            jnp.ndarray, # Omega, shape=(M,k)
-            jnp.ndarray, # Omega_r, shape=(k_r,N)
-        ],
-        true_outputs: typ.Tuple[
-            jnp.ndarray,  # Ytrue, shape=(N,k)
-            jnp.ndarray,  # Ytrue_r, shape=(k_r,M)
-        ],
-):
-    func = lambda b: gradient(b, inputs, true_outputs)
-    return jax.jvp(func, (base,), (perturbation,))
+#
+# def hessian_matvec(
+#         base: typ.Tuple[
+#             jnp.ndarray,  # X, shape=(N,r)
+#             jnp.ndarray,  # Y, shape=(r,M)
+#         ],
+#         perturbation: typ.Tuple[
+#             jnp.ndarray,  # dX, shape=(N,r)
+#             jnp.ndarray,  # dY, shape=(r,M)
+#         ],
+#         inputs: typ.Tuple[
+#             jnp.ndarray, # Omega, shape=(M,k)
+#             jnp.ndarray, # Omega_r, shape=(k_r,N)
+#         ],
+#         true_outputs: typ.Tuple[
+#             jnp.ndarray,  # Ytrue, shape=(N,k)
+#             jnp.ndarray,  # Ytrue_r, shape=(k_r,M)
+#         ],
+# ):
+#     func = lambda b: gradient(b, inputs, true_outputs)
+#     return jax.jvp(func, (base,), (perturbation,))
 
 
 def forward_map_jvp(
@@ -742,7 +805,7 @@ print('err_J_objective=', err_J_objective)
 
 #
 
-g, aux = gradient(base, inputs, true_outputs)
+# g, aux = gradient(base, inputs, true_outputs)
 
 #
 
@@ -772,32 +835,16 @@ Z = np.random.randn(*Ytrue.shape)
 Z_r = np.random.randn(*Ytrue_r.shape)
 ZZ = (Z, Z_r)
 
-# Jp = forward_map_jvp(base, perturbation, inputs)
 Jp = forward_map_jvp(left_orthogonal_base, standard_perturbation, inputs)
-
-Jp_inner_Z = np.sum(Jp[0] * ZZ[0]) + np.sum(Jp[1] + ZZ[1])
-
 JtZ = forward_map_vjp(left_orthogonal_base, inputs, ZZ)
 
-JtZ_full = tangent_vector_to_full(left_orthogonal_base, JtZ)
-p_full = tangent_vector_to_full(left_orthogonal_base, standard_perturbation)
+t1 = dumb_inner_product(Jp, ZZ) # np.sum(Jp[0] * ZZ[0]) + np.sum(Jp[1] * ZZ[1])
+t2 = dumb_inner_product(JtZ, standard_perturbation) # np.sum(JtZ[0] * standard_perturbation[0]) + np.sum(JtZ[1] + standard_perturbation[1])
 
-inner_product_helper_matrix = make_inner_product_helper_matrix(left_orthogonal_base)
-
-p_inner_JtZ_full2 = inner_product_of_tangent_vectors(standard_perturbation, standardize_perturbation(left_orthogonal_base, JtZ), inner_product_helper_matrix)
-
-p_inner_JtZ_full = np.sum(JtZ_full * p_full)
-
-p_inner_JtZ = np.sum(JtZ[0] * standard_perturbation[0]) + np.sum(JtZ[1] + standard_perturbation[1])
-
-print('p_inner_JtZ_full2=', p_inner_JtZ_full2)
-print('p_inner_JtZ_full=', p_inner_JtZ_full)
-print('Z_inner_JtZ=', p_inner_JtZ)
-print('Jp_inner_Z=', Jp_inner_Z)
-
+err_forward_map_vjp = np.abs(t1 - t2) / np.abs(t1 + t2)
+print('err_forward_map_vjp=', err_forward_map_vjp)
 
 #
 
 
-left_orthogonal_base = left_orthogonalize_base(base)
 
