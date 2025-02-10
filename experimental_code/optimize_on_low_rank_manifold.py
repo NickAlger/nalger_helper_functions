@@ -83,6 +83,16 @@ def dumb_inner_product(
 
 
 @jax.jit
+def dumb_norm(
+        perturbation1: typ.Tuple[
+            jnp.ndarray, # dX1, shape=(N,r)
+            jnp.ndarray, # dY1, shape=(r,M)
+        ],
+) -> jnp.ndarray: # scalar, shape=()
+    return jnp.sqrt(dumb_inner_product(perturbation1, perturbation1))
+
+
+@jax.jit
 def scale_tangent_vector(
         perturbation: typ.Tuple[
             jnp.ndarray,  # dX, shape=(N,r)
@@ -96,6 +106,22 @@ def scale_tangent_vector(
     dX, dY = perturbation
     scaled_perturbation = (c*dX, c*dY)
     return scaled_perturbation
+
+@jax.jit
+def subtract_tangent_vectors(
+        perturbation1: typ.Tuple[
+            jnp.ndarray, # dX1, shape=(N,r)
+            jnp.ndarray, # dY1, shape=(r,M)
+        ],
+        perturbation2: typ.Tuple[
+            jnp.ndarray,  # dX2, shape=(N,r)
+            jnp.ndarray,  # dY2, shape=(r,M)
+        ],
+) -> typ.Tuple[
+    jnp.ndarray,  # dX1 + dX2, shape=(N,r)
+    jnp.ndarray,  # dY1 + dY2, shape=(r,M)
+]:
+    return perturbation1[0] - perturbation2[0], perturbation1[1] - perturbation2[1]
 
 
 @jax.jit
@@ -376,6 +402,310 @@ err_retract_vector = np.linalg.norm(v - v_true) / np.linalg.norm(v_true)
 print('err_retract_vector=', err_retract_vector)
 
 
+######## Low rank matvecs objective function
+
+@jax.jit
+def forward_map(
+        base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray, # Omega, shape=(M,k)
+            jnp.ndarray, # Omega_r, shape=(k_r,N)
+        ],
+) -> typ.Tuple[
+    jnp.ndarray,  # Z, shape=(N,k)
+    jnp.ndarray,  # Z_r, shape=(k_r,M)
+]: # outputs
+    X, Y = base
+    Omega, Omega_r = inputs
+    Z = X @ (Y @ Omega)
+    Z_r = Omega_r @ (X @ Y)
+    outputs = Z, Z_r
+    return outputs
+
+
+@jax.jit
+def objective(
+        base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray, # Omega, shape=(M,k)
+            jnp.ndarray, # Omega_r, shape=(k_r,N)
+        ],
+        true_outputs: typ.Tuple[
+            jnp.ndarray,  # Ytrue, shape=(N,k)
+            jnp.ndarray,  # Ytrue_r, shape=(k_r,M)
+        ],
+) -> typ.Tuple[
+    jnp.ndarray,  # J, scalar, shape=()
+    typ.Tuple[
+        jnp.ndarray,  # matvec residual norms squared. shape=(k)
+        jnp.ndarray,  # rmatvec residual norms squared. shape=(k_r)
+    ]
+]:
+    Ytrue, Ytrue_r = true_outputs
+    Y, Y_r = forward_map(base, inputs)
+    rsq = jnp.sum((Y - Ytrue)**2, axis=0)
+    rsq_r = jnp.sum((Y_r - Ytrue_r)**2, axis=1)
+    J = 0.5 * jnp.sum(rsq) + 0.5 * jnp.sum(rsq_r)
+    return J, (rsq, rsq_r)
+
+
+gradient_func = jax.jit(jax.grad(objective, argnums=0, has_aux=True))
+
+
+@jax.jit
+def forward_map_jvp(
+        base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        perturbation: typ.Tuple[
+            jnp.ndarray,  # dX, shape=(N,r)
+            jnp.ndarray,  # dY, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray, # Omega, shape=(M,k)
+            jnp.ndarray, # Omega_r, shape=(k_r,N)
+        ],
+) -> typ.Tuple[
+    jnp.ndarray,  # Z, shape=(M,k)
+    jnp.ndarray,  # Z_r, shape=(k_r,N)
+]:
+    X, Y = base
+    # dX, dY = perturbation
+    dX, dY = standardize_perturbation(base, perturbation)
+
+    Omega, Omega_r = inputs
+    Z = dX @ (Y @ Omega) + X @ (dY @ Omega)
+    Z_r = (Omega_r @ dX) @ Y + (Omega_r @ X) @ dY
+    return Z, Z_r
+
+
+@jax.jit
+def forward_map_vjp(
+        base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray, # Omega, shape=(M,k)
+            jnp.ndarray, # Omega_r, shape=(k_r,N)
+        ],
+        ZZ: typ.Tuple[
+            jnp.ndarray,  # Z, shape=(N,k)
+            jnp.ndarray,  # Z_r, shape=(k_r,M)
+        ],
+) -> typ.Tuple[
+    jnp.ndarray, # shape=(N,r)
+    jnp.ndarray, # shape=(r,M)
+]:
+    X, Y = base
+    Z, Z_r = ZZ
+
+    Omega, Omega_r = inputs
+    dX = jnp.einsum('ix,aj,jx->ia', Z, Y, Omega) + jnp.einsum('xi,aj,xj->ia', Omega_r, Y, Z_r)
+    dY = jnp.einsum('ix,ia,jx->aj', Z, X, Omega) + jnp.einsum('xi,ia,xj->aj', Omega_r, X, Z_r)
+
+    # return dX, dY # <-- agrees with vjp autodiff
+    return standardize_perturbation_transpose(base, (dX, dY)) # <-- agrees with vjp autodiff
+
+    # X, Y = base
+    # Z, Z_r = ZZ
+    # Omega, Omega_r = inputs
+    # dX = (Y.T @ Omega) @ Z + (Omega_r.T @ Z_r) @ Y.T
+    # dY = (X.T @ Z) @ Omega.T + (Z_r @ Omega_r.T) @ X.T
+    # return dX, dY
+
+    # func = lambda b: forward_map(b, inputs)
+    # _, vjp_func = jax.vjp(func, base)
+    # return vjp_func(ZZ)[0]
+
+
+@jax.jit
+def gn_hessian_matvec(
+        base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        perturbation: typ.Tuple[
+            jnp.ndarray,  # dX, shape=(N,r)
+            jnp.ndarray,  # dY, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray, # Omega, shape=(M,k)
+            jnp.ndarray, # Omega_r, shape=(k_r,N)
+        ],
+):
+    return forward_map_vjp(base, inputs, forward_map_jvp(base, perturbation, inputs))
+
+
+@jax.jit
+def spd_sqrtm(A):
+    ee, P = jnp.linalg.eigh(A)
+    return P @ (jnp.sqrt(jnp.abs(ee)).reshape((-1,1)) * P.T)
+
+
+@jax.jit
+def tangent_space_objective(
+        left_orthogonal_base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        perturbation: typ.Tuple[
+            jnp.ndarray,  # dX, shape=(N,r)
+            jnp.ndarray,  # dY, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray,  # Omega, shape=(M,k)
+            jnp.ndarray,  # Omega_r, shape=(k_r,N)
+        ],
+        true_outputs: typ.Tuple[
+            jnp.ndarray,  # Ztrue, shape=(N,k)
+            jnp.ndarray,  # Ztrue_r, shape=(k_r,M)
+        ],
+):
+    J0, _ = objective(left_orthogonal_base, inputs, true_outputs)
+
+    M_helper = make_inner_product_helper_matrix(left_orthogonal_base)
+    sqrtM_helper = spd_sqrtm(M_helper)
+    isqrtM_helper = jnp.linalg.inv(sqrtM_helper)
+
+    # p0 = standardize_perturbation(left_orthogonal_base, apply_tangent_mass_matrix(perturbation, isqrtM_helper))
+    # p0 = standardize_perturbation(left_orthogonal_base, perturbation)
+    p0 = perturbation
+    p = p0
+    # p = apply_tangent_mass_matrix(p0, isqrtM_helper)
+    # p = apply_tangent_mass_matrix(p0, sqrtM_helper)
+
+    g0, _ = gradient_func(left_orthogonal_base, inputs, true_outputs)
+    # g = standardize_perturbation(left_orthogonal_base, g0)
+    g = g0
+    # g = apply_tangent_mass_matrix(g0, sqrtM_helper)
+
+    # gp = inner_product_of_tangent_vectors(g, p, M_helper)
+    gp = dumb_inner_product(g, p)
+
+    Hp = gn_hessian_matvec(left_orthogonal_base, p, inputs)
+    # Hp = standardize_perturbation_transpose(left_orthogonal_base, gn_hessian_matvec(left_orthogonal_base, p, inputs))
+
+    # pHp = inner_product_of_tangent_vectors(p, Hp, M_helper)
+    pHp = dumb_inner_product(p, Hp)
+
+    return 0.5 * pHp + gp + J0
+
+
+# Test
+
+A0 = np.random.randn(20,13)
+A = A0.T @ A0
+sqrtA_true = jax.scipy.linalg.sqrtm(A)
+sqrtA = spd_sqrtm(A)
+
+err_spd_sqrtm = np.linalg.norm(sqrtA_true - sqrtA) / np.linalg.norm(sqrtA_true)
+print('err_spd_sqrtm=', err_spd_sqrtm)
+
+#
+
+N = 100
+M = 89
+r = 5
+
+U, _, Vt = np.linalg.svd(np.random.randn(N, M), full_matrices=False)
+ss = np.logspace(-30, 0, np.minimum(N,M))
+A = U @ np.diag(ss) @ Vt
+
+Omega = jnp.array(np.random.randn(M, r+5))
+Omega_r = jnp.array(np.random.randn(r+5, N))
+Ytrue = A @ Omega
+Ytrue_r = Omega_r @ A
+inputs = (Omega, Omega_r)
+true_outputs = (Ytrue, Ytrue_r)
+
+X = jnp.array(np.random.randn(N, r))
+Y = jnp.array(np.random.randn(r, M))
+base = (X, Y)
+
+Y2, Y2_r = forward_map(base, inputs)
+
+A2 = base_to_full(base)
+Y2true = A2 @ Omega
+Y2true_r = Omega_r @ A2
+
+err_forward_map = np.linalg.norm(Y2 - Y2true) / np.linalg.norm(Y2true)
+err_forward_map_r = np.linalg.norm(Y2_r - Y2true_r) / np.linalg.norm(Y2true_r)
+
+print('err_forward_map=', err_forward_map)
+print('err_forward_map_r=', err_forward_map_r)
+
+#
+
+J, (rsq, rsq_r) = objective(base, inputs, true_outputs)
+
+rsq_true = np.linalg.norm(Y2 - Ytrue, axis=0)**2
+rsq_true_r = np.linalg.norm(Y2_r - Ytrue_r, axis=1)**2
+Jtrue = 0.5 * np.linalg.norm(Y2 - Ytrue)**2 + 0.5 * np.linalg.norm(Y2_r - Ytrue_r)**2
+
+err_rsq_objective = np.linalg.norm(rsq - rsq_true)
+err_rsq_r_objective = np.linalg.norm(rsq_r - rsq_true_r)
+err_J_objective = np.linalg.norm(J - Jtrue) / np.linalg.norm(Jtrue)
+print('err_rsq_objective=', err_rsq_objective)
+print('err_rsq_r_objective=', err_rsq_r_objective)
+print('err_J_objective=', err_J_objective)
+
+#
+
+dX = np.random.randn(N, r)
+dY = np.random.randn(r, M)
+perturbation = (dX, dY)
+
+df = forward_map_jvp(base, perturbation, inputs)
+
+s = 1e-6
+f = forward_map(base, inputs)
+f2 = forward_map((base[0]+s*perturbation[0], base[1] + s*perturbation[1]), inputs)
+df_diff = ((f2[0] - f[0]) / s, (f2[1] - f[1]) / s)
+
+err_forward_map_jvp0 = np.linalg.norm(df[0] - df_diff[0]) / np.linalg.norm(df_diff[0])
+print('s=', s, ', err_forward_map_jvp0=', err_forward_map_jvp0)
+
+err_forward_map_jvp1 = np.linalg.norm(df[1] - df_diff[1]) / np.linalg.norm(df_diff[1])
+print('s=', s, ', err_forward_map_jvp1=', err_forward_map_jvp1)
+
+#
+
+left_orthogonal_base = left_orthogonalize_base(base)
+standard_perturbation = standardize_perturbation(left_orthogonal_base, perturbation)
+
+Z = np.random.randn(*Ytrue.shape)
+Z_r = np.random.randn(*Ytrue_r.shape)
+ZZ = (Z, Z_r)
+
+Jp = forward_map_jvp(left_orthogonal_base, standard_perturbation, inputs)
+JtZ = forward_map_vjp(left_orthogonal_base, inputs, ZZ)
+
+t1 = dumb_inner_product(Jp, ZZ) # np.sum(Jp[0] * ZZ[0]) + np.sum(Jp[1] * ZZ[1])
+t2 = dumb_inner_product(JtZ, standard_perturbation) # np.sum(JtZ[0] * standard_perturbation[0]) + np.sum(JtZ[1] + standard_perturbation[1])
+
+err_forward_map_vjp = np.abs(t1 - t2) / np.abs(t1 + t2)
+print('err_forward_map_vjp=', err_forward_map_vjp)
+
+#
+
+J = tangent_space_objective(
+    left_orthogonal_base, standard_perturbation, inputs, true_outputs
+)
+
+big_base = tangent_vector_as_low_rank(left_orthogonal_base, standard_perturbation)
+J_true, _ = objective(big_base, inputs, true_outputs)
+
+err_tangent_space_objective = np.abs(J - J_true) / np.abs(J_true)
+print('err_tangent_space_objective=', err_tangent_space_objective)
+
 
 #### CG Steihaug
 
@@ -556,25 +886,22 @@ p, aux = cg_steihaug(
 # This basic implementation from stackoverflow agrees with me to machine precision.
 # Scipy's CG doesn't seem to agree with me, although the two converge to each other.
 # I think this has something to so with where the callback is called in the scipy implementation.
-
-A = H
-b = -gradient
-x = b
-tol = 0.0
-
-pp_so = []
-# https://stackoverflow.com/a/60847526/484944
-r = b - A.dot(x)
-p = r.copy()
-for i in range(max_iter):
-    Ap = A.dot(p)
-    alpha = np.dot(p, r) / np.dot(p, Ap)
-    x = x + alpha * p
-    pp_so.append(x)
+def basic_cg(A, b, x, num_iter):
+    # https://stackoverflow.com/a/60847526/484944
+    pp_so = []
     r = b - A.dot(x)
-    beta = -np.dot(r, Ap) / np.dot(p, Ap)
-    p = r + beta * p
+    p = r.copy()
+    for i in range(num_iter):
+        Ap = A.dot(p)
+        alpha = np.dot(p, r) / np.dot(p, Ap)
+        x = x + alpha * p
+        pp_so.append(x)
+        r = b - A.dot(x)
+        beta = -np.dot(r, Ap) / np.dot(p, Ap)
+        p = r + beta * p
+    return pp_so
 
+pp_so = basic_cg(H, -gradient, -0.0*gradient, max_iter)
 
 err_CG_iterates = np.linalg.norm(np.array(pp) - np.array(pp_so), axis=1) / np.linalg.norm(np.array(pp_so), axis=1)
 print('err_CG_iterates=', err_CG_iterates)
@@ -603,340 +930,318 @@ for scaling in [0.1, 0.5, 0.9, 0.99]:
     print('trust_radius=', trust_radius, ', norm_p=', norm_p)
 
 
-######## Low rank matvecs objective function
-
-# @jax.jit
-def forward_map(
-        base: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        inputs: typ.Tuple[
-            jnp.ndarray, # Omega, shape=(M,k)
-            jnp.ndarray, # Omega_r, shape=(k_r,N)
-        ],
-) -> typ.Tuple[
-    jnp.ndarray,  # Z, shape=(N,k)
-    jnp.ndarray,  # Z_r, shape=(k_r,M)
-]: # outputs
-    X, Y = base
-    Omega, Omega_r = inputs
-    Z = X @ (Y @ Omega)
-    Z_r = Omega_r @ (X @ Y)
-    outputs = Z, Z_r
-    return outputs
-
-
-# @jax.jit
-def objective(
-        base: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        inputs: typ.Tuple[
-            jnp.ndarray, # Omega, shape=(M,k)
-            jnp.ndarray, # Omega_r, shape=(k_r,N)
-        ],
-        true_outputs: typ.Tuple[
-            jnp.ndarray,  # Ytrue, shape=(N,k)
-            jnp.ndarray,  # Ytrue_r, shape=(k_r,M)
-        ],
-) -> typ.Tuple[
-    jnp.ndarray,  # J, scalar, shape=()
-    typ.Tuple[
-        jnp.ndarray,  # matvec residual norms squared. shape=(k)
-        jnp.ndarray,  # rmatvec residual norms squared. shape=(k_r)
-    ]
-]:
-    Ytrue, Ytrue_r = true_outputs
-    Y, Y_r = forward_map(base, inputs)
-    rsq = jnp.sum((Y - Ytrue)**2, axis=0)
-    rsq_r = jnp.sum((Y_r - Ytrue_r)**2, axis=1)
-    J = 0.5 * jnp.sum(rsq) + 0.5 * jnp.sum(rsq_r)
-    return J, (rsq, rsq_r)
-
-
-gradient = jax.jit(jax.grad(objective, argnums=0, has_aux=True))
-#
-# def hessian_matvec(
-#         base: typ.Tuple[
-#             jnp.ndarray,  # X, shape=(N,r)
-#             jnp.ndarray,  # Y, shape=(r,M)
-#         ],
-#         perturbation: typ.Tuple[
-#             jnp.ndarray,  # dX, shape=(N,r)
-#             jnp.ndarray,  # dY, shape=(r,M)
-#         ],
-#         inputs: typ.Tuple[
-#             jnp.ndarray, # Omega, shape=(M,k)
-#             jnp.ndarray, # Omega_r, shape=(k_r,N)
-#         ],
-#         true_outputs: typ.Tuple[
-#             jnp.ndarray,  # Ytrue, shape=(N,k)
-#             jnp.ndarray,  # Ytrue_r, shape=(k_r,M)
-#         ],
-# ):
-#     func = lambda b: gradient(b, inputs, true_outputs)
-#     return jax.jvp(func, (base,), (perturbation,))
-
-
-def forward_map_jvp(
-        base: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        perturbation: typ.Tuple[
-            jnp.ndarray,  # dX, shape=(N,r)
-            jnp.ndarray,  # dY, shape=(r,M)
-        ],
-        inputs: typ.Tuple[
-            jnp.ndarray, # Omega, shape=(M,k)
-            jnp.ndarray, # Omega_r, shape=(k_r,N)
-        ],
-) -> typ.Tuple[
-    jnp.ndarray,  # Z, shape=(M,k)
-    jnp.ndarray,  # Z_r, shape=(k_r,N)
-]:
-    X, Y = base
-    # dX, dY = perturbation
-    dX, dY = standardize_perturbation(base, perturbation)
-
-    Omega, Omega_r = inputs
-    Z = dX @ (Y @ Omega) + X @ (dY @ Omega)
-    Z_r = (Omega_r @ dX) @ Y + (Omega_r @ X) @ dY
-    return Z, Z_r
-
-
-def forward_map_vjp(
-        base: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        inputs: typ.Tuple[
-            jnp.ndarray, # Omega, shape=(M,k)
-            jnp.ndarray, # Omega_r, shape=(k_r,N)
-        ],
-        ZZ: typ.Tuple[
-            jnp.ndarray,  # Z, shape=(N,k)
-            jnp.ndarray,  # Z_r, shape=(k_r,M)
-        ],
-) -> typ.Tuple[
-    jnp.ndarray, # shape=(N,r)
-    jnp.ndarray, # shape=(r,M)
-]:
-    X, Y = base
-    Z, Z_r = ZZ
-
-    Omega, Omega_r = inputs
-    dX = jnp.einsum('ix,aj,jx->ia', Z, Y, Omega) + jnp.einsum('xi,aj,xj->ia', Omega_r, Y, Z_r)
-    dY = jnp.einsum('ix,ia,jx->aj', Z, X, Omega) + jnp.einsum('xi,ia,xj->aj', Omega_r, X, Z_r)
-
-    # return dX, dY # <-- agrees with vjp autodiff
-    return standardize_perturbation_transpose(base, (dX, dY))
-
-    # X, Y = base
-    # Z, Z_r = ZZ
-    # Omega, Omega_r = inputs
-    # dX = (Y.T @ Omega) @ Z + (Omega_r.T @ Z_r) @ Y.T
-    # dY = (X.T @ Z) @ Omega.T + (Z_r @ Omega_r.T) @ X.T
-    # return dX, dY
-
-    # func = lambda b: forward_map(b, inputs)
-    # _, vjp_func = jax.vjp(func, base)
-    # return vjp_func(ZZ)[0]
-
-
-def gn_hessian_matvec(
-        base: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        perturbation: typ.Tuple[
-            jnp.ndarray,  # dX, shape=(N,r)
-            jnp.ndarray,  # dY, shape=(r,M)
-        ],
-        inputs: typ.Tuple[
-            jnp.ndarray, # Omega, shape=(M,k)
-            jnp.ndarray, # Omega_r, shape=(k_r,N)
-        ],
-):
-    return forward_map_vjp(base, inputs, forward_map_jvp(base, perturbation, inputs))
-
-
-@jax.jit
-def spd_sqrtm(A):
-    ee, P = jnp.linalg.eigh(A)
-    return P @ (jnp.sqrt(jnp.abs(ee)).reshape((-1,1)) * P.T)
-
-
-def tangent_space_objective(
-        left_orthogonal_base: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        perturbation: typ.Tuple[
-            jnp.ndarray,  # dX, shape=(N,r)
-            jnp.ndarray,  # dY, shape=(r,M)
-        ],
-        inputs: typ.Tuple[
-            jnp.ndarray,  # Omega, shape=(M,k)
-            jnp.ndarray,  # Omega_r, shape=(k_r,N)
-        ],
-        true_outputs: typ.Tuple[
-            jnp.ndarray,  # Ztrue, shape=(N,k)
-            jnp.ndarray,  # Ztrue_r, shape=(k_r,M)
-        ],
-):
-    J0, _ = objective(left_orthogonal_base, inputs, true_outputs)
-
-    M_helper = make_inner_product_helper_matrix(left_orthogonal_base)
-    sqrtM_helper = spd_sqrtm(M_helper)
-    isqrtM_helper = jnp.linalg.inv(sqrtM_helper)
-
-    # p0 = standardize_perturbation(left_orthogonal_base, apply_tangent_mass_matrix(perturbation, isqrtM_helper))
-    # p0 = standardize_perturbation(left_orthogonal_base, perturbation)
-    p0 = perturbation
-    p = p0
-    # p = apply_tangent_mass_matrix(p0, isqrtM_helper)
-    # p = apply_tangent_mass_matrix(p0, sqrtM_helper)
-
-    g0, _ = gradient(left_orthogonal_base, inputs, true_outputs)
-    # g = standardize_perturbation(left_orthogonal_base, g0)
-    g = g0
-    # g = apply_tangent_mass_matrix(g0, sqrtM_helper)
-
-    # gp = inner_product_of_tangent_vectors(g, p, M_helper)
-    gp = dumb_inner_product(g, p)
-
-    Hp = gn_hessian_matvec(left_orthogonal_base, p, inputs)
-    # Hp = standardize_perturbation_transpose(left_orthogonal_base, gn_hessian_matvec(left_orthogonal_base, p, inputs))
-
-    # pHp = inner_product_of_tangent_vectors(p, Hp, M_helper)
-    pHp = dumb_inner_product(p, Hp)
-
-    return 0.5 * pHp + gp + J0
-
-
-# Test
-
-A0 = np.random.randn(20,13)
-A = A0.T @ A0
-sqrtA_true = jax.scipy.linalg.sqrtm(A)
-sqrtA = spd_sqrtm(A)
-
-err_spd_sqrtm = np.linalg.norm(sqrtA_true - sqrtA) / np.linalg.norm(sqrtA_true)
-print('err_spd_sqrtm=', err_spd_sqrtm)
-
-#
+#### Use iterative CG-Steihaug to solve low rank fit problem
 
 N = 100
 M = 89
-r = 5
+num_samples = 10
 
 U, _, Vt = np.linalg.svd(np.random.randn(N, M), full_matrices=False)
 ss = np.logspace(-30, 0, np.minimum(N,M))
 A = U @ np.diag(ss) @ Vt
 
-Omega = jnp.array(np.random.randn(M, r+5))
-Omega_r = jnp.array(np.random.randn(r+5, N))
+Omega = jnp.array(np.random.randn(M, num_samples))
+Omega_r = jnp.array(np.random.randn(num_samples, N))
 Ytrue = A @ Omega
 Ytrue_r = Omega_r @ A
 inputs = (Omega, Omega_r)
 true_outputs = (Ytrue, Ytrue_r)
 
-X = jnp.array(np.random.randn(N, r))
-Y = jnp.array(np.random.randn(r, M))
+#
+
+rank = 1
+
+X = jnp.array(np.random.randn(N, rank))
+Y = jnp.array(np.random.randn(rank, M))
 base = (X, Y)
-
-Y2, Y2_r = forward_map(base, inputs)
-
-A2 = base_to_full(base)
-Y2true = A2 @ Omega
-Y2true_r = Omega_r @ A2
-
-err_forward_map = np.linalg.norm(Y2 - Y2true) / np.linalg.norm(Y2true)
-err_forward_map_r = np.linalg.norm(Y2_r - Y2true_r) / np.linalg.norm(Y2true_r)
-
-print('err_forward_map=', err_forward_map)
-print('err_forward_map_r=', err_forward_map_r)
-
-#
-
-J, (rsq, rsq_r) = objective(base, inputs, true_outputs)
-
-rsq_true = np.linalg.norm(Y2 - Ytrue, axis=0)**2
-rsq_true_r = np.linalg.norm(Y2_r - Ytrue_r, axis=1)**2
-Jtrue = 0.5 * np.linalg.norm(Y2 - Ytrue)**2 + 0.5 * np.linalg.norm(Y2_r - Ytrue_r)**2
-
-err_rsq_objective = np.linalg.norm(rsq - rsq_true)
-err_rsq_r_objective = np.linalg.norm(rsq_r - rsq_true_r)
-err_J_objective = np.linalg.norm(J - Jtrue) / np.linalg.norm(Jtrue)
-print('err_rsq_objective=', err_rsq_objective)
-print('err_rsq_r_objective=', err_rsq_r_objective)
-print('err_J_objective=', err_J_objective)
-
-#
-
-dX = np.random.randn(N, r)
-dY = np.random.randn(r, M)
-perturbation = (dX, dY)
-
-df = forward_map_jvp(base, perturbation, inputs)
-
-s = 1e-6
-f = forward_map(base, inputs)
-f2 = forward_map((base[0]+s*perturbation[0], base[1] + s*perturbation[1]), inputs)
-df_diff = ((f2[0] - f[0]) / s, (f2[1] - f[1]) / s)
-
-err_forward_map_jvp0 = np.linalg.norm(df[0] - df_diff[0]) / np.linalg.norm(df_diff[0])
-print('s=', s, ', err_forward_map_jvp0=', err_forward_map_jvp0)
-
-err_forward_map_jvp1 = np.linalg.norm(df[1] - df_diff[1]) / np.linalg.norm(df_diff[1])
-print('s=', s, ', err_forward_map_jvp1=', err_forward_map_jvp1)
-
-#
-
 left_orthogonal_base = left_orthogonalize_base(base)
-standard_perturbation = standardize_perturbation(left_orthogonal_base, perturbation)
-
-Z = np.random.randn(*Ytrue.shape)
-Z_r = np.random.randn(*Ytrue_r.shape)
-ZZ = (Z, Z_r)
-
-Jp = forward_map_jvp(left_orthogonal_base, standard_perturbation, inputs)
-JtZ = forward_map_vjp(left_orthogonal_base, inputs, ZZ)
-
-t1 = dumb_inner_product(Jp, ZZ) # np.sum(Jp[0] * ZZ[0]) + np.sum(Jp[1] * ZZ[1])
-t2 = dumb_inner_product(JtZ, standard_perturbation) # np.sum(JtZ[0] * standard_perturbation[0]) + np.sum(JtZ[1] + standard_perturbation[1])
-
-err_forward_map_vjp = np.abs(t1 - t2) / np.abs(t1 + t2)
-print('err_forward_map_vjp=', err_forward_map_vjp)
-
-# #
-#
-# g, aux = gradient(base, inputs, true_outputs)
 
 #
 
-J = tangent_space_objective(
-    left_orthogonal_base, standard_perturbation, inputs, true_outputs
-)
+J, (relerrs, relerrs_r) = objective(left_orthogonal_base, inputs, true_outputs)
+g0, _ = gradient_func(left_orthogonal_base, inputs, true_outputs)
+g = standardize_perturbation(left_orthogonal_base, g0)
+norm_g = dumb_norm(g)
 
-big_base = tangent_vector_as_low_rank(left_orthogonal_base, standard_perturbation)
-J_true, _ = objective(big_base, inputs, true_outputs)
+print('J=', J)
+print('relerrs=', relerrs)
+print('relerrs_r=', relerrs_r)
+print('||g||=', norm_g)
 
-err_tangent_space_objective = np.abs(J - J_true) / np.abs(J_true)
-print('err_tangent_space_objective=', err_tangent_space_objective)
+for _ in range(30):
+    apply_H = lambda P: gn_hessian_matvec(left_orthogonal_base, P, inputs)
+
+    M_helper = make_inner_product_helper_matrix(left_orthogonal_base)
+    ip_func = lambda p1, p2: inner_product_of_tangent_vectors(
+        standardize_perturbation(left_orthogonal_base, p1), standardize_perturbation(left_orthogonal_base, p2), M_helper
+    )
+
+    trust_radius = 1e6
+    rtol = 0.05
+
+    p, aux = cg_steihaug(
+        apply_H, g, add_tangent_vectors, scale_tangent_vector, ip_func, trust_radius, rtol, display=True,
+    )
+
+    base = retract_tangent_vector(left_orthogonal_base, p)
+    left_orthogonal_base = left_orthogonalize_base(base)
+
+    J, (relerrs, relerrs_r) = objective(left_orthogonal_base, inputs, true_outputs)
+    g0, _ = gradient_func(left_orthogonal_base, inputs, true_outputs)
+    g = standardize_perturbation(left_orthogonal_base, g0)
+    norm_g = dumb_norm(g)
+
+    print('J=', J)
+    print('relerrs=', np.sqrt(relerrs))
+    print('relerrs_r=', np.sqrt(relerrs_r))
+    print('||g||=', norm_g)
+
+A2 = base_to_full(left_orthogonal_base)
+computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
+print('rank=', rank)
+print('computed_err=', computed_err)
+
+U, ss, Vt = np.linalg.svd(A)
+Ar = U[:,:rank] @ np.diag(ss[:rank]) @ Vt[:rank,:]
+
+ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
+print('ideal_err=', ideal_err)
+
+# increase rank
+
+rank += 1
+
+X0 = np.zeros((N, rank))
+X0[:, :-1] = left_orthogonal_base[0]
+
+Y0 = np.zeros((rank, M))
+Y0[:-1,:] = left_orthogonal_base[1]
+
+QX, RX = np.linalg.qr(X0, mode='reduced')
+Y1 = RX @ Y0
+
+UY, ssY, VtY = np.linalg.svd(Y1, full_matrices=False)
+
+ssY[-1] = ssY[-2] / 3
+Y2 = UY @ np.diag(ssY) @ VtY
+
+base = (QX, Y2)
+left_orthogonal_base = left_orthogonalize_base(base)
 
 #
 
+J, (relerrs, relerrs_r) = objective(left_orthogonal_base, inputs, true_outputs)
+g0, _ = gradient_func(left_orthogonal_base, inputs, true_outputs)
+g = standardize_perturbation(left_orthogonal_base, g0)
+norm_g = dumb_norm(g)
 
-M_helper = make_inner_product_helper_matrix(left_orthogonal_base)
-sqrtM_helper = spd_sqrtm(M_helper)
-isqrtM_helper = jnp.linalg.inv(sqrtM_helper)
+print('J=', J)
+print('relerrs=', relerrs)
+print('relerrs_r=', relerrs_r)
+print('||g||=', norm_g)
 
-MSp = apply_tangent_mass_matrix(standardize_perturbation(left_orthogonal_base, perturbation), isqrtM_helper)
-SMp = standardize_perturbation(apply_tangent_mass_matrix(left_orthogonal_base, isqrtM_helper), perturbation)
+for _ in range(30):
+    apply_H = lambda P: gn_hessian_matvec(left_orthogonal_base, P, inputs)
 
-print(np.linalg.norm(MSp[0] - SMp[0]))
-print(np.linalg.norm(MSp[1] - SMp[1]))
+    M_helper = make_inner_product_helper_matrix(left_orthogonal_base)
+    ip_func = lambda p1, p2: inner_product_of_tangent_vectors(
+        standardize_perturbation(left_orthogonal_base, p1), standardize_perturbation(left_orthogonal_base, p2), M_helper
+    )
+
+    trust_radius = 1e0
+    rtol = 0.1
+
+    p, aux = cg_steihaug(
+        apply_H, g, add_tangent_vectors, scale_tangent_vector, ip_func, trust_radius, rtol, display=True,
+    )
+
+    base = retract_tangent_vector(left_orthogonal_base, p)
+    left_orthogonal_base = left_orthogonalize_base(base)
+
+    J, (relerrs, relerrs_r) = objective(left_orthogonal_base, inputs, true_outputs)
+    g0, _ = gradient_func(left_orthogonal_base, inputs, true_outputs)
+    g = standardize_perturbation(left_orthogonal_base, g0)
+    norm_g = dumb_norm(g)
+
+    print('J=', J)
+    print('relerrs=', np.sqrt(relerrs))
+    print('relerrs_r=', np.sqrt(relerrs_r))
+    print('||g||=', norm_g)
+
+A2 = base_to_full(left_orthogonal_base)
+computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
+print('rank=', rank)
+print('computed_err=', computed_err)
+
+U, ss, Vt = np.linalg.svd(A)
+Ar = U[:,:rank] @ np.diag(ss[:rank]) @ Vt[:rank,:]
+
+ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
+print('ideal_err=', ideal_err)
+
+# increase rank
+
+rank += 1
+
+X0 = np.zeros((N, rank))
+X0[:, :-1] = left_orthogonal_base[0]
+
+Y0 = np.zeros((rank, M))
+Y0[:-1,:] = left_orthogonal_base[1]
+
+QX, RX = np.linalg.qr(X0, mode='reduced')
+Y1 = RX @ Y0
+
+UY, ssY, VtY = np.linalg.svd(Y1, full_matrices=False)
+
+ssY[-1] = ssY[-2] / 3
+Y2 = UY @ np.diag(ssY) @ VtY
+
+base = (QX, Y2)
+left_orthogonal_base = left_orthogonalize_base(base)
+
+#
+
+J, (relerrs, relerrs_r) = objective(left_orthogonal_base, inputs, true_outputs)
+g0, _ = gradient_func(left_orthogonal_base, inputs, true_outputs)
+g = standardize_perturbation(left_orthogonal_base, g0)
+norm_g = dumb_norm(g)
+
+print('J=', J)
+print('relerrs=', relerrs)
+print('relerrs_r=', relerrs_r)
+print('||g||=', norm_g)
+
+for _ in range(30):
+    apply_H = lambda P: gn_hessian_matvec(left_orthogonal_base, P, inputs)
+
+    M_helper = make_inner_product_helper_matrix(left_orthogonal_base)
+    ip_func = lambda p1, p2: inner_product_of_tangent_vectors(
+        standardize_perturbation(left_orthogonal_base, p1), standardize_perturbation(left_orthogonal_base, p2), M_helper
+    )
+
+    trust_radius = 1e0
+    rtol = 0.1
+
+    p, aux = cg_steihaug(
+        apply_H, g, add_tangent_vectors, scale_tangent_vector, ip_func, trust_radius, rtol, display=True,
+    )
+
+    base = retract_tangent_vector(left_orthogonal_base, p)
+    left_orthogonal_base = left_orthogonalize_base(base)
+
+    J, (relerrs, relerrs_r) = objective(left_orthogonal_base, inputs, true_outputs)
+    g0, _ = gradient_func(left_orthogonal_base, inputs, true_outputs)
+    g = standardize_perturbation(left_orthogonal_base, g0)
+    norm_g = dumb_norm(g)
+
+    print('J=', J)
+    print('relerrs=', np.sqrt(relerrs))
+    print('relerrs_r=', np.sqrt(relerrs_r))
+    print('||g||=', norm_g)
+
+A2 = base_to_full(left_orthogonal_base)
+computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
+print('rank=', rank)
+print('computed_err=', computed_err)
+
+U, ss, Vt = np.linalg.svd(A)
+Ar = U[:,:rank] @ np.diag(ss[:rank]) @ Vt[:rank,:]
+
+ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
+print('ideal_err=', ideal_err)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#### trust region optimization
+
+def _update_trust_region_size(
+        J_old,          # scalar. E.g., float or array with shape=()
+        J_true,         # scalar
+        J_predicted,    # scalar
+        old_trust_region_radius, # scalar
+        min_trust_region_radius, # scalar
+        max_trust_region_radius, # scalar
+        termination_reason: str,
+        display:            bool = True,
+) -> typ.Tuple[
+    typ.Any, # scalar. new_trust_region_radius
+    typ.Any, # scalar. reduction_ratio
+]:
+    def _printmaybe(*args, **kwargs):
+        if display:
+            print(*args, **kwargs)
+
+    J_old = np.array(J_old) # increase precision; (x-y)/(x-z) has big rounding errors when x, y, z are all close
+    J_true = np.array(J_true)
+    J_predicted = np.array(J_predicted)
+    actual_drop = J_old - J_true
+    predicted_drop = J_old - J_predicted
+    reduction_ratio = actual_drop / predicted_drop
+    relative_reduction = actual_drop / J_true
+    s = '{:<15s}'.format('Jd_old') + '{:<15s}'.format('Jd_true') + '{:<15s}'.format('Jd_predicted') + '\n'
+    s += '{:<15.5E}'.format(J_old) + '{:<15.5E}'.format(J_true) + '{:<15.5E}'.format(J_predicted) + '\n'
+    _printmaybe(s)
+    _printmaybe('Drop in Jd from previous Newton iteration:')
+    s = '{:<12s}'.format('relative') + '{:<12s}'.format('predicted') + '{:<12s}'.format(
+        'actual') + '{:<18s}'.format('predicted/actual') + '\n'
+    s += '{:<12.1E}'.format(relative_reduction) + '{:<12.1E}'.format(predicted_drop) + '{:<12.1E}'.format(
+        actual_drop) + '{:<18.1E}'.format(reduction_ratio) + '\n'
+    _printmaybe(s)
+
+    # Modification of Algorithm 4.1 in Nocedal and Wright, page 69.
+    # if reduction_ratio < 0.25:
+    if (0.75 * J_old < J_true - 0.25 * J_predicted) or (J_true < 0.0) or (J_predicted < 0.0): # Mathematically equivalent but more numerically stable
+        new_trust_region_radius = jnp.maximum(0.25 * old_trust_region_radius, min_trust_region_radius)
+        s = ('reducing trust region size: '
+             + '{:>8.1E}'.format(old_trust_region_radius)
+             + ' -> '
+             + '{:<8.1E}'.format(new_trust_region_radius)
+             + '\n')
+        _printmaybe(s)
+    else:
+        # if reduction_ratio > 0.75 and termination_reason.lower() in {
+        #     'exited_trust_region', 'encountered_negative_curvature'
+        # }:
+        if 0.25 * J_old > J_true - 0.75 * J_predicted and termination_reason.lower() in {
+            'exited_trust_region', 'encountered_negative_curvature'
+        }:
+            new_trust_region_radius = jnp.minimum(2.0 * old_trust_region_radius, max_trust_region_radius)
+            s = ('increasing trust region size: ' +
+                 '{:>8.1E}'.format(old_trust_region_radius) +
+                 ' -> ' +
+                 '{:<8.1E}'.format(new_trust_region_radius) +
+                 '\n')
+            _printmaybe(s)
+        else:
+            new_trust_region_radius = old_trust_region_radius
+            s = ('keeping same trust region size: '
+                 + '{:>8.1E}'.format(new_trust_region_radius)
+                 )
+            _printmaybe(s)
+
+    return new_trust_region_radius, reduction_ratio
+
+#
+
+# M_helper = make_inner_product_helper_matrix(left_orthogonal_base)
+# sqrtM_helper = spd_sqrtm(M_helper)
+# isqrtM_helper = jnp.linalg.inv(sqrtM_helper)
+#
+# MSp = apply_tangent_mass_matrix(standardize_perturbation(left_orthogonal_base, perturbation), isqrtM_helper)
+# SMp = standardize_perturbation(apply_tangent_mass_matrix(left_orthogonal_base, isqrtM_helper), perturbation)
+#
+# print(np.linalg.norm(MSp[0] - SMp[0]))
+# print(np.linalg.norm(MSp[1] - SMp[1]))
