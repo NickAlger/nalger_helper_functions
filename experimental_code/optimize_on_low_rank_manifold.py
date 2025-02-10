@@ -793,8 +793,9 @@ def tangent_space_objective(
     sqrtM_helper = spd_sqrtm(M_helper)
     isqrtM_helper = jnp.linalg.inv(sqrtM_helper)
 
-    p0 = standardize_perturbation(left_orthogonal_base, perturbation)
-    # p0 = perturbation
+    # p0 = standardize_perturbation(left_orthogonal_base, apply_tangent_mass_matrix(perturbation, isqrtM_helper))
+    # p0 = standardize_perturbation(left_orthogonal_base, perturbation)
+    p0 = perturbation
     p = p0
     # p = apply_tangent_mass_matrix(p0, isqrtM_helper)
     # p = apply_tangent_mass_matrix(p0, sqrtM_helper)
@@ -802,11 +803,13 @@ def tangent_space_objective(
     g0, _ = gradient(left_orthogonal_base, inputs, true_outputs)
     # g = standardize_perturbation(left_orthogonal_base, g0)
     g = g0
+    # g = apply_tangent_mass_matrix(g0, sqrtM_helper)
 
     # gp = inner_product_of_tangent_vectors(g, p, M_helper)
     gp = dumb_inner_product(g, p)
 
-    Hp = standardize_perturbation_transpose(left_orthogonal_base, gn_hessian_matvec(left_orthogonal_base, p, inputs))
+    Hp = gn_hessian_matvec(left_orthogonal_base, p, inputs)
+    # Hp = standardize_perturbation_transpose(left_orthogonal_base, gn_hessian_matvec(left_orthogonal_base, p, inputs))
 
     # pHp = inner_product_of_tangent_vectors(p, Hp, M_helper)
     pHp = dumb_inner_product(p, Hp)
