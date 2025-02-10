@@ -188,6 +188,28 @@ def inner_product_of_tangent_vectors(
 
 
 @jax.jit
+def tangent_vector_as_low_rank(
+        base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        perturbation: typ.Tuple[
+            jnp.ndarray,  # dX, shape=(N,r)
+            jnp.ndarray,  # dY, shape=(r,M)
+        ],
+) -> typ.Tuple[
+    jnp.ndarray,  # Q2, shape=(N, 3*r),
+    jnp.ndarray,  # Y2, shape=(3*r, M)
+]: # big_base= X Y + dX Y + X dY
+    X, Y = base
+    dX, dY = perturbation
+    bigX = jnp.hstack([X, X, dX])
+    bigY = jnp.vstack([Y, dY, Y])
+    big_base = (bigX, bigY)
+    return big_base
+
+
+@jax.jit
 def retract_tangent_vector(
         base: typ.Tuple[
             jnp.ndarray,  # X, shape=(N,r)
@@ -202,11 +224,12 @@ def retract_tangent_vector(
     jnp.ndarray,  # Y2, shape=(r,M)
 ]: # retracted_vector based on truncated SVD of dX Y + Y dX. Is left orthogonal, even if base is not
     X, Y = base
-    dX, dY = perturbation
+    # dX, dY = perturbation
     r = X.shape[1]
+    bigX, bigY = tangent_vector_as_low_rank(base, perturbation)
 
-    bigX = jnp.hstack([X, X, dX])
-    bigY = jnp.vstack([Y, dY, Y])
+    # bigX = jnp.hstack([X, X, dX])
+    # bigY = jnp.vstack([Y, dY, Y])
     QX, RX = jnp.linalg.qr(bigX, mode='reduced')
     QYT, RYT = jnp.linalg.qr(bigY.T, mode='reduced')
     U, ss, Vt = jnp.linalg.svd(RX @ RYT.T, full_matrices=False)
@@ -332,6 +355,14 @@ IP_true = np.sum(v1 * v2)
 
 err_inner_product_of_tangent_vectors = np.linalg.norm(IP - IP_true) / np.linalg.norm(IP_true)
 print('err_inner_product_of_tangent_vectors=', err_inner_product_of_tangent_vectors)
+
+# Test tangent_vector_as_low_rank()
+
+v1 = base_to_full(base) + tangent_vector_to_full(base, perturbation)
+v2 = base_to_full(tangent_vector_as_low_rank(base, perturbation))
+
+err_tangent_vector_as_low_rank = np.linalg.norm(v2-v1) / np.linalg.norm(v1)
+print('err_tangent_vector_as_low_rank=', err_tangent_vector_as_low_rank)
 
 # Test retract_tangent_vector()
 
@@ -625,7 +656,7 @@ def objective(
     return J, (rsq, rsq_r)
 
 
-gradient = jax.grad(objective, argnums=0, has_aux=True)
+gradient = jax.jit(jax.grad(objective, argnums=0, has_aux=True))
 #
 # def hessian_matvec(
 #         base: typ.Tuple[
@@ -667,7 +698,9 @@ def forward_map_jvp(
     jnp.ndarray,  # Z_r, shape=(k_r,N)
 ]:
     X, Y = base
-    dX, dY = perturbation
+    # dX, dY = perturbation
+    dX, dY = standardize_perturbation(base, perturbation)
+
     Omega, Omega_r = inputs
     Z = dX @ (Y @ Omega) + X @ (dY @ Omega)
     Z_r = (Omega_r @ dX) @ Y + (Omega_r @ X) @ dY
@@ -693,10 +726,13 @@ def forward_map_vjp(
 ]:
     X, Y = base
     Z, Z_r = ZZ
+
     Omega, Omega_r = inputs
     dX = jnp.einsum('ix,aj,jx->ia', Z, Y, Omega) + jnp.einsum('xi,aj,xj->ia', Omega_r, Y, Z_r)
     dY = jnp.einsum('ix,ia,jx->aj', Z, X, Omega) + jnp.einsum('xi,ia,xj->aj', Omega_r, X, Z_r)
-    return dX, dY # <-- agrees with vjp autodiff
+
+    # return dX, dY # <-- agrees with vjp autodiff
+    return standardize_perturbation_transpose(base, (dX, dY))
 
     # X, Y = base
     # Z, Z_r = ZZ
@@ -727,6 +763,12 @@ def gn_hessian_matvec(
     return forward_map_vjp(base, inputs, forward_map_jvp(base, perturbation, inputs))
 
 
+@jax.jit
+def spd_sqrtm(A):
+    ee, P = jnp.linalg.eigh(A)
+    return P @ (jnp.sqrt(jnp.abs(ee)).reshape((-1,1)) * P.T)
+
+
 def tangent_space_objective(
         left_orthogonal_base: typ.Tuple[
             jnp.ndarray,  # X, shape=(N,r)
@@ -745,17 +787,44 @@ def tangent_space_objective(
             jnp.ndarray,  # Ztrue_r, shape=(k_r,M)
         ],
 ):
-    p = standardize_perturbation(perturbation)
-    g = standardize_perturbation(gradient(base, inputs, true_outputs))
-    gp = inner_product_of_tangent_vectors(g, p)
+    J0, _ = objective(left_orthogonal_base, inputs, true_outputs)
 
-    Hp = standardize_perturbation(gn_hessian_matvec(left_orthogonal_base, p, inputs))
-    pHp = inner_product_of_tangent_vectors(p, Hp)
+    M_helper = make_inner_product_helper_matrix(left_orthogonal_base)
+    sqrtM_helper = spd_sqrtm(M_helper)
+    isqrtM_helper = jnp.linalg.inv(sqrtM_helper)
 
-    return 0.5 * pHp + gp
+    p0 = standardize_perturbation(left_orthogonal_base, perturbation)
+    # p0 = perturbation
+    p = p0
+    # p = apply_tangent_mass_matrix(p0, isqrtM_helper)
+    # p = apply_tangent_mass_matrix(p0, sqrtM_helper)
+
+    g0, _ = gradient(left_orthogonal_base, inputs, true_outputs)
+    # g = standardize_perturbation(left_orthogonal_base, g0)
+    g = g0
+
+    # gp = inner_product_of_tangent_vectors(g, p, M_helper)
+    gp = dumb_inner_product(g, p)
+
+    Hp = standardize_perturbation_transpose(left_orthogonal_base, gn_hessian_matvec(left_orthogonal_base, p, inputs))
+
+    # pHp = inner_product_of_tangent_vectors(p, Hp, M_helper)
+    pHp = dumb_inner_product(p, Hp)
+
+    return 0.5 * pHp + gp + J0
 
 
 # Test
+
+A0 = np.random.randn(20,13)
+A = A0.T @ A0
+sqrtA_true = jax.scipy.linalg.sqrtm(A)
+sqrtA = spd_sqrtm(A)
+
+err_spd_sqrtm = np.linalg.norm(sqrtA_true - sqrtA) / np.linalg.norm(sqrtA_true)
+print('err_spd_sqrtm=', err_spd_sqrtm)
+
+#
 
 N = 100
 M = 89
@@ -805,10 +874,6 @@ print('err_J_objective=', err_J_objective)
 
 #
 
-# g, aux = gradient(base, inputs, true_outputs)
-
-#
-
 dX = np.random.randn(N, r)
 dY = np.random.randn(r, M)
 perturbation = (dX, dY)
@@ -844,7 +909,31 @@ t2 = dumb_inner_product(JtZ, standard_perturbation) # np.sum(JtZ[0] * standard_p
 err_forward_map_vjp = np.abs(t1 - t2) / np.abs(t1 + t2)
 print('err_forward_map_vjp=', err_forward_map_vjp)
 
+# #
+#
+# g, aux = gradient(base, inputs, true_outputs)
+
+#
+
+J = tangent_space_objective(
+    left_orthogonal_base, standard_perturbation, inputs, true_outputs
+)
+
+big_base = tangent_vector_as_low_rank(left_orthogonal_base, standard_perturbation)
+J_true, _ = objective(big_base, inputs, true_outputs)
+
+err_tangent_space_objective = np.abs(J - J_true) / np.abs(J_true)
+print('err_tangent_space_objective=', err_tangent_space_objective)
+
 #
 
 
+M_helper = make_inner_product_helper_matrix(left_orthogonal_base)
+sqrtM_helper = spd_sqrtm(M_helper)
+isqrtM_helper = jnp.linalg.inv(sqrtM_helper)
 
+MSp = apply_tangent_mass_matrix(standardize_perturbation(left_orthogonal_base, perturbation), isqrtM_helper)
+SMp = standardize_perturbation(apply_tangent_mass_matrix(left_orthogonal_base, isqrtM_helper), perturbation)
+
+print(np.linalg.norm(MSp[0] - SMp[0]))
+print(np.linalg.norm(MSp[1] - SMp[1]))
