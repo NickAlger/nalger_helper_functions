@@ -1193,10 +1193,14 @@ def als_iter(
 
 #
 
+standardize_in_inner_product = True
+
 rank = 1
 
-X0 = jnp.array(np.random.randn(N, rank))
-Y0 = jnp.array(np.random.randn(rank, M))
+# X0 = jnp.array(np.random.randn(N, rank))
+# Y0 = jnp.array(np.random.randn(rank, M))
+X0 = jnp.array(np.ones((N, rank)))
+Y0 = jnp.array(np.ones((rank, M)))
 x0 = (X0, Y0)
 x0 = als_iter(x0, inputs, true_outputs)
 x0 = left_orthogonalize_base(x0)
@@ -1205,12 +1209,17 @@ J_func = lambda x, x_aux: objective(x, inputs, true_outputs)
 g_func = lambda x, x_aux, J_aux: gradient_func(x, inputs, true_outputs)
 H_matvec_func = lambda b, p, x_aux, J_aux, g_aux:  gn_hessian_matvec(b, p, inputs)
 
-compute_x_aux = lambda x: make_inner_product_helper_matrix(x)
+compute_x_aux = lambda x: (x, make_inner_product_helper_matrix(x))
 
 add     = lambda u, v, x_aux: add_tangent_vectors(u, v)
 retract = lambda x, p, x_aux: retract_tangent_vector(x, p)
 scale   = lambda u, c, x_aux: scale_tangent_vector(u, c)
-inner_product = inner_product_of_tangent_vectors
+if standardize_in_inner_product:
+    inner_product = lambda u, v, x_aux: inner_product_of_tangent_vectors(
+        standardize_perturbation(x_aux[0], u), standardize_perturbation(x_aux[0], v), x_aux[1]
+    )
+else:
+    inner_product = lambda u, v, x_aux: inner_product_of_tangent_vectors(u, v, x_aux[1])
 J_aux_callback = lambda J_aux: print(str(J_aux[0]) + '\n' + str(J_aux[1]))
 
 #
