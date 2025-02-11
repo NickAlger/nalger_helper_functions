@@ -1009,7 +1009,7 @@ def trust_region_optimize(
         retract:        typ.Callable,  # (x_primal, u_tangent, x_aux) -> x_primal (+) u_tangent: retract vector from tangent plane to manifold
         scale:          typ.Callable,  # (u_vector, c_scalar,  x_aux) -> c_scalar * u_vector
         inner_product:  typ.Callable,  # (u_vector, v_vector,  x_aux) -> <u_vector, v_vector>
-        newton_rtol:        float = 1e-8,
+        newton_rtol:        float = 1e-5,
         cg_rtol_power:      float = 0.5, # between 0 and 1
         cg_max_iter:        int  = 250,
         newton_min_iter:    int = 1,
@@ -1110,7 +1110,6 @@ def trust_region_optimize(
 
         trust_region_radius = new_trust_region_radius
         if reduction_ratio > trust_region_minimum_reduction_ratio:
-        # if True:
             _print('Updating x.\n')
             x = new_x
             x_aux = new_x_aux
@@ -1166,14 +1165,41 @@ true_outputs = (Ytrue, Ytrue_r)
 
 #
 
+def als_iter(
+        x0: typ.Tuple[
+            jnp.ndarray, # shape=(N,r)
+            jnp.ndarray, # shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray, # Omega, shape=(M,k)
+            jnp.ndarray, # Omega_r, shape=(k_r,N)
+        ],
+        true_outputs: typ.Tuple[
+            jnp.ndarray, # Ztrue, shape=(N,k)
+            jnp.ndarray, # Ztrue_r, shape=(k_r, M)
+        ],
+) -> typ.Tuple[
+    jnp.ndarray, # shape=(N,r)
+    jnp.ndarray, # shape=(r,M)
+]: # x1
+    X0, Y0 = x0
+    Omega, Omega_r = inputs
+    Ztrue, Ztrue_r = true_outputs
+
+    X1 = Ztrue @ np.linalg.pinv(Y0 @ Omega)
+    Y1 = np.linalg.pinv(Omega_r @ X0) @ Ztrue_r
+    x1 = (X1, Y1)
+    return x1
+
+#
+
 rank = 1
 
-X = jnp.array(np.random.randn(N, rank))
-Y = jnp.array(np.random.randn(rank, M))
-# X = jnp.array(np.ones((N, rank)))
-# Y = jnp.array(np.ones((rank, M)))
-base = (X, Y)
-x0 = left_orthogonalize_base(base)
+X0 = jnp.array(np.random.randn(N, rank))
+Y0 = jnp.array(np.random.randn(rank, M))
+x0 = (X0, Y0)
+x0 = als_iter(x0, inputs, true_outputs)
+x0 = left_orthogonalize_base(x0)
 
 J_func = lambda x, x_aux: objective(x, inputs, true_outputs)
 g_func = lambda x, x_aux, J_aux: gradient_func(x, inputs, true_outputs)
@@ -1192,7 +1218,7 @@ J_aux_callback = lambda J_aux: print(str(J_aux[0]) + '\n' + str(J_aux[1]))
 x = trust_region_optimize(
     J_func, g_func, H_matvec_func, x0, add, retract, scale, inner_product,
     compute_x_aux=compute_x_aux, J_aux_callback=J_aux_callback,
-    newton_max_iter=20, cg_rtol_power=1.0,
+    newton_max_iter=50, cg_rtol_power=0.5, newton_rtol=1e-2,
 )
 
 A2 = base_to_full(x)
@@ -1221,7 +1247,7 @@ Y1 = RX @ Y0
 
 UY, ssY, VtY = np.linalg.svd(Y1, full_matrices=False)
 
-ssY[-1] = ssY[-2] / 3
+ssY[-1] = ssY[-2] / 10
 Y2 = UY @ np.diag(ssY) @ VtY
 
 base = (QX, Y2)
@@ -1232,7 +1258,7 @@ x0 = left_orthogonalize_base(base)
 x = trust_region_optimize(
     J_func, g_func, H_matvec_func, x0, add, retract, scale, inner_product,
     compute_x_aux=compute_x_aux, J_aux_callback=J_aux_callback,
-    newton_max_iter=20, cg_rtol_power=1.0,
+    newton_max_iter=50, cg_rtol_power=0.5, newton_rtol=1e-2
 )
 
 A2 = base_to_full(x)
