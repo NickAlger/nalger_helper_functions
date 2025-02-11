@@ -930,229 +930,6 @@ for scaling in [0.1, 0.5, 0.9, 0.99]:
     print('trust_radius=', trust_radius, ', norm_p=', norm_p)
 
 
-#### Use iterative CG-Steihaug to solve low rank fit problem
-
-if False:
-    N = 100
-    M = 89
-    num_samples = 10
-
-    U, _, Vt = np.linalg.svd(np.random.randn(N, M), full_matrices=False)
-    ss = np.logspace(-30, 0, np.minimum(N,M))
-    A = U @ np.diag(ss) @ Vt
-
-    Omega = jnp.array(np.random.randn(M, num_samples))
-    Omega_r = jnp.array(np.random.randn(num_samples, N))
-    Ytrue = A @ Omega
-    Ytrue_r = Omega_r @ A
-    inputs = (Omega, Omega_r)
-    true_outputs = (Ytrue, Ytrue_r)
-
-    #
-
-    rank = 1
-
-    X = jnp.array(np.random.randn(N, rank))
-    Y = jnp.array(np.random.randn(rank, M))
-    base = (X, Y)
-    left_orthogonal_base = left_orthogonalize_base(base)
-
-    #
-
-    J, (relerrs, relerrs_r) = objective(left_orthogonal_base, inputs, true_outputs)
-    g0, _ = gradient_func(left_orthogonal_base, inputs, true_outputs)
-    g = standardize_perturbation(left_orthogonal_base, g0)
-    norm_g = dumb_norm(g)
-
-    print('J=', J)
-    print('relerrs=', relerrs)
-    print('relerrs_r=', relerrs_r)
-    print('||g||=', norm_g)
-
-    for _ in range(30):
-        apply_H = lambda P: gn_hessian_matvec(left_orthogonal_base, P, inputs)
-
-        M_helper = make_inner_product_helper_matrix(left_orthogonal_base)
-        ip_func = lambda p1, p2: inner_product_of_tangent_vectors(
-            standardize_perturbation(left_orthogonal_base, p1), standardize_perturbation(left_orthogonal_base, p2), M_helper
-        )
-
-        trust_radius = 1e6
-        rtol = 0.05
-
-        p, aux = cg_steihaug(
-            apply_H, g, add_tangent_vectors, scale_tangent_vector, ip_func, trust_radius, rtol, display=True,
-        )
-
-        base = retract_tangent_vector(left_orthogonal_base, p)
-        left_orthogonal_base = left_orthogonalize_base(base)
-
-        J, (relerrs, relerrs_r) = objective(left_orthogonal_base, inputs, true_outputs)
-        g0, _ = gradient_func(left_orthogonal_base, inputs, true_outputs)
-        g = standardize_perturbation(left_orthogonal_base, g0)
-        norm_g = dumb_norm(g)
-
-        print('J=', J)
-        print('relerrs=', np.sqrt(relerrs))
-        print('relerrs_r=', np.sqrt(relerrs_r))
-        print('||g||=', norm_g)
-
-    A2 = base_to_full(left_orthogonal_base)
-    computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
-    print('rank=', rank)
-    print('computed_err=', computed_err)
-
-    U, ss, Vt = np.linalg.svd(A)
-    Ar = U[:,:rank] @ np.diag(ss[:rank]) @ Vt[:rank,:]
-
-    ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
-    print('ideal_err=', ideal_err)
-
-    # increase rank
-
-    rank += 1
-
-    X0 = np.zeros((N, rank))
-    X0[:, :-1] = left_orthogonal_base[0]
-
-    Y0 = np.zeros((rank, M))
-    Y0[:-1,:] = left_orthogonal_base[1]
-
-    QX, RX = np.linalg.qr(X0, mode='reduced')
-    Y1 = RX @ Y0
-
-    UY, ssY, VtY = np.linalg.svd(Y1, full_matrices=False)
-
-    ssY[-1] = ssY[-2] / 3
-    Y2 = UY @ np.diag(ssY) @ VtY
-
-    base = (QX, Y2)
-    left_orthogonal_base = left_orthogonalize_base(base)
-
-    #
-
-    J, (relerrs, relerrs_r) = objective(left_orthogonal_base, inputs, true_outputs)
-    g0, _ = gradient_func(left_orthogonal_base, inputs, true_outputs)
-    g = standardize_perturbation(left_orthogonal_base, g0)
-    norm_g = dumb_norm(g)
-
-    print('J=', J)
-    print('relerrs=', relerrs)
-    print('relerrs_r=', relerrs_r)
-    print('||g||=', norm_g)
-
-    for _ in range(30):
-        apply_H = lambda P: gn_hessian_matvec(left_orthogonal_base, P, inputs)
-
-        M_helper = make_inner_product_helper_matrix(left_orthogonal_base)
-        ip_func = lambda p1, p2: inner_product_of_tangent_vectors(
-            standardize_perturbation(left_orthogonal_base, p1), standardize_perturbation(left_orthogonal_base, p2), M_helper
-        )
-
-        trust_radius = 1e0
-        rtol = 0.1
-
-        p, aux = cg_steihaug(
-            apply_H, g, add_tangent_vectors, scale_tangent_vector, ip_func, trust_radius, rtol, display=True,
-        )
-
-        base = retract_tangent_vector(left_orthogonal_base, p)
-        left_orthogonal_base = left_orthogonalize_base(base)
-
-        J, (relerrs, relerrs_r) = objective(left_orthogonal_base, inputs, true_outputs)
-        g0, _ = gradient_func(left_orthogonal_base, inputs, true_outputs)
-        g = standardize_perturbation(left_orthogonal_base, g0)
-        norm_g = dumb_norm(g)
-
-        print('J=', J)
-        print('relerrs=', np.sqrt(relerrs))
-        print('relerrs_r=', np.sqrt(relerrs_r))
-        print('||g||=', norm_g)
-
-    A2 = base_to_full(left_orthogonal_base)
-    computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
-    print('rank=', rank)
-    print('computed_err=', computed_err)
-
-    U, ss, Vt = np.linalg.svd(A)
-    Ar = U[:,:rank] @ np.diag(ss[:rank]) @ Vt[:rank,:]
-
-    ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
-    print('ideal_err=', ideal_err)
-
-    # increase rank
-
-    rank += 1
-
-    X0 = np.zeros((N, rank))
-    X0[:, :-1] = left_orthogonal_base[0]
-
-    Y0 = np.zeros((rank, M))
-    Y0[:-1,:] = left_orthogonal_base[1]
-
-    QX, RX = np.linalg.qr(X0, mode='reduced')
-    Y1 = RX @ Y0
-
-    UY, ssY, VtY = np.linalg.svd(Y1, full_matrices=False)
-
-    ssY[-1] = ssY[-2] / 3
-    Y2 = UY @ np.diag(ssY) @ VtY
-
-    base = (QX, Y2)
-    left_orthogonal_base = left_orthogonalize_base(base)
-
-    #
-
-    J, (relerrs, relerrs_r) = objective(left_orthogonal_base, inputs, true_outputs)
-    g0, _ = gradient_func(left_orthogonal_base, inputs, true_outputs)
-    g = standardize_perturbation(left_orthogonal_base, g0)
-    norm_g = dumb_norm(g)
-
-    print('J=', J)
-    print('relerrs=', relerrs)
-    print('relerrs_r=', relerrs_r)
-    print('||g||=', norm_g)
-
-    for _ in range(30):
-        apply_H = lambda P: gn_hessian_matvec(left_orthogonal_base, P, inputs)
-
-        M_helper = make_inner_product_helper_matrix(left_orthogonal_base)
-        ip_func = lambda p1, p2: inner_product_of_tangent_vectors(
-            standardize_perturbation(left_orthogonal_base, p1), standardize_perturbation(left_orthogonal_base, p2), M_helper
-        )
-
-        trust_radius = 1e0
-        rtol = 0.1
-
-        p, aux = cg_steihaug(
-            apply_H, g, add_tangent_vectors, scale_tangent_vector, ip_func, trust_radius, rtol, display=True,
-        )
-
-        base = retract_tangent_vector(left_orthogonal_base, p)
-        left_orthogonal_base = left_orthogonalize_base(base)
-
-        J, (relerrs, relerrs_r) = objective(left_orthogonal_base, inputs, true_outputs)
-        g0, _ = gradient_func(left_orthogonal_base, inputs, true_outputs)
-        g = standardize_perturbation(left_orthogonal_base, g0)
-        norm_g = dumb_norm(g)
-
-        print('J=', J)
-        print('relerrs=', np.sqrt(relerrs))
-        print('relerrs_r=', np.sqrt(relerrs_r))
-        print('||g||=', norm_g)
-
-    A2 = base_to_full(left_orthogonal_base)
-    computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
-    print('rank=', rank)
-    print('computed_err=', computed_err)
-
-    U, ss, Vt = np.linalg.svd(A)
-    Ar = U[:,:rank] @ np.diag(ss[:rank]) @ Vt[:rank,:]
-
-    ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
-    print('ideal_err=', ideal_err)
-
-
 #### trust region optimization
 
 def _update_trust_region_size(
@@ -1232,7 +1009,7 @@ def trust_region_optimize(
         retract:        typ.Callable,  # (x_primal, u_tangent, x_aux) -> x_primal (+) u_tangent: retract vector from tangent plane to manifold
         scale:          typ.Callable,  # (u_vector, c_scalar,  x_aux) -> c_scalar * u_vector
         inner_product:  typ.Callable,  # (u_vector, v_vector,  x_aux) -> <u_vector, v_vector>
-        newton_rtol:        float = 1e-5,
+        newton_rtol:        float = 1e-8,
         cg_rtol_power:      float = 0.5, # between 0 and 1
         cg_max_iter:        int  = 250,
         newton_min_iter:    int = 1,
@@ -1269,7 +1046,7 @@ def trust_region_optimize(
     x0_aux = compute_x_aux(x0)
     J0, J0_aux = objective_func(x0, x0_aux)
     g0, g0_aux = gradient_func(x0, x0_aux, J0_aux)
-    norm_g0 = _norm(g0)
+    norm_g0 = _norm(g0, x0_aux)
 
     x = x0
     x_aux = x0_aux
@@ -1294,6 +1071,9 @@ def trust_region_optimize(
         _print('{:<12s}'.format('Newton Iter: ') + str(newton_iter) + '\n')
 
         hvp_func = lambda p: hessian_matvec_func(x, p, x_aux, J_aux, g_aux)
+        cg_add = lambda u, v: add(u, v, x_aux)
+        cg_scale = lambda u, c: scale(u, c, x_aux)
+        cg_inner_product = lambda u, v: inner_product(u, v, x_aux)
 
         if newton_iter == 1:
             Hg = hvp_func(g)
@@ -1305,9 +1085,10 @@ def trust_region_optimize(
             trust_region_radius = _norm(p, x_aux)
             min_trust_region_radius = trust_region_min_radius_factor * trust_region_radius
         else:
-            cg_rtol = np.maximum(np.minimum(0.5, np.power(norm_g / norm_g0, cg_rtol_power)), newton_rtol / 3.0)  # 1e-1
+            cg_rtol = np.maximum(np.minimum(0.5, np.power(norm_g / norm_g0, cg_rtol_power)), newton_rtol / 3.0)
+            # cg_rtol = 1e-1
             p, (num_cg_iter, termination_reason) = cg_steihaug(
-                hvp_func, g, add, scale, inner_product, trust_region_radius,
+                hvp_func, g, cg_add, cg_scale, cg_inner_product, trust_region_radius,
                 cg_rtol, cg_max_iter, cg_display, cg_callback,
             )
 
@@ -1329,6 +1110,7 @@ def trust_region_optimize(
 
         trust_region_radius = new_trust_region_radius
         if reduction_ratio > trust_region_minimum_reduction_ratio:
+        # if True:
             _print('Updating x.\n')
             x = new_x
             x_aux = new_x_aux
@@ -1340,7 +1122,7 @@ def trust_region_optimize(
             _print('Keeping x the same.\n')
 
         _print('J0=' + str(J))
-        _print('||g0||=' + str(norm_g))
+        _print('||g||/||g0||=' + str(norm_g / norm_g0))
         newton_callback(x_aux)
         x_aux_callback(x_aux)
         J_aux_callback(J_aux)
@@ -1388,6 +1170,8 @@ rank = 1
 
 X = jnp.array(np.random.randn(N, rank))
 Y = jnp.array(np.random.randn(rank, M))
+# X = jnp.array(np.ones((N, rank)))
+# Y = jnp.array(np.ones((rank, M)))
 base = (X, Y)
 x0 = left_orthogonalize_base(base)
 
@@ -1401,13 +1185,66 @@ add     = lambda u, v, x_aux: add_tangent_vectors(u, v)
 retract = lambda x, p, x_aux: retract_tangent_vector(x, p)
 scale   = lambda u, c, x_aux: scale_tangent_vector(u, c)
 inner_product = inner_product_of_tangent_vectors
-J_aux_callback = lambda J_aux: print(J_aux[0] + '\n' + J_aux[1])
+J_aux_callback = lambda J_aux: print(str(J_aux[0]) + '\n' + str(J_aux[1]))
 
-
+#
 
 x = trust_region_optimize(
-    J_func, g_func, H_matvec_func, x0, add, retract, scale, inner_product, J_aux_callback=J_aux_callback
+    J_func, g_func, H_matvec_func, x0, add, retract, scale, inner_product,
+    compute_x_aux=compute_x_aux, J_aux_callback=J_aux_callback,
+    newton_max_iter=20, cg_rtol_power=1.0,
 )
+
+A2 = base_to_full(x)
+computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
+print('rank=', rank)
+print('computed_err=', computed_err)
+
+U, ss, Vt = np.linalg.svd(A)
+Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
+
+ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
+print('ideal_err=', ideal_err)
+
+#
+
+rank += 1
+
+X0 = np.zeros((N, rank))
+X0[:, :-1] = x[0]
+
+Y0 = np.zeros((rank, M))
+Y0[:-1, :] = x[1]
+
+QX, RX = np.linalg.qr(X0, mode='reduced')
+Y1 = RX @ Y0
+
+UY, ssY, VtY = np.linalg.svd(Y1, full_matrices=False)
+
+ssY[-1] = ssY[-2] / 3
+Y2 = UY @ np.diag(ssY) @ VtY
+
+base = (QX, Y2)
+x0 = left_orthogonalize_base(base)
+
+#
+
+x = trust_region_optimize(
+    J_func, g_func, H_matvec_func, x0, add, retract, scale, inner_product,
+    compute_x_aux=compute_x_aux, J_aux_callback=J_aux_callback,
+    newton_max_iter=20, cg_rtol_power=1.0,
+)
+
+A2 = base_to_full(x)
+computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
+print('rank=', rank)
+print('computed_err=', computed_err)
+
+U, ss, Vt = np.linalg.svd(A)
+Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
+
+ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
+print('ideal_err=', ideal_err)
 
 
 
