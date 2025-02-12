@@ -1254,8 +1254,17 @@ def H_matvec_func(x, p, x_aux, J_aux, g_aux):
     Hp2 = orth_project_perturbation(x, Hp1)
     return Hp2
 
+
+def retract(x, p, x_aux):
+    M_helper, sqrtM_helper, isqrtM_helper = x_aux
+    p2 = orth_project_perturbation(x, p)
+    p3 = apply_tangent_mass_matrix(p2, isqrtM_helper)
+    x_plus_p = retract_tangent_vector(x, p3)
+    return x_plus_p
+
+# retract = lambda x, p, x_aux: retract_tangent_vector(x, p)
+
 add     = lambda u, v, x, x_aux: add_tangent_vectors(u, v)
-retract = lambda x, p, x_aux: retract_tangent_vector(x, p)
 scale   = lambda u, c, x, x_aux: scale_tangent_vector(u, c)
 inner_product = lambda u, v, x, x_aux: dumb_inner_product(u, v)
 
@@ -1264,7 +1273,7 @@ J_aux_callback = lambda J_aux: print(str(J_aux[0]) + '\n' + str(J_aux[1]))
 #
 
 
-rank = 5
+rank = 1
 
 # X0 = jnp.array(np.random.randn(N, rank))
 # Y0 = jnp.array(np.random.randn(rank, M))
@@ -1327,12 +1336,6 @@ if False:
     rank += 1
 
     (X0, Y0) = tangent_vector_as_low_rank(x_prev, p_prev)
-    #
-    # X0 = np.zeros((N, rank))
-    # X0[:, :-1] = x[0]
-    #
-    # Y0 = np.zeros((rank, M))
-    # Y0[:-1, :] = x[1]
 
     Q, R = np.linalg.qr(X0, mode='reduced')
     Y1 = R @ Y0
@@ -1342,7 +1345,7 @@ if False:
     ss = ss0[:rank]
     Vt = Vt0[:rank,:]
 
-    ss[-1] = ss[-2] / 10
+    ss[-1] = ss[-2] / 1
     X2 = Q @ U
 
     Y2 = np.diag(ss) @ Vt
