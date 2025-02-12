@@ -1272,11 +1272,11 @@ rank = 5
 # X0 = jnp.array(np.ones((N, rank)))
 # Y0 = jnp.array(np.ones((rank, M)))
 
-# X0 = true_outputs[0][:,:rank]
-# Y0 = true_outputs[1][:rank,:]
+X0 = true_outputs[0][:,:rank]
+Y0 = true_outputs[1][:rank,:]
 
-X0 = np.linalg.svd(true_outputs[0])[0][:,:rank]
-Y0 = np.linalg.svd(true_outputs[1])[2][:rank,:]
+# X0 = np.linalg.svd(true_outputs[0])[0][:,:rank]
+# Y0 = np.linalg.svd(true_outputs[1])[2][:rank,:]
 
 # X0 = np.mean(true_outputs[0], axis=1).reshape((-1,1))
 # Y0 = np.mean(true_outputs[1], axis=0).reshape((1,-1))
@@ -1407,58 +1407,55 @@ if False:
 
     x = x0
 
-    gX = gradient_func(x, inputs, true_outputs)[0][0]
+    for ii in range(10):
+        gX = gradient_func(x, inputs, true_outputs)[0][0]
 
-    alscgX_hessian_matvec = lambda pX: gn_hessian_matvec(x, (pX, x[1]), inputs)[0]
+        alscgX_hessian_matvec = lambda pX: gn_hessian_matvec(x, (pX, x[1]), inputs)[0]
 
-    pX, info = cg_steihaug(alscgX_hessian_matvec, gX, lambda u,v, : u+v, lambda u,c: c*u, lambda u,v: jnp.sum(u*v), np.inf, 1e-1, max_iter=5)
+        pX, info = cg_steihaug(alscgX_hessian_matvec, gX, lambda u,v, : u+v, lambda u,c: c*u, lambda u,v: jnp.sum(u*v), np.inf, 1e-2, max_iter=5)
 
-    x = (x[0] + pX, x[1])
+        x = (x[0] + pX, x[1])
 
-    A2 = base_to_full(x)
-    computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
-    print('rank=', rank)
-    print('computed_err=', computed_err)
+        A2 = base_to_full(x)
+        computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
+        print('rank=', rank)
+        print('computed_err=', computed_err)
 
-    U, ss, Vt = np.linalg.svd(A)
-    Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
+        U, ss, Vt = np.linalg.svd(A)
+        Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
 
-    ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
-    print('ideal_err=', ideal_err)
+        ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
+        print('ideal_err=', ideal_err)
 
-    svals = np.linalg.svd(x[1])[1]
-    print('svals=', svals)
+        svals = np.linalg.svd(x[1])[1]
+        print('svals=', svals)
 
-    J_after, relerr_after = J_func(x, None)
 
-    print('relerrs before:')
-    print(relerr_before[0])
-    print(relerr_before[1])
-    print('relerrs after:')
-    print(relerr_after[0])
-    print(relerr_after[1])
+        gY = gradient_func(x, inputs, true_outputs)[0][1]
 
-    gY = gradient_func(x, inputs, true_outputs)[0][1]
+        alscgY_hessian_matvec = lambda pY: gn_hessian_matvec(x, (x[0], pY), inputs)[1]
 
-    alscgY_hessian_matvec = lambda pY: gn_hessian_matvec(x, (x[0], pY), inputs)[1]
+        pY, info = cg_steihaug(alscgY_hessian_matvec, gY, lambda u,v, : u+v, lambda u,c: c*u, lambda u,v: jnp.sum(u*v), np.inf, 1e-2, max_iter=5)
 
-    pY, info = cg_steihaug(alscgY_hessian_matvec, gY, lambda u,v, : u+v, lambda u,c: c*u, lambda u,v: jnp.sum(u*v), np.inf, 1e-1, max_iter=5)
+        x = (x[0], x[1] + pY)
 
-    x = (x[0], x[1] + pY)
+        A2 = base_to_full(x)
+        computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
+        print('rank=', rank)
+        print('computed_err=', computed_err)
 
-    A2 = base_to_full(x)
-    computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
-    print('rank=', rank)
-    print('computed_err=', computed_err)
+        U, ss, Vt = np.linalg.svd(A)
+        Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
 
-    U, ss, Vt = np.linalg.svd(A)
-    Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
+        ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
+        print('ideal_err=', ideal_err)
 
-    ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
-    print('ideal_err=', ideal_err)
+        svals = np.linalg.svd(x[1])[1]
+        print('svals=', svals)
 
-    svals = np.linalg.svd(x[1])[1]
-    print('svals=', svals)
+    x0 = left_orthogonalize_base(x)
+
+    ##
 
     J_after2, relerr_after2 = J_func(x, None)
 
