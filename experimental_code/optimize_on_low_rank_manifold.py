@@ -1269,14 +1269,14 @@ rank = 5
 # X0 = jnp.array(np.random.randn(N, rank))
 # Y0 = jnp.array(np.random.randn(rank, M))
 
-# X0 = jnp.array(np.ones((N, rank)))
+# X0 = jnp.array(np.ones((N, rank))) # only use if rank-1. Otherwise base is rank deficient
 # Y0 = jnp.array(np.ones((rank, M)))
 
-X0 = true_outputs[0][:,:rank]
-Y0 = true_outputs[1][:rank,:]
+# X0 = true_outputs[0][:,:rank]
+# Y0 = true_outputs[1][:rank,:]
 
-# X0 = np.linalg.svd(true_outputs[0])[0][:,:rank]
-# Y0 = np.linalg.svd(true_outputs[1])[2][:rank,:]
+X0 = np.linalg.svd(true_outputs[0])[0][:,:rank]
+Y0 = np.linalg.svd(true_outputs[1])[2][:rank,:]
 
 # X0 = np.mean(true_outputs[0], axis=1).reshape((-1,1))
 # Y0 = np.mean(true_outputs[1], axis=0).reshape((1,-1))
@@ -1391,7 +1391,7 @@ if False:
 
     #### ALSCG
 
-    rank = 1
+    rank = 5
 
     X0 = np.linalg.svd(true_outputs[0])[0][:,:rank]
     Y0 = np.linalg.svd(true_outputs[1])[2][:rank,:]
@@ -1412,7 +1412,7 @@ if False:
 
         alscgX_hessian_matvec = lambda pX: gn_hessian_matvec(x, (pX, x[1]), inputs)[0]
 
-        pX, info = cg_steihaug(alscgX_hessian_matvec, gX, lambda u,v, : u+v, lambda u,c: c*u, lambda u,v: jnp.sum(u*v), np.inf, 1e-2, max_iter=5)
+        pX, info = cg_steihaug(alscgX_hessian_matvec, gX, lambda u,v, : u+v, lambda u,c: c*u, lambda u,v: jnp.sum(u*v), np.inf, 1e-2, max_iter=25)
 
         x = (x[0] + pX, x[1])
 
@@ -1435,7 +1435,7 @@ if False:
 
         alscgY_hessian_matvec = lambda pY: gn_hessian_matvec(x, (x[0], pY), inputs)[1]
 
-        pY, info = cg_steihaug(alscgY_hessian_matvec, gY, lambda u,v, : u+v, lambda u,c: c*u, lambda u,v: jnp.sum(u*v), np.inf, 1e-2, max_iter=5)
+        pY, info = cg_steihaug(alscgY_hessian_matvec, gY, lambda u,v, : u+v, lambda u,c: c*u, lambda u,v: jnp.sum(u*v), np.inf, 1e-2, max_iter=25)
 
         x = (x[0], x[1] + pY)
 
