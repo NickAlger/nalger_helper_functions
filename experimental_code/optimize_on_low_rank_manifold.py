@@ -1134,7 +1134,7 @@ def trust_region_optimize(
 
         predicted_J = J + inner_product(g, p, x, x_aux) + 0.5 * inner_product(p, hvp_func(p), x, x_aux)
 
-        previous_pair = (x, p)
+        previous_step = (x, p, x_aux)
         new_x = retract(x, p, x_aux)
 
         new_x_aux = compute_x_aux(new_x)
@@ -1180,7 +1180,7 @@ def trust_region_optimize(
     if g_reduction_achieved:
         _print('Achieved |g|/|g0| <= ' + str(newton_rtol) + '\n')
 
-    return x, previous_pair
+    return x, previous_step
 
 
 #### Use trust region method to solve low rank fit problem
@@ -1270,10 +1270,36 @@ inner_product = lambda u, v, x, x_aux: dumb_inner_product(u, v)
 
 J_aux_callback = lambda J_aux: print(str(J_aux[0]) + '\n' + str(J_aux[1]))
 
+def change_rank(
+        previous_step,
+        new_rank,
+        small_singular_value_parameter = 0.5,
+):
+    x_prev, p_prev, x_aux_prev = previous_step
+
+    (X0, Y0) = retract_arbitrary_rank(x_prev, p_prev, x_aux_prev, new_rank)
+
+    Q, R = np.linalg.qr(X0, mode='reduced')
+
+    U0, ss0, Vt0 = np.linalg.svd(R @ Y0, full_matrices=False)
+    U = U0[:,:new_rank]
+    Vt = Vt0[:new_rank,:]
+
+    old_rank = len(ss0)
+    ss = np.zeros(new_rank)
+    ss[:old_rank] = ss0[:old_rank]
+    ss[old_rank:] = ss0[old_rank-1] * small_singular_value_parameter
+    X2 = Q @ U
+
+    Y2 = np.diag(ss) @ Vt
+
+    new_x = (X2, Y2)
+    return new_x
+
 #
 
 
-rank = 1
+rank = 5
 
 # X0 = jnp.array(np.random.randn(N, rank))
 # Y0 = jnp.array(np.random.randn(rank, M))
@@ -1295,13 +1321,8 @@ x0 = (X0, Y0)
 x0 = left_orthogonalize_base(x0)
 
 J_before, relerr_before = J_func(x0, None)
-print('relerrs before:')
-print(relerr_before[0])
-print(relerr_before[1])
 
-#
-
-x, (x_prev, p_prev) = trust_region_optimize(
+x, previous_step = trust_region_optimize(
     J_func, g_func, H_matvec_func, x0, add, retract, scale, inner_product,
     compute_x_aux=compute_x_aux, J_aux_callback=J_aux_callback,
     newton_max_iter=50, cg_rtol_power=0.5, newton_rtol=1e-5,
@@ -1332,42 +1353,16 @@ print(relerr_after[1])
 
 #
 
-
 if False:
     rank += 1
 
-    x_aux_prev = compute_x_aux(x_prev)
-
-    # (X0, Y0) = tangent_vector_as_low_rank(x_prev, p_prev)
-    (X0, Y0) = retract_arbitrary_rank(x_prev, p_prev, x_aux_prev, rank)
-
-    Q, R = np.linalg.qr(X0, mode='reduced')
-    Y1 = R @ Y0
-
-    U0, ss0, Vt0 = np.linalg.svd(Y1, full_matrices=False)
-    U = U0[:,:rank]
-    ss = ss0[:rank]
-    Vt = Vt0[:rank,:]
-
-    ss[-1] = ss[-2] / 1
-    X2 = Q @ U
-
-    Y2 = np.diag(ss) @ Vt
-
-    base = (X2, Y2)
-    x0 = left_orthogonalize_base(base)
-
+    x0 = change_rank(previous_step, rank, 0.5)
     x0 = als_iter(x0, inputs, true_outputs) # <-- seems important
     x0 = left_orthogonalize_base(x0)
 
     J_before, relerr_before = J_func(x0, None)
-    print('relerrs before:')
-    print(relerr_before[0])
-    print(relerr_before[1])
 
-    #
-
-    x, (x_prev, p_prev) = trust_region_optimize(
+    x, previous_step = trust_region_optimize(
         J_func, g_func, H_matvec_func, x0, add, retract, scale, inner_product,
         compute_x_aux=compute_x_aux, J_aux_callback=J_aux_callback,
         newton_max_iter=100, cg_rtol_power=0.5, newton_rtol=1e-5
