@@ -1282,7 +1282,7 @@ Y0 = np.linalg.svd(true_outputs[1])[2][:rank,:]
 # Y0 = np.mean(true_outputs[1], axis=0).reshape((1,-1))
 
 x0 = (X0, Y0)
-x0 = als_iter(x0, inputs, true_outputs)
+# x0 = als_iter(x0, inputs, true_outputs)
 x0 = left_orthogonalize_base(x0)
 
 J_before, relerr_before = J_func(x0, None)
