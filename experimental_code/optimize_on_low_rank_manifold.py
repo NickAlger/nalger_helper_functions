@@ -132,7 +132,7 @@ def standardize_perturbation(
         ],
         perturbation: typ.Tuple[
             jnp.ndarray,  # dX_perp, shape=(N,r)
-            jnp.ndarray,  # dY2, shape=(r,M)
+            jnp.ndarray,  # dY, shape=(r,M)
         ],
 ) -> typ.Tuple[
     jnp.ndarray,  # dX2, shape=(N,r), Q^T dX2 = 0
@@ -147,6 +147,31 @@ def standardize_perturbation(
     standard_perturbation = (dX_perp, dY2)
     return standard_perturbation
 
+
+@jax.jit
+def orth_project_perturbation(
+        left_orthogonal_base: typ.Tuple[
+            jnp.ndarray,  # Q, shape=(N,r), Q^T Q = I
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        perturbation: typ.Tuple[
+            jnp.ndarray,  # dX_perp, shape=(N,r)
+            jnp.ndarray,  # dY, shape=(r,M)
+        ],
+) -> typ.Tuple[
+    jnp.ndarray,  # dX2, shape=(N,r), Q^T dX2 = 0
+    jnp.ndarray,  # dY2, shape=(r,M)
+]: # projected perturbation
+    Q, Y = left_orthogonal_base
+    dX, dY = perturbation
+    return Q @ (Q.T @ dX), dY
+
+    # C = Q.T @ dX
+    # dX_parallel = Q @ C
+    # dX_perp = dX - dX_parallel
+    # dY2 = dY # Don't modify dY
+    # standard_perturbation = (dX_perp, dY2)
+    # return standard_perturbation
 
 @jax.jit
 def standardize_perturbation_transpose(
@@ -477,8 +502,8 @@ def forward_map_jvp(
     jnp.ndarray,  # Z_r, shape=(k_r,N)
 ]:
     X, Y = base
-    # dX, dY = perturbation
-    dX, dY = standardize_perturbation(base, perturbation)
+    dX, dY = perturbation
+    # dX, dY = standardize_perturbation(base, perturbation)
 
     Omega, Omega_r = inputs
     Z = dX @ (Y @ Omega) + X @ (dY @ Omega)
@@ -511,8 +536,8 @@ def forward_map_vjp(
     dX = jnp.einsum('ix,aj,jx->ia', Z, Y, Omega) + jnp.einsum('xi,aj,xj->ia', Omega_r, Y, Z_r)
     dY = jnp.einsum('ix,ia,jx->aj', Z, X, Omega) + jnp.einsum('xi,ia,xj->aj', Omega_r, X, Z_r)
 
-    # return dX, dY # <-- agrees with vjp autodiff
-    return standardize_perturbation_transpose(base, (dX, dY)) # <-- agrees with vjp autodiff
+    return dX, dY # <-- agrees with vjp autodiff
+    # return standardize_perturbation_transpose(base, (dX, dY)) # <-- agrees with vjp autodiff
 
     # X, Y = base
     # Z, Z_r = ZZ
@@ -577,8 +602,12 @@ def tangent_space_objective(
 
     # p0 = standardize_perturbation(left_orthogonal_base, apply_tangent_mass_matrix(perturbation, isqrtM_helper))
     # p0 = standardize_perturbation(left_orthogonal_base, perturbation)
+
     p0 = perturbation
     p = p0
+    # p = apply_tangent_mass_matrix(orth_project_perturbation(p0), isqrtM_helper)
+
+
     # p = apply_tangent_mass_matrix(p0, isqrtM_helper)
     # p = apply_tangent_mass_matrix(p0, sqrtM_helper)
 
@@ -590,7 +619,10 @@ def tangent_space_objective(
     # gp = inner_product_of_tangent_vectors(g, p, M_helper)
     gp = dumb_inner_product(g, p)
 
-    Hp = gn_hessian_matvec(left_orthogonal_base, p, inputs)
+    Hp0 = gn_hessian_matvec(left_orthogonal_base, p, inputs)
+    Hp = Hp0
+    # Hp = apply_tangent_mass_matrix(orth_project_perturbation(Hp0), isqrtM_helper)
+
     # Hp = standardize_perturbation_transpose(left_orthogonal_base, gn_hessian_matvec(left_orthogonal_base, p, inputs))
 
     # pHp = inner_product_of_tangent_vectors(p, Hp, M_helper)
@@ -1005,10 +1037,10 @@ def trust_region_optimize(
         gradient_func:          typ.Callable, # (x, x_aux, J_aux)           -> (g(x), g_aux)
         hessian_matvec_func:    typ.Callable, # (x, p, x_aux, J_aux, g_aux) -> H(m) @ p
         x0:             typ.Any, # initial guess
-        add:            typ.Callable,  # (u_vector, v_vector,  x_aux) -> u_vector + v_vector
-        retract:        typ.Callable,  # (x_primal, u_tangent, x_aux) -> x_primal (+) u_tangent: retract vector from tangent plane to manifold
-        scale:          typ.Callable,  # (u_vector, c_scalar,  x_aux) -> c_scalar * u_vector
-        inner_product:  typ.Callable,  # (u_vector, v_vector,  x_aux) -> <u_vector, v_vector>
+        add:            typ.Callable,  # (u_vector, v_vector,  x, x_aux) -> u_vector + v_vector
+        retract:        typ.Callable,  # (x_primal, u_tangent, x_aux)    -> x_primal (+) u_tangent: retract vector from tangent plane to manifold
+        scale:          typ.Callable,  # (u_vector, c_scalar,  x, x_aux) -> c_scalar * u_vector
+        inner_product:  typ.Callable,  # (u_vector, v_vector,  x, x_aux) -> <u_vector, v_vector>
         newton_rtol:        float = 1e-5,
         cg_rtol_power:      float = 0.5, # between 0 and 1
         cg_max_iter:        int  = 250,
@@ -1040,13 +1072,13 @@ def trust_region_optimize(
     J_aux_callback      = null_func_if_none(J_aux_callback)
     g_aux_callback      = null_func_if_none(g_aux_callback)
 
-    def _norm(x, x_aux):
-        return np.sqrt(inner_product(x, x, x_aux))
+    def _norm(u, x, x_aux):
+        return np.sqrt(inner_product(u, u, x, x_aux))
 
     x0_aux = compute_x_aux(x0)
     J0, J0_aux = objective_func(x0, x0_aux)
     g0, g0_aux = gradient_func(x0, x0_aux, J0_aux)
-    norm_g0 = _norm(g0, x0_aux)
+    norm_g0 = _norm(g0, x0, x0_aux)
 
     x = x0
     x_aux = x0_aux
@@ -1071,18 +1103,18 @@ def trust_region_optimize(
         _print('{:<12s}'.format('Newton Iter: ') + str(newton_iter) + '\n')
 
         hvp_func = lambda p: hessian_matvec_func(x, p, x_aux, J_aux, g_aux)
-        cg_add = lambda u, v: add(u, v, x_aux)
-        cg_scale = lambda u, c: scale(u, c, x_aux)
-        cg_inner_product = lambda u, v: inner_product(u, v, x_aux)
+        cg_add = lambda u, v: add(u, v, x, x_aux)
+        cg_scale = lambda u, c: scale(u, c, x, x_aux)
+        cg_inner_product = lambda u, v: inner_product(u, v, x, x_aux)
 
         if newton_iter == 1:
             Hg = hvp_func(g)
-            a = inner_product(g, g, x_aux) / inner_product(g, Hg, x_aux)
-            p = scale(g, -a, x_aux)
+            a = inner_product(g, g, x, x_aux) / inner_product(g, Hg, x, x_aux)
+            p = scale(g, -a, x, x_aux)
             termination_reason = 'first_iteration'
             num_cg_iter = 1
             cg_rtol = jnp.array(1.0)
-            trust_region_radius = _norm(p, x_aux)
+            trust_region_radius = _norm(p, x, x_aux)
             min_trust_region_radius = trust_region_min_radius_factor * trust_region_radius
         else:
             cg_rtol = np.maximum(np.minimum(0.5, np.power(norm_g / norm_g0, cg_rtol_power)), newton_rtol / 3.0)
@@ -1096,8 +1128,9 @@ def trust_region_optimize(
         s += '{:<12.1E}'.format(trust_region_radius) + '{:<10.1E}'.format(cg_rtol) + '{:<10d}'.format(num_cg_iter) + termination_reason + '\n'
         _print(s)
 
-        predicted_J = J + inner_product(g, p, x_aux) + 0.5 * inner_product(p, hvp_func(p), x_aux)
+        predicted_J = J + inner_product(g, p, x, x_aux) + 0.5 * inner_product(p, hvp_func(p), x, x_aux)
 
+        previous_pair = (x, p)
         new_x = retract(x, p, x_aux)
 
         new_x_aux = compute_x_aux(new_x)
@@ -1116,7 +1149,7 @@ def trust_region_optimize(
             J = new_J
             J_aux = new_J_aux
             g, g_aux = gradient_func(x, x_aux, J_aux)
-            norm_g = _norm(g, x_aux)
+            norm_g = _norm(g, x, x_aux)
         else:
             _print('Keeping x the same.\n')
 
@@ -1143,7 +1176,7 @@ def trust_region_optimize(
     if g_reduction_achieved:
         _print('Achieved |g|/|g0| <= ' + str(newton_rtol) + '\n')
 
-    return x
+    return x, previous_pair
 
 
 #### Use trust region method to solve low rank fit problem
@@ -1193,7 +1226,43 @@ def als_iter(
 
 #
 
-standardize_in_inner_product = True
+
+
+# standardize_in_inner_product = True
+
+def compute_x_aux(x):
+    M_helper = make_inner_product_helper_matrix(x)
+    sqrtM_helper = spd_sqrtm(M_helper)
+    isqrtM_helper = jnp.linalg.inv(sqrtM_helper)
+    return M_helper, sqrtM_helper, isqrtM_helper
+
+J_func = lambda x, x_aux: objective(x, inputs, true_outputs)
+
+def g_func(x, x_aux, J_aux):
+    M_helper, sqrtM_helper, isqrtM_helper = x_aux
+    g0 = gradient_func(x, inputs, true_outputs)[0]
+    g1 = apply_tangent_mass_matrix(g0, isqrtM_helper)
+    g2 = orth_project_perturbation(x, g1)
+    return g2, None
+
+def H_matvec_func(x, p, x_aux, J_aux, g_aux):
+    M_helper, sqrtM_helper, isqrtM_helper = x_aux
+    p2 = orth_project_perturbation(x, p)
+    p3 = apply_tangent_mass_matrix(p2, isqrtM_helper)
+    Hp0 = gn_hessian_matvec(x, p3, inputs)
+    Hp1 = apply_tangent_mass_matrix(Hp0, isqrtM_helper)
+    Hp2 = orth_project_perturbation(x, Hp1)
+    return Hp2
+
+add     = lambda u, v, x, x_aux: add_tangent_vectors(u, v)
+retract = lambda x, p, x_aux: retract_tangent_vector(x, p)
+scale   = lambda u, c, x, x_aux: scale_tangent_vector(u, c)
+inner_product = lambda u, v, x, x_aux: dumb_inner_product(u, v)
+
+J_aux_callback = lambda J_aux: print(str(J_aux[0]) + '\n' + str(J_aux[1]))
+
+#
+
 
 rank = 1
 
@@ -1202,32 +1271,16 @@ rank = 1
 X0 = jnp.array(np.ones((N, rank)))
 Y0 = jnp.array(np.ones((rank, M)))
 x0 = (X0, Y0)
-x0 = als_iter(x0, inputs, true_outputs)
+# x0 = als_iter(x0, inputs, true_outputs)
+# x0 = als_iter(x0, inputs, true_outputs)
 x0 = left_orthogonalize_base(x0)
-
-J_func = lambda x, x_aux: objective(x, inputs, true_outputs)
-g_func = lambda x, x_aux, J_aux: gradient_func(x, inputs, true_outputs)
-H_matvec_func = lambda b, p, x_aux, J_aux, g_aux:  gn_hessian_matvec(b, p, inputs)
-
-compute_x_aux = lambda x: (x, make_inner_product_helper_matrix(x))
-
-add     = lambda u, v, x_aux: add_tangent_vectors(u, v)
-retract = lambda x, p, x_aux: retract_tangent_vector(x, p)
-scale   = lambda u, c, x_aux: scale_tangent_vector(u, c)
-if standardize_in_inner_product:
-    inner_product = lambda u, v, x_aux: inner_product_of_tangent_vectors(
-        standardize_perturbation(x_aux[0], u), standardize_perturbation(x_aux[0], v), x_aux[1]
-    )
-else:
-    inner_product = lambda u, v, x_aux: inner_product_of_tangent_vectors(u, v, x_aux[1])
-J_aux_callback = lambda J_aux: print(str(J_aux[0]) + '\n' + str(J_aux[1]))
 
 #
 
-x = trust_region_optimize(
+x, (x_prev, p_prev) = trust_region_optimize(
     J_func, g_func, H_matvec_func, x0, add, retract, scale, inner_product,
     compute_x_aux=compute_x_aux, J_aux_callback=J_aux_callback,
-    newton_max_iter=50, cg_rtol_power=0.5, newton_rtol=1e-2,
+    newton_max_iter=50, cg_rtol_power=0.5, newton_rtol=1e-5,
 )
 
 A2 = base_to_full(x)
@@ -1245,29 +1298,36 @@ print('ideal_err=', ideal_err)
 
 rank += 1
 
-X0 = np.zeros((N, rank))
-X0[:, :-1] = x[0]
+(X0, Y0) = tangent_vector_as_low_rank(x_prev, p_prev)
+#
+# X0 = np.zeros((N, rank))
+# X0[:, :-1] = x[0]
+#
+# Y0 = np.zeros((rank, M))
+# Y0[:-1, :] = x[1]
 
-Y0 = np.zeros((rank, M))
-Y0[:-1, :] = x[1]
+Q, R = np.linalg.qr(X0, mode='reduced')
+Y1 = R @ Y0
 
-QX, RX = np.linalg.qr(X0, mode='reduced')
-Y1 = RX @ Y0
+U0, ss0, Vt0 = np.linalg.svd(Y1, full_matrices=False)
+U = U0[:,:rank]
+ss = ss0[:rank]
+Vt = Vt0[:rank,:]
 
-UY, ssY, VtY = np.linalg.svd(Y1, full_matrices=False)
+ss[-1] = ss[-2] / 100
+X2 = Q @ U
 
-ssY[-1] = ssY[-2] / 10
-Y2 = UY @ np.diag(ssY) @ VtY
+Y2 = np.diag(ss) @ Vt
 
-base = (QX, Y2)
+base = (X2, Y2)
 x0 = left_orthogonalize_base(base)
 
 #
 
-x = trust_region_optimize(
+x, (x_prev, p_prev) = trust_region_optimize(
     J_func, g_func, H_matvec_func, x0, add, retract, scale, inner_product,
     compute_x_aux=compute_x_aux, J_aux_callback=J_aux_callback,
-    newton_max_iter=50, cg_rtol_power=0.5, newton_rtol=1e-2
+    newton_max_iter=100, cg_rtol_power=0.5, newton_rtol=1e-5
 )
 
 A2 = base_to_full(x)
@@ -1281,15 +1341,3 @@ Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
 ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
 print('ideal_err=', ideal_err)
 
-
-
-
-# M_helper = make_inner_product_helper_matrix(left_orthogonal_base)
-# sqrtM_helper = spd_sqrtm(M_helper)
-# isqrtM_helper = jnp.linalg.inv(sqrtM_helper)
-#
-# MSp = apply_tangent_mass_matrix(standardize_perturbation(left_orthogonal_base, perturbation), isqrtM_helper)
-# SMp = standardize_perturbation(apply_tangent_mass_matrix(left_orthogonal_base, isqrtM_helper), perturbation)
-#
-# print(np.linalg.norm(MSp[0] - SMp[0]))
-# print(np.linalg.norm(MSp[1] - SMp[1]))
