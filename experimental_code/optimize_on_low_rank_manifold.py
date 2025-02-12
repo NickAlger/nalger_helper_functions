@@ -2,7 +2,7 @@ import numpy as np
 import jax.numpy as jnp
 import jax
 import typing as typ
-from functools import partial
+import functools as ft
 
 import matplotlib.pyplot as plt
 
@@ -260,7 +260,7 @@ def tangent_vector_as_low_rank(
     return big_base
 
 
-@jax.jit
+@ft.partial(jax.jit, static_argnames=['rank'])
 def retract_tangent_vector(
         base: typ.Tuple[
             jnp.ndarray,  # X, shape=(N,r)
@@ -270,13 +270,15 @@ def retract_tangent_vector(
             jnp.ndarray,  # dX, shape=(N,r)
             jnp.ndarray,  # dY, shape=(r,M)
         ],
+        rank: int,
 ) -> typ.Tuple[
     jnp.ndarray,  # Q2, shape=(N,r), Q2^T Q2 = I
     jnp.ndarray,  # Y2, shape=(r,M)
 ]: # retracted_vector based on truncated SVD of dX Y + Y dX. Is left orthogonal, even if base is not
     X, Y = base
     # dX, dY = perturbation
-    r = X.shape[1]
+    if rank is None:
+        rank = X.shape[1]
     bigX, bigY = tangent_vector_as_low_rank(base, perturbation)
 
     # bigX = jnp.hstack([X, X, dX])
@@ -284,8 +286,8 @@ def retract_tangent_vector(
     QX, RX = jnp.linalg.qr(bigX, mode='reduced')
     QYT, RYT = jnp.linalg.qr(bigY.T, mode='reduced')
     U, ss, Vt = jnp.linalg.svd(RX @ RYT.T, full_matrices=False)
-    Q = QX @ U[:,:r]
-    Y2 = (ss[:r].reshape(-1,1) * Vt[:r,:]) @ (QYT.T)
+    Q = QX @ U[:,:rank]
+    Y2 = (ss[:rank].reshape(-1,1) * Vt[:rank,:]) @ (QYT.T)
     retracted_vector = (Q, Y2)
     return retracted_vector
 
@@ -417,11 +419,13 @@ print('err_tangent_vector_as_low_rank=', err_tangent_vector_as_low_rank)
 
 # Test retract_tangent_vector()
 
-retracted_vector = retract_tangent_vector(base, perturbation)
+new_rank = base[0].shape[1] + 3
+
+retracted_vector = retract_tangent_vector(base, perturbation, new_rank)
 v = base_to_full(retracted_vector)
 
 U, ss, Vt = np.linalg.svd(base_to_full(base) + tangent_vector_to_full(base, perturbation))
-v_true = U[:,:r] @ np.diag(ss[:r]) @ Vt[:r,:]
+v_true = U[:,:new_rank] @ np.diag(ss[:new_rank]) @ Vt[:new_rank,:]
 
 err_retract_vector = np.linalg.norm(v - v_true) / np.linalg.norm(v_true)
 print('err_retract_vector=', err_retract_vector)
@@ -1226,10 +1230,6 @@ def als_iter(
 
 #
 
-
-
-# standardize_in_inner_product = True
-
 def compute_x_aux(x):
     M_helper = make_inner_product_helper_matrix(x)
     sqrtM_helper = spd_sqrtm(M_helper)
@@ -1255,14 +1255,14 @@ def H_matvec_func(x, p, x_aux, J_aux, g_aux):
     return Hp2
 
 
-def retract(x, p, x_aux):
+def retract_arbitrary_rank(x, p, x_aux, rank):
     M_helper, sqrtM_helper, isqrtM_helper = x_aux
     p2 = orth_project_perturbation(x, p)
     p3 = apply_tangent_mass_matrix(p2, isqrtM_helper)
-    x_plus_p = retract_tangent_vector(x, p3)
+    x_plus_p = retract_tangent_vector(x, p3, rank)
     return x_plus_p
 
-# retract = lambda x, p, x_aux: retract_tangent_vector(x, p)
+retract = lambda x, p, x_aux: retract_arbitrary_rank(x, p, x_aux, None)
 
 add     = lambda u, v, x, x_aux: add_tangent_vectors(u, v)
 scale   = lambda u, c, x, x_aux: scale_tangent_vector(u, c)
@@ -1332,10 +1332,14 @@ print(relerr_after[1])
 
 #
 
+
 if False:
     rank += 1
 
-    (X0, Y0) = tangent_vector_as_low_rank(x_prev, p_prev)
+    x_aux_prev = compute_x_aux(x_prev)
+
+    # (X0, Y0) = tangent_vector_as_low_rank(x_prev, p_prev)
+    (X0, Y0) = retract_arbitrary_rank(x_prev, p_prev, x_aux_prev, rank)
 
     Q, R = np.linalg.qr(X0, mode='reduced')
     Y1 = R @ Y0
@@ -1353,7 +1357,7 @@ if False:
     base = (X2, Y2)
     x0 = left_orthogonalize_base(base)
 
-    x0 = als_iter(x0, inputs, true_outputs)
+    x0 = als_iter(x0, inputs, true_outputs) # <-- seems important
     x0 = left_orthogonalize_base(x0)
 
     J_before, relerr_before = J_func(x0, None)
