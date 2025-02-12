@@ -1268,12 +1268,27 @@ rank = 1
 
 # X0 = jnp.array(np.random.randn(N, rank))
 # Y0 = jnp.array(np.random.randn(rank, M))
-X0 = jnp.array(np.ones((N, rank)))
-Y0 = jnp.array(np.ones((rank, M)))
+
+# X0 = jnp.array(np.ones((N, rank)))
+# Y0 = jnp.array(np.ones((rank, M)))
+
+# X0 = true_outputs[0][:,:rank]
+# Y0 = true_outputs[1][:rank,:]
+
+X0 = np.linalg.svd(true_outputs[0])[0][:,:rank]
+Y0 = np.linalg.svd(true_outputs[1])[2][:rank,:]
+
+# X0 = np.mean(true_outputs[0], axis=1).reshape((-1,1))
+# Y0 = np.mean(true_outputs[1], axis=0).reshape((1,-1))
+
 x0 = (X0, Y0)
-# x0 = als_iter(x0, inputs, true_outputs)
-# x0 = als_iter(x0, inputs, true_outputs)
+x0 = als_iter(x0, inputs, true_outputs)
 x0 = left_orthogonalize_base(x0)
+
+J_before, relerr_before = J_func(x0, None)
+print('relerrs before:')
+print(relerr_before[0])
+print(relerr_before[1])
 
 #
 
@@ -1293,6 +1308,18 @@ Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
 
 ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
 print('ideal_err=', ideal_err)
+
+svals = np.linalg.svd(x[1])[1]
+print('svals=', svals)
+
+J_after, relerr_after = J_func(x, None)
+
+print('relerrs before:')
+print(relerr_before[0])
+print(relerr_before[1])
+print('relerrs after:')
+print(relerr_after[0])
+print(relerr_after[1])
 
 #
 
@@ -1314,13 +1341,21 @@ U = U0[:,:rank]
 ss = ss0[:rank]
 Vt = Vt0[:rank,:]
 
-ss[-1] = ss[-2] / 100
+ss[-1] = ss[-2] / 10
 X2 = Q @ U
 
 Y2 = np.diag(ss) @ Vt
 
 base = (X2, Y2)
 x0 = left_orthogonalize_base(base)
+
+x0 = als_iter(x0, inputs, true_outputs)
+x0 = left_orthogonalize_base(x0)
+
+J_before, relerr_before = J_func(x0, None)
+print('relerrs before:')
+print(relerr_before[0])
+print(relerr_before[1])
 
 #
 
@@ -1340,4 +1375,15 @@ Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
 
 ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
 print('ideal_err=', ideal_err)
+
+svals = np.linalg.svd(x[1])[1]
+print('svals=', svals)
+
+J_after, relerr_after = J_func(x, None)
+print('relerrs before:')
+print(relerr_before[0])
+print(relerr_before[1])
+print('relerrs after:')
+print(relerr_after[0])
+print(relerr_after[1])
 
