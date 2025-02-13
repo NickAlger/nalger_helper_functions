@@ -326,3 +326,13 @@ try:
     from .low_rank_approximation import low_rank_approximation
 except ImportError:
     print('low_rank_approximation not loaded')
+
+try:
+    import low_rank_matrix_manifold as lrmm
+except ImportError:
+    print('low_rank_matrix_manifold')
+
+try:
+    from .cg_steihaug import cg_steihaug
+except ImportError:
+    print('cg_steihaug not loaded')
