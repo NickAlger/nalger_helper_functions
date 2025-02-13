@@ -1108,7 +1108,8 @@ def trust_region_optimize(
         cg_rtol_power:      float = 0.5, # between 0 and 1
         cg_max_iter:        int  = 250,
         newton_min_iter:    int = 1,
-        newton_max_iter:    int = 50,
+        newton_max_iter:    int = 50, # counts all iterations, whether or not we take a step
+        newton_max_steps:   int = None, # counts only iterations where a step is taken
         trust_region_min_radius_factor:         float = 1e-8,
         trust_region_max_radius:                float = np.inf,
         trust_region_minimum_reduction_ratio:   float = 0.1,  # trust region parameter
@@ -1124,6 +1125,8 @@ def trust_region_optimize(
     def _print(*args, **kwargs):
         if newton_display:
             print(*args, **kwargs)
+
+    newton_max_steps = newton_max_iter if newton_max_steps is None else newton_max_steps
 
     null_func = lambda x: None
     null_func_if_none = lambda func: null_func if func is None else func
@@ -1161,6 +1164,8 @@ def trust_region_optimize(
     trust_region_radius = None
     min_trust_region_radius = None  # min_trust_region_radius_factor * trust_region_radius
 
+
+    newton_steps_taken: int = 0
     g_reduction_achieved = False
     for newton_iter in range(1, newton_max_iter + 1):
         _print('{:<12s}'.format('Newton Iter: ') + str(newton_iter) + '\n')
@@ -1213,6 +1218,7 @@ def trust_region_optimize(
             J_aux = new_J_aux
             g, g_aux = gradient_func(x, x_aux, J_aux)
             norm_g = _norm(g, x, x_aux)
+            newton_steps_taken += 1
         else:
             _print('Keeping x the same.\n')
 
@@ -1232,6 +1238,10 @@ def trust_region_optimize(
             if norm_g <= norm_g0 * newton_rtol:
                 g_reduction_achieved = True
                 end_newton_iter = True
+
+        if newton_steps_taken >= newton_max_steps:
+            print('newton_max_steps:',newton_max_steps, ', newton_steps_taken:', newton_steps_taken, ', ending Newton iteration.')
+            end_newton_iter = True
 
         if end_newton_iter:
             break
@@ -1390,6 +1400,32 @@ def alscg(
     return x
 
 
+def change_rank(
+        previous_step,
+        new_rank,
+        small_singular_value_parameter = 0.5,
+):
+    x_prev, p_prev, x_aux_prev = previous_step
+
+    (X0, Y0) = retract_arbitrary_rank(x_prev, p_prev, x_aux_prev, new_rank)
+
+    Q, R = np.linalg.qr(X0, mode='reduced')
+
+    U0, ss0, Vt0 = np.linalg.svd(R @ Y0, full_matrices=False)
+    U = U0[:,:new_rank]
+    Vt = Vt0[:new_rank,:]
+
+    old_rank = len(ss0)
+    ss = np.zeros(new_rank)
+    ss[:old_rank] = ss0[:old_rank]
+    ss[old_rank:] = ss0[old_rank-1] * small_singular_value_parameter
+    X2 = Q @ U
+
+    Y2 = np.diag(ss) @ Vt
+
+    new_x = (X2, Y2)
+    return new_x
+
 #
 
 @jax.jit
@@ -1449,33 +1485,18 @@ add     = lambda u, v, x, x_aux: add_tangent_vectors(u, v)
 scale   = lambda u, c, x, x_aux: scale_tangent_vector(u, c)
 inner_product = lambda u, v, x, x_aux: dumb_inner_product(u, v)
 
-J_aux_callback = lambda J_aux: print(str(J_aux[0]) + '\n' + str(J_aux[1]))
+# J_aux_callback = lambda J_aux: print(str(J_aux[0]) + '\n' + str(J_aux[1]))
 
-def change_rank(
-        previous_step,
-        new_rank,
-        small_singular_value_parameter = 0.5,
-):
-    x_prev, p_prev, x_aux_prev = previous_step
-
-    (X0, Y0) = retract_arbitrary_rank(x_prev, p_prev, x_aux_prev, new_rank)
-
-    Q, R = np.linalg.qr(X0, mode='reduced')
-
-    U0, ss0, Vt0 = np.linalg.svd(R @ Y0, full_matrices=False)
-    U = U0[:,:new_rank]
-    Vt = Vt0[:new_rank,:]
-
-    old_rank = len(ss0)
-    ss = np.zeros(new_rank)
-    ss[:old_rank] = ss0[:old_rank]
-    ss[old_rank:] = ss0[old_rank-1] * small_singular_value_parameter
-    X2 = Q @ U
-
-    Y2 = np.diag(ss) @ Vt
-
-    new_x = (X2, Y2)
-    return new_x
+def J_aux_callback(J_aux):
+    relerrs, relerrs_r = J_aux
+    s = '\nRelative errors forward:\n'
+    for ii in range(len(relerrs)):
+        s += "{:<10.2e}".format(relerrs[ii])
+    s += '\nRelative errors reverse:\n'
+    for ii in range(len(relerrs_r)):
+        s += "{:<10.2e}".format(relerrs_r[ii])
+    s += '\n'
+    print(s)
 
 
 def low_rank_manifold_trust_region_optimize_fixed_rank(
@@ -1521,7 +1542,7 @@ def svd_initial_guess(
 #
 
 
-rank = 10
+rank = 1
 
 x0 = svd_initial_guess(true_outputs, rank)
 
@@ -1529,9 +1550,6 @@ x = x0
 # x = sls_iter(x0, inputs, true_outputs)
 
 x0 = left_orthogonalize_base(x)
-
-J_before, relerr_before = J_func(x0, None)
-
 
 x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
     inputs, true_outputs, x0,
@@ -1552,20 +1570,7 @@ print('ideal_err=', ideal_err)
 svals = np.linalg.svd(x[1])[1]
 print('svals=', svals)
 
-J_after, relerr_after = J_func(x, None)
-
-print('relerrs before:')
-print(relerr_before[0])
-print(relerr_before[1])
-print('relerrs after:')
-print(relerr_after[0])
-print(relerr_after[1])
-
-#
-
-for ii in range(9):
-    relerrs_before = relerr_after
-
+for ii in range(4):
     outputs = forward_map(x, inputs)
 
     delta_outputs = (true_outputs[0] - outputs[0], true_outputs[1] - outputs[1])
@@ -1576,7 +1581,7 @@ for ii in range(9):
 
     delta_x, delta_previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
         inputs, delta_outputs, delta_x0,
-        newton_max_iter=50, cg_rtol_power=0.5, newton_rtol=1e-5,
+        newton_max_steps=1, cg_rtol_power=0.5, newton_rtol=0.5, cg_max_iter=1,
     )
 
     x = add_low_rank_matrices([x, delta_x])
@@ -1597,18 +1602,7 @@ for ii in range(9):
     svals = np.linalg.svd(x[1])[1]
     print('svals=', svals)
 
-    J_after, relerr_after = J_func(x, None)
-
-    print('relerrs before:')
-    print(relerr_before[0])
-    print(relerr_before[1])
-    print('relerrs after:')
-    print(relerr_after[0])
-    print(relerr_after[1])
-
     #
-
-    relerrs_before = relerr_after
 
     x0 = left_orthogonalize_base(x)
 
@@ -1634,14 +1628,6 @@ for ii in range(9):
     svals = np.linalg.svd(x[1])[1]
     print('svals=', svals)
 
-    J_after, relerr_after = J_func(x, None)
-
-    print('relerrs before:')
-    print(relerr_before[0])
-    print(relerr_before[1])
-    print('relerrs after:')
-    print(relerr_after[0])
-    print(relerr_after[1])
 
 
 # rank += 1
