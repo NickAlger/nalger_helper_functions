@@ -336,3 +336,8 @@ try:
     from .cg_steihaug import cg_steihaug
 except ImportError:
     print('cg_steihaug not loaded')
+
+try:
+    from .trust_region_optimize import trust_region_optimize
+except ImportError:
+    print('trust_region_optimize not loaded')
