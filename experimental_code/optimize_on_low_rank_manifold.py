@@ -239,6 +239,38 @@ def inner_product_of_tangent_vectors(
 
 
 @jax.jit
+def add_low_rank_matrices(
+        AA: typ.Sequence[
+            typ.Tuple[
+                jnp.ndarray,  # Xk, shape=(N,r)
+                jnp.ndarray,  # Yk, shape=(r,M)
+            ], # Ak = Xk @ Yk
+        ],
+) -> typ.Tuple[
+    jnp.ndarray,  # X, shape=(N,r)
+    jnp.ndarray,  # Y, shape=(r,M)
+]: # A1 + ... + An = X @ Y
+    X = jnp.hstack([A[0] for A in AA])
+    Y = jnp.vstack([A[1] for A in AA])
+    return X, Y
+
+
+@jax.jit
+def scale_low_rank_matrix(
+        A: typ.Tuple[
+            jnp.ndarray,  # Xk, shape=(N,r)
+            jnp.ndarray,  # Yk, shape=(r,M)
+        ], # A = X @ Y
+        c,
+) -> typ.Tuple[
+    jnp.ndarray,  # X, shape=(N,r)
+    jnp.ndarray,  # Y, shape=(r,M)
+]: # c * A = X @ (c*Y)
+    X0, Y0 = A
+    return X0, c*Y0
+
+
+@jax.jit
 def tangent_vector_as_low_rank(
         base: typ.Tuple[
             jnp.ndarray,  # X, shape=(N,r)
@@ -254,10 +286,12 @@ def tangent_vector_as_low_rank(
 ]: # big_base= X Y + dX Y + X dY
     X, Y = base
     dX, dY = perturbation
-    bigX = jnp.hstack([X, X, dX])
-    bigY = jnp.vstack([Y, dY, Y])
-    big_base = (bigX, bigY)
-    return big_base
+    return add_low_rank_matrices([(X, Y), (dX, Y), (X, dY)])
+
+    # bigX = jnp.hstack([X, X, dX])
+    # bigY = jnp.vstack([Y, dY, Y])
+    # big_base = (bigX, bigY)
+    # return big_base
 
 
 @ft.partial(jax.jit, static_argnames=['rank'])
@@ -416,6 +450,31 @@ v2 = base_to_full(tangent_vector_as_low_rank(base, perturbation))
 
 err_tangent_vector_as_low_rank = np.linalg.norm(v2-v1) / np.linalg.norm(v1)
 print('err_tangent_vector_as_low_rank=', err_tangent_vector_as_low_rank)
+
+# Test add_low_rank_matrices()
+
+M1 = (np.random.randn(N,3), np.random.randn(3,M))
+M2 = (np.random.randn(N,2), np.random.randn(2,M))
+M3 = (np.random.randn(N,5), np.random.randn(5,M))
+M4 = (np.random.randn(N,1), np.random.randn(1,M))
+
+M = base_to_full(M1) + base_to_full(M2) + base_to_full(M3) + base_to_full(M4)
+
+MM = [M1, M2, M3, M4]
+M2 = base_to_full(add_low_rank_matrices(MM))
+
+err_add_low_rank_matrices = np.linalg.norm(M2 - M) / np.linalg.norm(M)
+print('err_add_low_rank_matrices=', err_add_low_rank_matrices)
+
+# Test scale_low_rank_matrix()
+
+c = 0.5432
+cM1_full = base_to_full(scale_low_rank_matrix(M1, c))
+cM1_full_true = c * base_to_full(M1)
+
+err_scale_low_rank_matrix = np.linalg.norm(cM1_full - cM1_full_true) / np.linalg.norm(cM1_full_true)
+print('err_scale_low_rank_matrix=', err_scale_low_rank_matrix)
+
 
 # Test retract_tangent_vector()
 
@@ -1333,32 +1392,51 @@ def alscg(
 
 #
 
+@jax.jit
 def compute_x_aux(x):
     M_helper = make_inner_product_helper_matrix(x)
     sqrtM_helper = spd_sqrtm(M_helper)
     isqrtM_helper = jnp.linalg.inv(sqrtM_helper)
     return M_helper, sqrtM_helper, isqrtM_helper
 
-J_func = lambda x, x_aux: objective(x, inputs, true_outputs)
 
-def g_func(x, x_aux, J_aux):
+J_func = jax.jit(lambda x, x_aux: objective(
+    x,                      # arguments used by optimizer
+    inputs, true_outputs,   # arguments removed by partial application
+))
+
+def manifold_gradent(
+        # arguments used by optimizer:
+        x, x_aux, J_aux,
+        # arguments removed by partial application:
+        flat_gradient, # x, inputs, true_outputs, J_aux -> g_flat, g_aux
+        inputs, true_outputs,
+):
     M_helper, sqrtM_helper, isqrtM_helper = x_aux
-    g0 = gradient_func(x, inputs, true_outputs)[0]
+    g0, g_aux = flat_gradient(x, inputs, true_outputs, J_aux)
     g1 = apply_tangent_mass_matrix(g0, isqrtM_helper)
     g2 = orth_project_perturbation(x, g1)
-    return g2, None
+    return g2, g_aux
 
-def H_matvec_func(x, p, x_aux, J_aux, g_aux):
+def manifold_hessian_matvec(
+        # arguments used by optimizer
+        x, p, x_aux, J_aux, g_aux,
+        # arguments removed by partial application
+        flat_hessian_matvec, # x, p, inputs, J_aux, g_aux -> H_flat(x) @ p
+        inputs,
+):
     M_helper, sqrtM_helper, isqrtM_helper = x_aux
     p2 = orth_project_perturbation(x, p)
     p3 = apply_tangent_mass_matrix(p2, isqrtM_helper)
-    Hp0 = gn_hessian_matvec(x, p3, inputs)
+    Hp0 = flat_hessian_matvec(x, p3, inputs, J_aux, g_aux)
     Hp1 = apply_tangent_mass_matrix(Hp0, isqrtM_helper)
     Hp2 = orth_project_perturbation(x, Hp1)
     return Hp2
 
 
-def retract_arbitrary_rank(x, p, x_aux, rank):
+def retract_arbitrary_rank(
+        x, p, x_aux, rank,
+):
     M_helper, sqrtM_helper, isqrtM_helper = x_aux
     p2 = orth_project_perturbation(x, p)
     p3 = apply_tangent_mass_matrix(p2, isqrtM_helper)
@@ -1399,70 +1477,64 @@ def change_rank(
     new_x = (X2, Y2)
     return new_x
 
+
+def low_rank_manifold_trust_region_optimize_fixed_rank(
+        inputs,
+        true_outputs,
+        x0,
+        **kwargs,
+):
+    g_func = jax.jit(lambda x, x_aux, J_aux: manifold_gradent(
+        x, x_aux, J_aux,
+        lambda x, i, t_o, J_aux: gradient_func(x, i, t_o), # flat_gradient
+        inputs, true_outputs,
+    ))
+    H_matvec_func = jax.jit(lambda x, p, x_aux, J_aux, g_aux: manifold_hessian_matvec(
+        x, p, x_aux, J_aux, g_aux,
+        lambda x, p, i, J_aux, g_aux: gn_hessian_matvec(x, p, i), # flat_hessian_matvec
+        inputs,
+    ))
+    return trust_region_optimize(
+        J_func,
+        g_func,
+        H_matvec_func,
+        x0,
+        add,
+        retract,
+        scale,
+        inner_product,
+        compute_x_aux=compute_x_aux,
+        J_aux_callback=J_aux_callback,
+        **kwargs,
+    )
+
+
+def svd_initial_guess(
+        true_outputs,
+        rank,
+):
+    X0 = np.linalg.svd(true_outputs[0])[0][:, :rank]
+    Y0 = np.linalg.svd(true_outputs[1])[2][:rank, :]
+    x0 = (X0, Y0)
+    return left_orthogonalize_base(x0)
+
 #
 
 
-rank = 1
+rank = 10
 
-# X0 = jnp.array(np.random.randn(N, rank))
-# Y0 = jnp.array(np.random.randn(rank, M))
+x0 = svd_initial_guess(true_outputs, rank)
 
-# X0 = jnp.array(np.ones((N, rank))) # only use if rank-1. Otherwise base is rank deficient
-# Y0 = jnp.array(np.ones((rank, M)))
-
-# X0 = true_outputs[0][:,:rank]
-# Y0 = true_outputs[1][:rank,:]
-
-X0 = np.linalg.svd(true_outputs[0])[0][:,:rank]
-Y0 = np.linalg.svd(true_outputs[1])[2][:rank,:]
-
-# X0 = np.mean(true_outputs[0], axis=1).reshape((-1,1))
-# Y0 = np.mean(true_outputs[1], axis=0).reshape((1,-1))
-
-x0 = (X0, Y0)
-
+x = x0
 # x = sls_iter(x0, inputs, true_outputs)
-#
-# A2 = base_to_full(x)
-# computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
-# print('rank=', rank)
-# print('computed_err=', computed_err)
-#
-# U, ss, Vt = np.linalg.svd(A)
-# Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
-#
-# ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
-# print('ideal_err=', ideal_err)
-#
-# svals = np.linalg.svd(x[1])[1]
-# print('svals=', svals)
-
-
-x = alscg(
-    x0, compute_x_aux, J_func, g_func, H_matvec_func, 1, 1e-1, cg_max_iter=5,
-)
-
-A2 = base_to_full(x)
-computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
-print('rank=', rank)
-print('computed_err=', computed_err)
-
-U, ss, Vt = np.linalg.svd(A)
-Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
-
-ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
-print('ideal_err=', ideal_err)
-
-svals = np.linalg.svd(x[1])[1]
-print('svals=', svals)
 
 x0 = left_orthogonalize_base(x)
 
 J_before, relerr_before = J_func(x0, None)
 
-x, previous_step = trust_region_optimize(
-    J_func, g_func, H_matvec_func, x0, add, retract, scale, inner_product,
-    compute_x_aux=compute_x_aux, J_aux_callback=J_aux_callback,
+
+x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
+    inputs, true_outputs, x0,
     newton_max_iter=50, cg_rtol_power=0.5, newton_rtol=1e-5,
 )
 
@@ -1491,6 +1563,91 @@ print(relerr_after[1])
 
 #
 
+for ii in range(9):
+    relerrs_before = relerr_after
+
+    outputs = forward_map(x, inputs)
+
+    delta_outputs = (true_outputs[0] - outputs[0], true_outputs[1] - outputs[1])
+
+    delta_x0 = left_orthogonalize_base(svd_initial_guess(delta_outputs, 1))
+
+    J_before_delta, relerr_before_delta = J_func(delta_x0, None)
+
+    delta_x, delta_previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
+        inputs, delta_outputs, delta_x0,
+        newton_max_iter=50, cg_rtol_power=0.5, newton_rtol=1e-5,
+    )
+
+    x = add_low_rank_matrices([x, delta_x])
+
+    rank = x[0].shape[1]
+
+    A2 = base_to_full(x)
+    computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
+    print('rank=', rank)
+    print('computed_err=', computed_err)
+
+    U, ss, Vt = np.linalg.svd(A)
+    Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
+
+    ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
+    print('ideal_err=', ideal_err)
+
+    svals = np.linalg.svd(x[1])[1]
+    print('svals=', svals)
+
+    J_after, relerr_after = J_func(x, None)
+
+    print('relerrs before:')
+    print(relerr_before[0])
+    print(relerr_before[1])
+    print('relerrs after:')
+    print(relerr_after[0])
+    print(relerr_after[1])
+
+    #
+
+    relerrs_before = relerr_after
+
+    x0 = left_orthogonalize_base(x)
+
+    J_before, relerr_before = J_func(x0, None)
+
+
+    x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
+        inputs, true_outputs, x0,
+        newton_max_iter=50, cg_rtol_power=0.5, newton_rtol=1e-5,
+    )
+
+    A2 = base_to_full(x)
+    computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
+    print('rank=', rank)
+    print('computed_err=', computed_err)
+
+    U, ss, Vt = np.linalg.svd(A)
+    Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
+
+    ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
+    print('ideal_err=', ideal_err)
+
+    svals = np.linalg.svd(x[1])[1]
+    print('svals=', svals)
+
+    J_after, relerr_after = J_func(x, None)
+
+    print('relerrs before:')
+    print(relerr_before[0])
+    print(relerr_before[1])
+    print('relerrs after:')
+    print(relerr_after[0])
+    print(relerr_after[1])
+
+
+# rank += 1
+
+#
+
 if False:
     rank += 1
 
@@ -1500,11 +1657,11 @@ if False:
     # prev_x, prev_p, prev_x_aux = previous_step
     # x0 = change_rank((x, (0.0*prev_p[0], 0.0*prev_p[1]), x_aux), rank, 0.5)
 
-    # x = sls_iter(x0, inputs, true_outputs) # <-- seems important
+    x = sls_iter(x0, inputs, true_outputs) # <-- seems important
 
-    x = alscg(
-        x0, compute_x_aux, J_func, g_func, H_matvec_func, 1, 1e-1, cg_max_iter=5,
-    )
+    # x = alscg(
+    #     x0, compute_x_aux, J_func, g_func, H_matvec_func, 1, 1e-1, cg_max_iter=5,
+    # )
 
     A2 = base_to_full(x)
     computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
@@ -1524,11 +1681,16 @@ if False:
 
     J_before, relerr_before = J_func(x0, None)
 
-    x, previous_step = trust_region_optimize(
-        J_func, g_func, H_matvec_func, x0, add, retract, scale, inner_product,
-        compute_x_aux=compute_x_aux, J_aux_callback=J_aux_callback,
-        newton_max_iter=100, cg_rtol_power=0.5, newton_rtol=1e-5
+    x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
+        inputs, true_outputs, x0,
+        newton_max_iter=50, cg_rtol_power=0.5, newton_rtol=1e-5,
     )
+
+    # x, previous_step = trust_region_optimize(
+    #     J_func, g_func, H_matvec_func, x0, add, retract, scale, inner_product,
+    #     compute_x_aux=compute_x_aux, J_aux_callback=J_aux_callback,
+    #     newton_max_iter=100, cg_rtol_power=0.5, newton_rtol=1e-5
+    # )
 
     A2 = base_to_full(x)
     computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
