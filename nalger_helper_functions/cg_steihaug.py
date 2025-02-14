@@ -13,12 +13,12 @@ def cg_steihaug(
         trust_region_radius:    _Scalar,
         rtol:                   _Scalar,
         preconditioner_apply:   typ.Callable[[_Vec],            _Covec]  = None, # u    -> M @ u
-        preconditioner_solve:   typ.Callable[[_Covec],          _Vec]    = None, # w    -> M^-1 @ w
+        preconditioner_solve:   typ.Callable[[_Covec],          _Vec]    = None, # b    -> M^-1 @ b
         add_vectors:            typ.Callable[[_Vec,      _Vec], _Vec]    = None, # u, v -> u + v
-        add_covectors:          typ.Callable[[_Covec,  _Covec], _Covec]  = None, # w, z -> w + z
-        scale_vector:           typ.Callable[[_Vec,   _Scalar], _Vec]    = None, # u, c -> c * u
-        scale_covector:         typ.Callable[[_Covec, _Scalar], _Covec]  = None, # w, c -> c * w
-        dual_pairing:           typ.Callable[[_Covec,    _Vec], _Scalar] = None, # w, u -> <w, v>
+        add_covectors:          typ.Callable[[_Covec,  _Covec], _Covec]  = None, # b, c -> b + c
+        scale_vector:           typ.Callable[[_Vec,   _Scalar], _Vec]    = None, # u, s -> s * u
+        scale_covector:         typ.Callable[[_Covec, _Scalar], _Covec]  = None, # b, s -> s * b
+        dual_pairing:           typ.Callable[[_Covec,    _Vec], _Scalar] = None, # b, u -> b(u)
         max_iter:   int  = 250,
         display:    bool = True,
         callback:   typ.Callable = None, #used as callback(xk), where xk is the current iterate
