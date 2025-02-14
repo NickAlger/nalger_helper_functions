@@ -36,7 +36,7 @@ def forward_map(
 
 
 @jax.jit
-def objective(
+def misfit(
         base: typ.Tuple[
             jnp.ndarray,  # X, shape=(N,r)
             jnp.ndarray,  # Y, shape=(r,M)
@@ -64,7 +64,10 @@ def objective(
     return J, (rsq, rsq_r)
 
 
-gradient_func = jax.jit(jax.grad(objective, argnums=0, has_aux=True))
+
+
+
+gradient_func = jax.jit(jax.grad(misfit, argnums=0, has_aux=True))
 
 
 @jax.jit
@@ -184,7 +187,7 @@ def tangent_space_objective(
             jnp.ndarray,  # Ztrue_r, shape=(k_r,M)
         ],
 ):
-    J0, _ = objective(left_orthogonal_base, inputs, true_outputs)
+    J0, _ = misfit(left_orthogonal_base, inputs, true_outputs)
 
     p = perturbation
 
@@ -246,7 +249,7 @@ print('err_forward_map_r=', err_forward_map_r)
 
 #
 
-J, (rsq, rsq_r) = objective(base, inputs, true_outputs)
+J, (rsq, rsq_r) = misfit(base, inputs, true_outputs)
 
 rsq_true = np.linalg.norm(Y2 - Ytrue, axis=0)**2
 rsq_true_r = np.linalg.norm(Y2_r - Ytrue_r, axis=1)**2
@@ -308,7 +311,7 @@ J = tangent_space_objective(
 )
 
 big_base = attached_tangent_vector_as_low_rank(left_orthogonal_base, standard_perturbation)
-J_true, _ = objective(big_base, inputs, true_outputs)
+J_true, _ = misfit(big_base, inputs, true_outputs)
 
 err_tangent_space_objective = np.abs(J - J_true) / np.abs(J_true)
 print('err_tangent_space_objective=', err_tangent_space_objective)
@@ -481,7 +484,7 @@ def compute_x_aux(x):
     return M_helper, sqrtM_helper, isqrtM_helper
 
 
-J_func = jax.jit(lambda x, x_aux: objective(
+J_func = jax.jit(lambda x, x_aux: misfit(
     x,                      # arguments used by optimizer
     inputs, true_outputs,   # arguments removed by partial application
 ))
@@ -524,9 +527,9 @@ def retract_arbitrary_rank(
 ):
     M_helper, sqrtM_helper, isqrtM_helper = x_aux
     p2 = tangent_orthogonal_projection(x, p)
-    # p3 = apply_tangent_mass_matrix(p2, isqrtM_helper) # <-- correct
+    p3 = apply_tangent_mass_matrix(p2, isqrtM_helper) # <-- correct
     # p3 = apply_tangent_mass_matrix(p2, sqrtM_helper)
-    p3 = p2
+    # p3 = p2
     x_plus_p = retract_tangent_vector(x, p3, rank)
     return x_plus_p
 
@@ -593,8 +596,30 @@ def svd_initial_guess(
 
 #
 
+def rsvd(
+        A_matvecs: typ.Callable,  # X -> A X, A has shape (N,M), X has shape (M, k1)
+        A_rmatvecs: typ.Callable, # Z -> Z A, A has shape (N,M), Z has shape (k2, N)
+        r: int, # rank
+        p: int, # oversampling parameter
+) -> typ.Tuple[
+    np.ndarray, # U, shape=(N,r)
+    np.ndarray, # ss, shape=(r,)
+    np.ndarray, # Vt, shape=(r,M)
+]:
+    Omega = np.random.randn(M,r+p)
+    Y = A_matvecs(Omega)
+    Q, R = np.linalg.qr(Y)
+    B = A_rmatvecs(Q.T)
+    U0, ss0, Vt0 = np.linalg.svd(B, full_matrices=False)
+    U = Q @ U0[:,:r]
+    ss = ss0[:r]
+    Vt = Vt0[:r,:]
+    return U, ss, Vt
+
+#
 
 rank = 5
+num_samples = true_outputs[0].shape[1]
 
 x0 = svd_initial_guess(true_outputs, rank)
 
@@ -618,6 +643,15 @@ Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
 
 ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
 print('ideal_err=', ideal_err)
+
+Ursvd, ssrsvd, Vtrsvd = rsvd(
+    lambda X: A @ X, lambda Z: Z @ A, rank, num_samples-rank,
+)
+
+Arsvd = Ursvd @ np.diag(ssrsvd) @ Vtrsvd
+
+rsvd_err = np.linalg.norm(Arsvd - A) / np.linalg.norm(A)
+print('rsvd_err=', rsvd_err)
 
 svals = np.linalg.svd(x[1])[1]
 print('svals=', svals)

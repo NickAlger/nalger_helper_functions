@@ -170,3 +170,13 @@ v_true = U[:,:new_rank] @ np.diag(ss[:new_rank]) @ Vt[:new_rank,:]
 
 err_retract_vector = np.linalg.norm(v - v_true) / np.linalg.norm(v_true)
 print('err_retract_vector=', err_retract_vector)
+
+# Test commutativity of orth projection and application of mass matrix
+
+M_Pi_p = apply_tangent_mass_matrix(tangent_orthogonal_projection(left_orthogonal_base, perturbation), inner_product_helper_matrix)
+Pi_M_p = tangent_orthogonal_projection(left_orthogonal_base, apply_tangent_mass_matrix(perturbation, inner_product_helper_matrix))
+
+non_commutativity_project_vs_massmatrix = sequence_norm(subtract_sequences(M_Pi_p, Pi_M_p)) / sequence_norm(add_sequences(M_Pi_p, Pi_M_p))
+print('non_commutativity_project_vs_massmatrix=', non_commutativity_project_vs_massmatrix)
+
+
