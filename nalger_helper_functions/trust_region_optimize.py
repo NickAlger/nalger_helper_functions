@@ -74,7 +74,6 @@ def trust_region_optimize(
     trust_region_radius = None
     min_trust_region_radius = None  # min_trust_region_radius_factor * trust_region_radius
 
-
     newton_steps_taken: int = 0
     g_reduction_achieved = False
     for newton_iter in range(1, newton_max_iter + 1):
