@@ -29,7 +29,7 @@ pp = []
 callback = lambda z: pp.append(z)
 
 p, aux = cg_steihaug(
-    hessian_matvec, gradient, add, scale, inner_product,
+    hessian_matvec, gradient,
     trust_region_radius=np.inf, rtol=0.0, max_iter=max_iter, callback=callback,
 )
 
@@ -41,13 +41,16 @@ def basic_cg(A, b, x, num_iter):
     # https://stackoverflow.com/a/60847526/484944
     pp_so = []
     r = b - A.dot(x)
+    r0 = r
     p = r.copy()
-    for i in range(num_iter):
+    for i in range(1,num_iter+1):
         Ap = A.dot(p)
+        # alpha = np.dot(r, r) / np.dot(p, Ap)
         alpha = np.dot(p, r) / np.dot(p, Ap)
         x = x + alpha * p
         pp_so.append(x)
         r = b - A.dot(x)
+        print('i=', i, ', |r|/|r0|=', np.sqrt(np.linalg.norm(r) / np.linalg.norm(r0)))
         beta = -np.dot(r, Ap) / np.dot(p, Ap)
         p = r + beta * p
     return pp_so
@@ -61,7 +64,7 @@ print('err_CG_iterates=', err_CG_iterates)
 
 for rtol in [1e-1, 1e-2, 1e-3]:
     p, aux = cg_steihaug(
-        hessian_matvec, gradient, add, scale, inner_product,
+        hessian_matvec, gradient,
         trust_region_radius=np.inf, rtol=rtol, max_iter=N,
     )
     relres = np.linalg.norm(H @ p + gradient) / np.linalg.norm(gradient)
@@ -74,7 +77,7 @@ norm_p_true = np.linalg.norm(np.linalg.solve(H, -gradient))
 for scaling in [0.1, 0.5, 0.9, 0.99]:
     trust_radius = scaling * norm_p_true
     p, aux = cg_steihaug(
-        hessian_matvec, gradient, add, scale, inner_product,
+        hessian_matvec, gradient,
         trust_region_radius=trust_radius, rtol=0.0, max_iter=N,
     )
     norm_p = np.linalg.norm(p)

@@ -330,7 +330,7 @@ except ImportError:
 try:
     import low_rank_matrix_manifold as lrmm
 except ImportError:
-    print('low_rank_matrix_manifold')
+    print('low_rank_matrix_manifold not loaded')
 
 try:
     from .cg_steihaug import cg_steihaug

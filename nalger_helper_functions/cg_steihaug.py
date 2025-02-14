@@ -1,18 +1,27 @@
+import numpy as np
 import jax.numpy as jnp
 import typing as typ
 
 
+_Vec    = typ.Any
+_Covec  = typ.Any
+_Scalar = typ.Any
+
 def cg_steihaug(
-        hessian_matvec:         typ.Callable[[typ.Any], typ.Any], # u -> H @ u
-        gradient:               typ.Any,
-        add:            typ.Callable[[typ.Any, typ.Any], typ.Any],    # (u_vector, v_vector) -> u_vector + v_vector
-        scale:          typ.Callable[[typ.Any, typ.Any], typ.Any],    # (u_vector, c_scalar) -> c_scalar * u_vector
-        inner_product:  typ.Callable[[typ.Any, typ.Any], typ.Any],    # (u_vector, v_vector) -> <u_vector, v_vector>
-        trust_region_radius,    # scalar
-        rtol,                   # scalar
+        hessian_matvec:         typ.Callable[[_Vec], _Covec], # u_vec -> H @ u_vec
+        gradient:               _Covec,
+        trust_region_radius:    _Scalar,
+        rtol:                   _Scalar,
+        preconditioner_apply:   typ.Callable[[_Vec],            _Covec]  = None, # u    -> M @ u
+        preconditioner_solve:   typ.Callable[[_Covec],          _Vec]    = None, # w    -> M^-1 @ w
+        add_vectors:            typ.Callable[[_Vec,      _Vec], _Vec]    = None, # u, v -> u + v
+        add_covectors:          typ.Callable[[_Covec,  _Covec], _Covec]  = None, # w, z -> w + z
+        scale_vector:           typ.Callable[[_Vec,   _Scalar], _Vec]    = None, # u, c -> c * u
+        scale_covector:         typ.Callable[[_Covec, _Scalar], _Covec]  = None, # w, c -> c * w
+        dual_pairing:           typ.Callable[[_Covec,    _Vec], _Scalar] = None, # w, u -> <w, v>
         max_iter:   int  = 250,
         display:    bool = True,
-        callback:   typ.Callable[[typ.Any], typ.Any] = None, #used as callback(zk), where zk is the current iterate
+        callback:   typ.Callable = None, #used as callback(xk), where xk is the current iterate
 ) -> typ.Tuple[
     typ.Any, # optimal search direction. same type as gradient
     typ.Tuple[
@@ -20,123 +29,136 @@ def cg_steihaug(
         str, # termination reason
     ]
 ]:
-    '''Algorithm 7.2 in Nocedal and Wright, page 171. See also: equation 4.5 on page 69.
+    '''Preconditioned variant of Algorithm 7.2 in Nocedal and Wright, page 171. See also: equation 4.5 on page 69.
     Approximately solves quadratic minimization problem:
-        argmin_p f + g^T p + 0.5 * p^T H P
+        argmin_p f + g^T x + 0.5 * x^T H x
+
+        See also:
+            https://en.wikipedia.org/wiki/Conjugate_gradient_method#The_preconditioned_conjugate_gradient_method
     '''
     def _print(s: str):
         if display:
             print(s)
 
-    if callback is None:
-        callback = lambda z: None
+    callback             = (lambda z: None)           if callback             is None else callback
+    add_vectors          = (lambda u, v: u + v)       if add_vectors          is None else add_vectors
+    add_covectors        = (lambda u, v: u + v)       if add_covectors        is None else add_covectors
+    scale_vector         = (lambda u, c: c * u)       if scale_vector         is None else scale_vector
+    scale_covector       = (lambda u, c: c * u)       if scale_covector       is None else scale_covector
+    preconditioner_apply = (lambda u: u)              if preconditioner_apply is None else preconditioner_apply
+    preconditioner_solve = (lambda u: u)              if preconditioner_solve is None else preconditioner_solve
+    dual_pairing         = (lambda u, v: np.sum(u*v)) if dual_pairing         is None else dual_pairing
 
-    gradnorm_squared = inner_product(gradient, gradient)
-    atol_squared = rtol**2 * gradnorm_squared
+    g_covec = gradient
 
-    z = scale(gradient, 0.0)
-    r = gradient
-    d = scale(gradient, -1.0)
+    r_covec = scale_covector(g_covec, -1.0)
+    iM_r_vec = preconditioner_solve(r_covec)
+    r0_iM_r0 = dual_pairing(r_covec, iM_r_vec)
+    atol_squared = rtol**2 * r0_iM_r0
 
-    z_normsquared = 0.0
-    r_normsquared = inner_product(r, r)
-    _print('initial ||r||/||g||=' + str(jnp.sqrt(r_normsquared / gradnorm_squared)))
+    x_vec = scale_vector(iM_r_vec, 0.0)
+    p_vec = iM_r_vec
 
-    if r_normsquared < atol_squared:
-        return z, (0, 'tolerance_achieved')  # currently zero; take no steps
+    r_iM_r = r0_iM_r0
+    x_M_x = 0.0
+    _print('initial ||r||_iM / ||r0||_iM=' + str(np.sqrt(r_iM_r / r0_iM_r0)))
+    _print('initial ||x||_M=' + str(np.sqrt(x_M_x)))
 
-    for jj in range(max_iter):
-        Bd  = hessian_matvec(d)
-        dBd = inner_product(d, Bd)
-        if dBd <= 0.0:
+    if r_iM_r < atol_squared:
+        return p_vec, (0, 'tolerance_achieved')  # currently zero; take no steps
+
+    for jj in range(1,max_iter+1):
+        Hp_covec  = hessian_matvec(p_vec)
+        pHp = dual_pairing(Hp_covec, p_vec)
+        if pHp <= 0.0:
             if np.isinf(trust_region_radius):
                 if jj == 0:
-                    p = gradient
-                    _print('gradient points downhill. Probably due to numerical errors. dBd=' + str(dBd))
-                    return p, (jj + 1, 'gradient_points_downhill')
+                    _print('Encountered negative curvature on first iteration. Probably due to numerical errors. dBd=' + str(pHp) + '. Infinite trust region radius: returning zero')
+                    return x_vec, (jj + 1, 'gradient_points_downhill')
                 else:
-                    p = z
-                    _print('Iterate ' + str(jj) + ' encountered negative curvature. dBd=' + str(dBd))
-                    return p, (jj + 1, 'encountered_negative_curvature')
+                    _print('Iterate ' + str(jj) + ' encountered negative curvature. dBd=' + str(pHp) + '. Infinite trust region radius: returning previous iterate.')
+                    return x_vec, (jj + 1, 'encountered_negative_curvature')
 
-            tau1, tau2 = _interpolate_to_trust_region_boundary(z, d, z_normsquared, trust_region_radius, inner_product, display=True)
-            p1 = add(z, scale(d, tau1)) # p = z + tau1*d
-            p2 = add(z, scale(d, tau2)) # p = z + tau2*d
-            m1 = inner_product(gradient, p1) + 0.5 * inner_product(p1, hessian_matvec(p1))
-            m2 = inner_product(gradient, p2) + 0.5 * inner_product(p2, hessian_matvec(p2))
+            Mp_covec = preconditioner_apply(p_vec)
+            p_M_p = dual_pairing(Mp_covec, p_vec)
+            p_M_x = dual_pairing(Mp_covec, x_vec)
+            tau1, tau2 = _interpolate_to_trust_region_boundary(x_M_x, p_M_p, p_M_x, trust_region_radius, display=True)
+
+            x1_vec = add_vectors(x_vec, scale_vector(p_vec, tau1)) # x <- x + tau1*p
+            x2_vec = add_vectors(x_vec, scale_vector(p_vec, tau2)) # x <- x + tau2*p
+            m1 = dual_pairing(g_covec, x1_vec) + 0.5 * dual_pairing(x1_vec, hessian_matvec(x1_vec))
+            m2 = dual_pairing(g_covec, x2_vec) + 0.5 * dual_pairing(x2_vec, hessian_matvec(x2_vec))
             if m1 <= m2:
                 tau = tau1
-                p = p1
+                x_vec = x1_vec
             else:
                 tau = tau2
-                p = p2
+                x_vec = x2_vec
             _print('m1=' + str(m1) + ', m2=' + str(m2))
             _print('Iterate ' + str(jj) + ' encountered negative curvature. tau=' + str(tau))
-            return p, (jj+1, 'encountered_negative_curvature')
+            return x_vec, (jj+1, 'encountered_negative_curvature')
 
-        alpha = r_normsquared / dBd
-        z_next = add(z, scale(d, alpha)) # z_next = z + alpha*d
-        z_next_normsquared = inner_product(z_next, z_next)
+        alpha = r_iM_r / pHp
+        x_vec = add_vectors(x_vec, scale_vector(p_vec, alpha)) # x <- x + alpha*p
+        x_M_x = dual_pairing(preconditioner_apply(x_vec), x_vec)
 
-        if z_next_normsquared >= trust_region_radius ** 2:
-            tau, _ = _interpolate_to_trust_region_boundary(z, d, z_normsquared, trust_region_radius, inner_product, display)
-            p = add(z, scale(d, tau)) # p = z + tau*d
+        if x_M_x >= trust_region_radius ** 2:
+            Mp_covec = preconditioner_apply(p_vec)
+            p_M_p = dual_pairing(Mp_covec, p_vec)
+            p_M_x = dual_pairing(Mp_covec, x_vec)
+            tau, _ = _interpolate_to_trust_region_boundary(x_M_x, p_M_p, p_M_x, trust_region_radius, display=True)
+
+            x_vec = add_vectors(x_vec, scale_vector(p_vec, tau)) # p = z + tau*d
             _print(
                 'Iterate ' + str(jj)
                 + ' exited trust region. trust_region_radius=' + str(trust_region_radius)
                 + ', tau=' + str(tau)
             )
-            return p, (jj+1, 'exited_trust_region')
+            return x_vec, (jj+1, 'exited_trust_region')
 
-        r_next = add(r, scale(Bd, alpha)) # r_next = r + alpha*Bd
-        r_next_normsquared: jnp.ndarray = inner_product(r_next, r_next) # scalar, shape=()
+        r_covec = add_covectors(r_covec, scale_covector(Hp_covec, -alpha)) # r <- r - alpha*Hp
+        iM_r_vec = preconditioner_solve(r_covec)
+        r_iM_r_previous = r_iM_r
+        r_iM_r = dual_pairing(r_covec, iM_r_vec) # scalar, shape=()
         _print(
             'CG Iter:' + str(jj)
-            + ', ||r||/||g||=' + str(jnp.sqrt(jnp.sqrt(r_next_normsquared / gradnorm_squared)))
-            + ', ||z||=' + str(jnp.sqrt(z_next_normsquared))
+            + ', ||r||_iM / ||r0||_iM=' + str(np.sqrt(r_iM_r / r0_iM_r0))
+            + ', ||x||_M=' + str(jnp.sqrt(x_M_x))
             + ', Delta=' + str(trust_region_radius)
         )
-        if r_next_normsquared < atol_squared:
-            _print('rtol=' + str(rtol) + ' achieved. ||r||/||g||=' + str(jnp.sqrt(r_next_normsquared / gradnorm_squared)))
-            callback(z_next)
-            return z_next, (jj+1, 'tolerance_achieved')
+        if r_iM_r < atol_squared:
+            _print('rtol=' + str(rtol) + ' achieved. ||r||/||g||=' + str(jnp.sqrt(r_iM_r / r0_iM_r0)))
+            callback(x_vec)
+            return x_vec, (jj+1, 'tolerance_achieved')
 
-        beta: jnp.ndarray = r_next_normsquared / r_normsquared # scalar, shape=()
-        d = add(scale(r_next, -1.0), scale(d, beta))
+        beta: jnp.ndarray = r_iM_r / r_iM_r_previous # scalar, shape=()
+        p_vec = add_vectors(iM_r_vec, scale_vector(p_vec, beta))
 
-        r = r_next
-        z = z_next
-        callback(z)
-        z_normsquared = z_next_normsquared
-        r_normsquared = r_next_normsquared
+        callback(x_vec)
 
     _print('Reached max_iter=' + str(max_iter) + ' without converging or exiting trust region.')
 
-    return z, (max_iter, 'performed_maximum_iterations')
+    return x_vec, (max_iter, 'performed_maximum_iterations')
 
 
 def _interpolate_to_trust_region_boundary(
-        z:                      typ.Any,
-        d:                      typ.Any,
-        z_normsquared:          jnp.ndarray, # scalar, shape=()
+        x_M_x, # scalar
+        p_M_p, # scalar
+        p_M_x, # scalar
         trust_region_radius:    jnp.ndarray, # shape=()
-        inner_product:          typ.Callable[[typ.Any, typ.Any], typ.Union[float, jnp.ndarray]],  # (u, v) -> <u,v>
         display:                bool,
 ) -> typ.Tuple[jnp.ndarray, jnp.ndarray]: # (tau1, tau2), scalars, elm_shape=()
     '''Find tau such that:
-        Delta^2 = ||z + tau*d||^2
-                = ||z||^2 + tau*2*(z, d) + tau^2*||d||^2
+        Delta^2 = ||x + tau*p||^2
+                = ||x||^2 + tau*2*(x, p) + tau^2*||p||^2
     which is:,
-      tau^2 * ||d||^2 + tau * 2*(z, d) + ||z||^2-Delta^2 = 0
+      tau^2 * ||p||^2 + tau * 2*(x, p) + ||x||^2-Delta^2 = 0
               |--a--|         |--b---|   |------c------|
     Note that c is negative since we were inside trust region last step
     '''
-    d_normsquared = inner_product(d, d)
-    z_dot_d = inner_product(z, d)
-
-    a = d_normsquared
-    b = 2.0 * z_dot_d
-    c = z_normsquared - trust_region_radius ** 2
+    a = p_M_p
+    b = 2.0 * p_M_x
+    c = x_M_x - trust_region_radius ** 2
 
     tau1 = (-b + jnp.sqrt(b ** 2 - 4.0 * a * c)) / (2.0 * a)  # quadratic formula, first root
     tau2 = (-b - jnp.sqrt(b ** 2 - 4.0 * a * c)) / (2.0 * a)  # quadratic formula, second root
