@@ -1,6 +1,7 @@
 import numpy as np
-# import jax.numpy as jnp
 import typing as typ
+
+import nalger_helper_functions.tree_linalg as tla
 
 
 Vec    = typ.Any # type of tangent vector
@@ -40,14 +41,14 @@ def cg_steihaug(
         if display:
             print(s)
 
-    callback             = (lambda z: None)           if callback             is None else callback
-    add_vectors          = (lambda u, v: u + v)       if add_vectors          is None else add_vectors
-    add_covectors        = (lambda u, v: u + v)       if add_covectors        is None else add_covectors
-    scale_vector         = (lambda u, c: c * u)       if scale_vector         is None else scale_vector
-    scale_covector       = (lambda u, c: c * u)       if scale_covector       is None else scale_covector
-    preconditioner_apply = (lambda u: u)              if preconditioner_apply is None else preconditioner_apply
-    preconditioner_solve = (lambda u: u)              if preconditioner_solve is None else preconditioner_solve
-    dual_pairing         = (lambda u, v: np.sum(u*v)) if dual_pairing         is None else dual_pairing
+    callback             = (lambda z: None) if callback             is None else callback
+    add_vectors          = tla.tree_add     if add_vectors          is None else add_vectors
+    add_covectors        = tla.tree_add     if add_covectors        is None else add_covectors
+    scale_vector         = tla.tree_scale   if scale_vector         is None else scale_vector
+    scale_covector       = tla.tree_scale   if scale_covector       is None else scale_covector
+    preconditioner_apply = (lambda u: u)    if preconditioner_apply is None else preconditioner_apply
+    preconditioner_solve = (lambda u: u)    if preconditioner_solve is None else preconditioner_solve
+    dual_pairing         = tla.tree_dot     if dual_pairing         is None else dual_pairing
 
     g_covec = gradient
 

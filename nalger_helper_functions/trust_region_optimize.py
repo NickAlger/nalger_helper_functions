@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import typing as typ
 
 from nalger_helper_functions.cg_steihaug import cg_steihaug, Vec, Covec, Scalar
+import nalger_helper_functions.tree_linalg as tla
 
 
 Point   = typ.Any # type of point on manifold
@@ -50,14 +51,14 @@ def trust_region_optimize(
 
     newton_max_steps = newton_max_iter if newton_max_steps is None else newton_max_steps
 
-    preconditioner_apply    = (lambda u, x, x_aux, J_aux, g_aux: u)           if preconditioner_apply is None else preconditioner_apply
-    preconditioner_solve    = (lambda w, x, x_aux, J_aux, g_aux: w)           if preconditioner_solve is None else preconditioner_solve
-    dual_pairing            = (lambda w, u, x,     x_aux:        np.sum(w*u)) if dual_pairing         is None else dual_pairing
-    add_vectors             = (lambda u, v, x,     x_aux:        u + v)       if add_vectors          is None else add_vectors
-    add_covectors           = (lambda u, v, x,     x_aux:        u + v)       if add_covectors        is None else add_covectors
-    scale_vector            = (lambda u, c, x,     x_aux:        c*u)         if scale_vector         is None else scale_vector
-    scale_covector          = (lambda u, c, x,     x_aux:        c*u)         if scale_covector       is None else scale_covector
-    retract                 = (lambda x, u, x_aux:               x + u)       if retract              is None else retract
+    preconditioner_apply    = (lambda u, x, x_aux, J_aux, g_aux: u)                    if preconditioner_apply is None else preconditioner_apply
+    preconditioner_solve    = (lambda w, x, x_aux, J_aux, g_aux: w)                    if preconditioner_solve is None else preconditioner_solve
+    dual_pairing            = (lambda w, u, x,     x_aux:        tla.tree_dot(w, u))   if dual_pairing         is None else dual_pairing
+    add_vectors             = (lambda u, v, x,     x_aux:        tla.tree_add(u, v))   if add_vectors          is None else add_vectors
+    add_covectors           = (lambda u, v, x,     x_aux:        tla.tree_add(u, v))   if add_covectors        is None else add_covectors
+    scale_vector            = (lambda u, c, x,     x_aux:        tla.tree_scale(u, c)) if scale_vector         is None else scale_vector
+    scale_covector          = (lambda u, c, x,     x_aux:        tla.tree_scale(u, c)) if scale_covector       is None else scale_covector
+    retract                 = (lambda x, u, x_aux:               tla.tree_add(x, u))   if retract              is None else retract
 
     null_func = lambda x: None
     null_func_if_none = lambda func: null_func if func is None else func

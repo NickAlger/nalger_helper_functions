@@ -341,3 +341,8 @@ try:
     from .trust_region_optimize import trust_region_optimize
 except ImportError:
     print('trust_region_optimize not loaded')
+
+try:
+    from .tree_linalg import *
+except ImportError:
+    print('tree_linalg not loaded')
