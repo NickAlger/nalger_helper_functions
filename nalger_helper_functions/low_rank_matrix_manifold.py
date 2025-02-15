@@ -4,8 +4,26 @@ import jax
 import typing as typ
 import functools as ft
 
+import nalger_helper_functions.tree_linalg as tla
 
 # jax.config.update("jax_enable_x64", True) # enable double precision
+
+__all__ = [
+    'low_rank_to_full',
+    'left_orthogonalize_low_rank',
+    'right_orthogonalize_low_rank',
+    'tangent_vector_to_full',
+    'tangent_oblique_projection',
+    'tangent_orthogonal_projection',
+    'tangent_oblique_projection_transpose',
+    'make_tangent_mass_matrix_helper',
+    'apply_tangent_mass_matrix',
+    'inner_product_of_tangent_vectors',
+    'add_low_rank_matrices',
+    'scale_low_rank_matrix',
+    'attached_tangent_vector_as_low_rank',
+    'retract_tangent_vector',
+]
 
 @jax.jit
 def low_rank_to_full(
@@ -64,48 +82,6 @@ def tangent_vector_to_full(
     X, Y = base
     dX, dY = perturbation
     return low_rank_to_full((dX, Y)) + low_rank_to_full((X, dY))
-
-
-@jax.jit
-def add_sequences(
-        uu: typ.Sequence[jnp.ndarray],
-        vv: typ.Sequence[jnp.ndarray],
-) -> typ.Tuple[jnp.ndarray]: # ww = (u1+v1, u2+v2, ...)
-    return tuple([u + v for u, v in zip(uu, vv)])
-
-
-@jax.jit
-def inner_product_of_sequences(
-        uu: typ.Sequence[jnp.ndarray],
-        vv: typ.Sequence[jnp.ndarray],
-) -> jnp.ndarray: # scalar, shape=()
-    return jnp.sum(jnp.array([jnp.sum(u * v) for u, v in zip(uu, vv)]))
-
-
-@jax.jit
-def sequence_norm(
-        perturbation1: typ.Tuple[
-            jnp.ndarray, # dX1, shape=(N,r)
-            jnp.ndarray, # dY1, shape=(r,M)
-        ],
-) -> jnp.ndarray: # scalar, shape=()
-    return jnp.sqrt(inner_product_of_sequences(perturbation1, perturbation1))
-
-
-@jax.jit
-def scale_sequence(
-        uu: typ.Sequence[jnp.ndarray],
-        c: jnp.ndarray, # scalar, shape=()
-) -> typ.Tuple[jnp.ndarray]: # ww = (c*u1, c*u2, ...)
-    return tuple([c*u for u in uu])
-
-
-@jax.jit
-def subtract_sequences(
-        uu: typ.Sequence[jnp.ndarray],
-        vv: typ.Sequence[jnp.ndarray],
-) -> typ.Tuple[jnp.ndarray]: # ww = (u1-v1, u2-v2, ...)
-    return tuple([u - v for u, v in zip(uu, vv)])
 
 
 @jax.jit
@@ -214,7 +190,7 @@ def inner_product_of_tangent_vectors(
         ],
         inner_product_helper_matrix: jnp.ndarray, # shape=(r,r)
 ) -> jnp.ndarray: # scalar, shape=()
-    return inner_product_of_sequences(apply_tangent_mass_matrix(standard_perturbation1, inner_product_helper_matrix), standard_perturbation2)
+    return tla.tree_dot(apply_tangent_mass_matrix(standard_perturbation1, inner_product_helper_matrix), standard_perturbation2)
 
 
 @jax.jit

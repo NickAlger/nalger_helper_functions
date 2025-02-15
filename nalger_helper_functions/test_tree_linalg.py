@@ -2,7 +2,7 @@ import numpy as np
 from nalger_helper_functions.tree_linalg import *
 
 def make_tree(x1, x2, x3, x4, x5):
-    return [int(x1), {'a': np.array(x2), 'b': (float(x3), np.array(x4))}, np.array(x5)]
+    return [x1, {'a': x2, 'b': (x3, x4)}, x5]
 
 def flatten(X):
     return np.concatenate([
@@ -34,7 +34,7 @@ def check_if_tree_is_structured_correctly(X):
 
 # tree_add()
 
-t1 = int(np.random.randint(10))
+t1 = int(np.random.randint(1,10))
 t2 = np.random.randn(2,3)
 t3 = float(np.random.randn())
 t4 = np.random.randn(4)
@@ -104,6 +104,13 @@ check_if_tree_is_structured_correctly(abs_T)
 err_tree_abs = np.linalg.norm(flatten(abs_T) - np.abs(flatten(T)))
 print('err_tree_abs=', err_tree_abs)
 
+# tree_elementwise_inverse()
+
+iT_true = make_tree(1.0/t1, 1.0/t2, 1.0/t3, 1.0/t4, 1.0/t5)
+iT = tree_elementwise_inverse(T)
+err_tree_elementwise_inverse = np.linalg.norm(flatten(iT_true) - flatten(iT))
+print('err_tree_elementwise_inverse=', err_tree_elementwise_inverse)
+
 # tree_sum()
 
 sum_T = tree_sum(T)
@@ -115,6 +122,18 @@ print('err_tree_sum=', err_tree_sum)
 T_dot_S = tree_dot(T, S)
 err_tree_dot = np.abs(T_dot_S - np.dot(flatten(T), flatten(S)))
 print('err_tree_dot=', err_tree_dot)
+
+# tree_normsquared()
+
+normsq_T = tree_normsquared(T)
+err_tree_normsquared = np.abs(normsq_T - np.linalg.norm(flatten(T))**2)
+print('err_tree_normsquared=', err_tree_normsquared)
+
+# tree_norm()
+
+norm_T = tree_norm(T)
+err_tree_norm = np.abs(norm_T - np.linalg.norm(flatten(T)))
+print('err_tree_norm=', err_tree_norm)
 
 # tree_all()
 

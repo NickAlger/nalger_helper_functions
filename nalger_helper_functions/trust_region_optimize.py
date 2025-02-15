@@ -6,10 +6,10 @@ from nalger_helper_functions.cg_steihaug import cg_steihaug, Vec, Covec, Scalar
 import nalger_helper_functions.tree_linalg as tla
 
 
-Point   = typ.Any # type of point on manifold
-Xaux    = typ.Any # type of auxiliary data computed for a base point x
-Jaux    = typ.Any # type of auxiliary data returned when computing objective function
-Gaux    = typ.Any # type of auxiliary data returned when computing gradient
+Point   = typ.TypeVar('Point')
+Xaux    = typ.TypeVar('Xaux') # type of auxiliary data computed for a base point x
+Jaux    = typ.TypeVar('Jaux') # type of auxiliary data returned when computing objective function
+Gaux    = typ.TypeVar('Gaux') # type of auxiliary data returned when computing gradient
 
 def trust_region_optimize(
         objective:      typ.Callable[[Point, Xaux],                  typ.Tuple[Scalar, Jaux]], # x, x_aux              -> J(x), J_aux

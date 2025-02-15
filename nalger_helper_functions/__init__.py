@@ -328,7 +328,7 @@ except ImportError:
     print('low_rank_approximation not loaded')
 
 try:
-    import low_rank_matrix_manifold as lrmm
+    from .low_rank_matrix_manifold import *
 except ImportError:
     print('low_rank_matrix_manifold not loaded')
 

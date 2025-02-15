@@ -6,6 +6,7 @@ import functools as ft
 
 from nalger_helper_functions.low_rank_matrix_manifold import *
 from nalger_helper_functions import cg_steihaug, trust_region_optimize
+import nalger_helper_functions.tree_linalg as tla
 
 import matplotlib.pyplot as plt
 
@@ -193,11 +194,11 @@ def tangent_space_objective(
 
     g, _ = gradient_func(left_orthogonal_base, inputs, true_outputs)
 
-    gp = inner_product_of_sequences(g, p)
+    gp = tla.tree_dot(g, p)
 
     Hp = gn_hessian_matvec(left_orthogonal_base, p, inputs)
 
-    pHp = inner_product_of_sequences(p, Hp)
+    pHp = tla.tree_dot(p, Hp)
 
     return 0.5 * pHp + gp + J0
 
@@ -298,8 +299,8 @@ ZZ = (Z, Z_r)
 Jp = forward_map_jvp(left_orthogonal_base, standard_perturbation, inputs)
 JtZ = forward_map_vjp(left_orthogonal_base, inputs, ZZ)
 
-t1 = inner_product_of_sequences(Jp, ZZ) # np.sum(Jp[0] * ZZ[0]) + np.sum(Jp[1] * ZZ[1])
-t2 = inner_product_of_sequences(JtZ, standard_perturbation) # np.sum(JtZ[0] * standard_perturbation[0]) + np.sum(JtZ[1] + standard_perturbation[1])
+t1 = tla.tree_dot(Jp, ZZ) # np.sum(Jp[0] * ZZ[0]) + np.sum(Jp[1] * ZZ[1])
+t2 = tla.tree_dot(JtZ, standard_perturbation) # np.sum(JtZ[0] * standard_perturbation[0]) + np.sum(JtZ[1] + standard_perturbation[1])
 
 err_forward_map_vjp = np.abs(t1 - t2) / np.abs(t1 + t2)
 print('err_forward_map_vjp=', err_forward_map_vjp)
@@ -537,9 +538,9 @@ def retract_arbitrary_rank(
 
 retract = lambda x, p, x_aux: retract_arbitrary_rank(x, p, x_aux, None)
 
-add     = lambda u, v, x, x_aux: add_sequences(u, v)
-scale   = lambda u, c, x, x_aux: scale_sequence(u, c)
-dual_pairing = lambda u, v, x, x_aux: inner_product_of_sequences(u, v)
+# add     = lambda u, v, x, x_aux: add_sequences(u, v)
+# scale   = lambda u, c, x, x_aux: scale_sequence(u, c)
+# dual_pairing = lambda u, v, x, x_aux: inner_product_of_sequences(u, v)
 preconditioner_apply = lambda u, x, x_aux, J_aux, g_aux: apply_tangent_mass_matrix(u, x_aux[0])
 preconditioner_solve = lambda u, x, x_aux, J_aux, g_aux: apply_tangent_mass_matrix(u, x_aux[3])
 

@@ -3,10 +3,9 @@ import typing as typ
 
 import nalger_helper_functions.tree_linalg as tla
 
-
-Vec    = typ.Any # type of tangent vector
-Covec  = typ.Any # type of cotangent vector
-Scalar = typ.Any # type of scalar
+Vec    = typ.TypeVar('Vec')
+Covec  = typ.TypeVar('Covec')
+Scalar = typ.TypeVar('Scalar')
 
 def cg_steihaug(
         hessian_matvec:         typ.Callable[[Vec], Covec], # u_vec -> H @ u_vec

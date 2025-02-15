@@ -7,6 +7,7 @@ import scipy.optimize.linesearch as ls
 from dataclasses import dataclass
 from enum import Enum
 
+import nalger_helper_functions.tree_linalg as tla
 
 VecType = typ.TypeVar('VecType')
 
@@ -230,7 +231,7 @@ def lbfgs(
     def __grad_with_counter(x):
         nonlocal  num_grad_evals, last_grad_x, last_grad_g
         if last_grad_x is not None:
-            if _norm(_sub(last_grad_x, x)) <= 1e-15 * np.max([_norm(x), _norm(last_grad_x)]):
+            if tla.tree_norm(tla.tree_sub(last_grad_x, x)) <= 1e-15 * np.max([tla.tree_norm(x), tla.tree_norm(last_grad_x)]):
                 return last_grad_g
 
         last_grad_x = x
@@ -249,14 +250,14 @@ def lbfgs(
     x: VecType  = x0
     f: float    = __cost_with_counter(x)
     g: VecType  = __grad_with_counter(x)
-    gradnorm: float = _norm(g)
+    gradnorm: float = tla.tree_norm(g)
 
     cost_history: typ.List[float] = [f]
     gradnorm_history: typ.List[float] = [gradnorm]
 
-    p: VecType = inv_hess.matvec(_neg(g))
+    p: VecType = inv_hess.matvec(tla.tree_scale(g, -1.0))
     if inv_hess.inv_hess0 is None:
-        old_old_fval = _add(f, _norm(g) / 2.0)
+        old_old_fval = tla.tree_add(f, tla.tree_norm(g) / 2.0)
     else:
         old_old_fval = None
     line_search_result = _line_search(__cost_with_counter, __grad_with_counter, x, p, g, f, old_old_fval)
@@ -293,10 +294,10 @@ def lbfgs(
         f_old = f
         g_old = g
 
-        x = _add(x, _componentwise_scalar_mult(p, step_size)) # x + step_size * p
+        x = tla.tree_add(x, tla.tree_scale(p, step_size)) # x + step_size * p
         f = line_search_result[1]
         g = __grad_with_counter(x)
-        gradnorm = _norm(g)
+        gradnorm = tla.tree_norm(g)
 
         cost_history.append(f)
         gradnorm_history.append(gradnorm)
@@ -309,8 +310,8 @@ def lbfgs(
             termination_reason: LbfgsTerminationReason = LbfgsTerminationReason.DESCENT_STAGNATED
             break
 
-        inv_hess.add_new_s_y_pair(_sub(x, x_old), _sub(g, g_old)) # s = x - x_old, y = g - g_old
-        p = inv_hess.matvec(_neg(g))
+        inv_hess.add_new_s_y_pair(tla.tree_sub(x, x_old), tla.tree_sub(g, g_old)) # s = x - x_old, y = g - g_old
+        p = inv_hess.matvec(tla.tree_scale(g, -1.0))
         line_search_result = _line_search(__cost_with_counter, __grad_with_counter, x, p, g, f, None)
         step_size = line_search_result[0]
 
@@ -388,10 +389,10 @@ class LbfgsInverseHessianApproximation:
             return me.inv_hess0(x)
         else:
             if me.ss:
-                gamma_k = _inner_product(me.ss[0], me.yy[0]) / _inner_product(me.yy[0], me.yy[0]) # <s_(k-1), y_(k-1)> / <y_(k-1), y_(k-1)>
+                gamma_k = tla.tree_dot(me.ss[0], me.yy[0]) / tla.tree_dot(me.yy[0], me.yy[0]) # <s_(k-1), y_(k-1)> / <y_(k-1), y_(k-1)>
             else:
                 gamma_k = 1.0
-            return _componentwise_scalar_mult(x, gamma_k) # H0_k = gamma_k*I
+            return tla.tree_scale(x, gamma_k) # H0_k = gamma_k*I
 
     def matvec(me, q: VecType) -> VecType:
         '''Computes
@@ -399,69 +400,69 @@ class LbfgsInverseHessianApproximation:
         via L-BFGS two-loop recursion.
         Algorithm 7.4 on page 178 of Nocedal and Wright.
         '''
-        rhos = [_componentwise_inverse(_inner_product(y, s)) for s, y in zip(me.ss, me.yy)] # 1.0 / inner(y, s). equation 7.17 (left) on page 177
+        rhos = [tla.tree_elementwise_inverse(tla.tree_dot(y, s)) for s, y in zip(me.ss, me.yy)] # 1.0 / inner(y, s). equation 7.17 (left) on page 177
         alphas = []
         for s, y, rho in zip(me.ss, me.yy, rhos):
-            alpha = rho * _inner_product(s, q)
-            q = _sub(q, _componentwise_scalar_mult(y, alpha)) # q = q - alpha*y
+            alpha = rho * tla.tree_dot(s, q)
+            q = tla.tree_sub(q, tla.tree_scale(y, alpha)) # q = q - alpha*y
             alphas.append(alpha)
         r = me.apply_inv_hess0_k(q)
         for s, y, rho, alpha in zip(reversed(me.ss), reversed(me.yy), reversed(rhos), reversed(alphas)):
-            beta = rho * _inner_product(y, r)
-            r = _add(r, _componentwise_scalar_mult(s, alpha - beta)) # r = r + s * (alpha - beta)
+            beta = rho * tla.tree_dot(y, r)
+            r = tla.tree_add(r, tla.tree_scale(s, alpha - beta)) # r = r + s * (alpha - beta)
         return r
 
 
-def _is_container(x):
-    return isinstance(x, typ.Iterable) and (not isinstance(x, np.ndarray))
-
-def _inner_product(x, y) -> float:
-    if _is_container(x):
-        return np.sum([_inner_product(xi, yi) for xi, yi in zip(x, y)])
-    else:
-        return (x * y).sum()
-
-def _norm(x) -> float: # ||x||
-    return np.sqrt(_inner_product(x, x))
-
-def _add(x, y): # x + y
-    if _is_container(x):
-        T = type(x)
-        return T([_add(xi, yi) for xi, yi in zip(x, y)])
-    else:
-        return x + y
-
-def _neg(x): # -x
-    if _is_container(x):
-        T = type(x)
-        return T([_neg(xi) for xi in x])
-    else:
-        return -x
-
-def _sub(x, y): # x - y
-    return _add(x, _neg(y))
-
-def _componentwise_scalar_mult(x, s):  # x * s. x is a vector and s is a scalar
-    if _is_container(x):
-        T = type(x)
-        return T([_componentwise_scalar_mult(xi, s) for xi in x])
-    else:
-        return x * s
-
-def _componentwise_inverse(x):
-    if _is_container(x):
-        T = type(x)
-        return T([_componentwise_inverse(xi) for xi in zip(x)])
-    else:
-        return 1.0 / x
+# def _is_container(x):
+#     return isinstance(x, typ.Iterable) and (not isinstance(x, np.ndarray))
+#
+# def _inner_product(x, y) -> float:
+#     if _is_container(x):
+#         return np.sum([_inner_product(xi, yi) for xi, yi in zip(x, y)])
+#     else:
+#         return (x * y).sum()
+#
+# def _norm(x) -> float: # ||x||
+#     return np.sqrt(_inner_product(x, x))
+#
+# def _add(x, y): # x + y
+#     if _is_container(x):
+#         T = type(x)
+#         return T([_add(xi, yi) for xi, yi in zip(x, y)])
+#     else:
+#         return x + y
+#
+# def _neg(x): # -x
+#     if _is_container(x):
+#         T = type(x)
+#         return T([_neg(xi) for xi in x])
+#     else:
+#         return -x
+#
+# def _sub(x, y): # x - y
+#     return _add(x, _neg(y))
+#
+# def _componentwise_scalar_mult(x, s):  # x * s. x is a vector and s is a scalar
+#     if _is_container(x):
+#         T = type(x)
+#         return T([_componentwise_scalar_mult(xi, s) for xi in x])
+#     else:
+#         return x * s
+#
+# def _componentwise_inverse(x):
+#     if _is_container(x):
+#         T = type(x)
+#         return T([_componentwise_inverse(xi) for xi in zip(x)])
+#     else:
+#         return 1.0 / x
 
 def _line_search(cost, grad, x, p, g, f, old_old_fval, **kwargs):
     def cost_1D(s):
-        return cost(_add(x, _componentwise_scalar_mult(p, s)))
+        return cost(tla.tree_add(x, tla.tree_scale(p, s)))
 
     def grad_1D(s):
-        return _inner_product(p, grad(_add(x, _componentwise_scalar_mult(p, s))))
+        return tla.tree_dot(p, grad(tla.tree_add(x, tla.tree_scale(p, s))))
 
-    g0 = _inner_product(p, g)
+    g0 = tla.tree_dot(p, g)
     stp, fval, old_fval = ls.scalar_search_wolfe1(cost_1D, grad_1D, f, old_old_fval, g0, **kwargs)
     return stp, fval

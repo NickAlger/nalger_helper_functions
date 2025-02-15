@@ -1,5 +1,8 @@
-from nalger_helper_functions.low_rank_matrix_manifold import *
+import numpy as np
+import jax
 
+from nalger_helper_functions.low_rank_matrix_manifold import *
+import nalger_helper_functions.tree_linalg as tla
 
 jax.config.update("jax_enable_x64", True) # enable double precision
 
@@ -52,7 +55,7 @@ dX2 = np.random.randn(N,r)
 dY2 = np.random.randn(r,M)
 perturbation2 = (dX, dY)
 
-perturbation12 = add_sequences(perturbation1, perturbation2)
+perturbation12 = tla.tree_add(perturbation1, perturbation2)
 
 v1 = tangent_vector_to_full(base, perturbation1)
 v2 = tangent_vector_to_full(base, perturbation2)
@@ -67,7 +70,7 @@ print('err_add_sequences=', err_add_sequences)
 
 c = np.random.randn()
 
-scaled_perturbation = scale_sequence(perturbation, c)
+scaled_perturbation = tla.tree_scale(perturbation, c)
 
 cv = tangent_vector_to_full(base, scaled_perturbation)
 cv_true = c * tangent_vector_to_full(base, perturbation)
@@ -99,8 +102,8 @@ q = perturbation2
 Fp = tangent_oblique_projection(left_orthogonal_base, p)
 FTq = tangent_oblique_projection_transpose(left_orthogonal_base, q)
 
-t1 = inner_product_of_sequences(Fp, q)
-t2 = inner_product_of_sequences(p, FTq)
+t1 = tla.tree_dot(Fp, q)
+t2 = tla.tree_dot(p, FTq)
 
 err_tangent_oblique_projection_transpose = np.abs(t1 - t2) / np.abs(t1 + t2)
 print('err_tangent_oblique_projection_transpose=', err_tangent_oblique_projection_transpose)
@@ -176,7 +179,7 @@ print('err_retract_vector=', err_retract_vector)
 M_Pi_p = apply_tangent_mass_matrix(tangent_oblique_projection(left_orthogonal_base, perturbation), inner_product_helper_matrix)
 Pi_M_p = tangent_oblique_projection(left_orthogonal_base, apply_tangent_mass_matrix(perturbation, inner_product_helper_matrix))
 
-non_commutativity_obliqueproject_vs_massmatrix = sequence_norm(subtract_sequences(M_Pi_p, Pi_M_p)) / sequence_norm(add_sequences(M_Pi_p, Pi_M_p))
+non_commutativity_obliqueproject_vs_massmatrix = tla.tree_norm(tla.tree_sub(M_Pi_p, Pi_M_p)) / tla.tree_norm(tla.tree_add(M_Pi_p, Pi_M_p))
 print('non_commutativity_obliqueproject_vs_massmatrix=', non_commutativity_obliqueproject_vs_massmatrix, ' (should be nonzero)')
 
 # Test commutativity of orth projection and application of mass matrix
@@ -184,7 +187,7 @@ print('non_commutativity_obliqueproject_vs_massmatrix=', non_commutativity_obliq
 M_Pi_p = apply_tangent_mass_matrix(tangent_orthogonal_projection(left_orthogonal_base, perturbation), inner_product_helper_matrix)
 Pi_M_p = tangent_orthogonal_projection(left_orthogonal_base, apply_tangent_mass_matrix(perturbation, inner_product_helper_matrix))
 
-non_commutativity_orthproject_vs_massmatrix = sequence_norm(subtract_sequences(M_Pi_p, Pi_M_p)) / sequence_norm(add_sequences(M_Pi_p, Pi_M_p))
+non_commutativity_orthproject_vs_massmatrix = tla.tree_norm(tla.tree_sub(M_Pi_p, Pi_M_p)) / tla.tree_norm(tla.tree_add(M_Pi_p, Pi_M_p))
 print('non_commutativity_orthproject_vs_massmatrix=', non_commutativity_orthproject_vs_massmatrix)
 
 
