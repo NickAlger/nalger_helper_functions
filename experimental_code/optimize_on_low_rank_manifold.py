@@ -481,7 +481,8 @@ def compute_x_aux(x):
     M_helper = make_tangent_mass_matrix_helper(x)
     sqrtM_helper = spd_sqrtm(M_helper)
     isqrtM_helper = jnp.linalg.inv(sqrtM_helper)
-    return M_helper, sqrtM_helper, isqrtM_helper
+    iM_helper = jnp.linalg.inv(M_helper)
+    return M_helper, sqrtM_helper, isqrtM_helper, iM_helper
 
 
 J_func = jax.jit(lambda x, x_aux: misfit(
@@ -496,11 +497,11 @@ def manifold_gradent(
         flat_gradient, # x, inputs, true_outputs, J_aux -> g_flat, g_aux
         inputs, true_outputs,
 ):
-    M_helper, sqrtM_helper, isqrtM_helper = x_aux
+    M_helper, sqrtM_helper, isqrtM_helper, iM_helper = x_aux
     g0, g_aux = flat_gradient(x, inputs, true_outputs, J_aux)
-    g1 = apply_tangent_mass_matrix(g0, isqrtM_helper) # <-- correct
+    # g1 = apply_tangent_mass_matrix(g0, isqrtM_helper) # <-- correct
     # g1 = apply_tangent_mass_matrix(g0, sqrtM_helper)
-    # g1 = g0
+    g1 = g0 # <-- Correct if mass matrix used as cg_steihaug preconditioner
     g2 = tangent_orthogonal_projection(x, g1)
     return g2, g_aux
 
@@ -511,13 +512,14 @@ def manifold_hessian_matvec(
         flat_hessian_matvec, # x, p, inputs, J_aux, g_aux -> H_flat(x) @ p
         inputs,
 ):
-    M_helper, sqrtM_helper, isqrtM_helper = x_aux
+    M_helper, sqrtM_helper, isqrtM_helper, iM_helper = x_aux
     p2 = tangent_orthogonal_projection(x, p)
-    p3 = apply_tangent_mass_matrix(p2, isqrtM_helper)
+    # p3 = apply_tangent_mass_matrix(p2, isqrtM_helper) # <-- Correct if mass matrix used as cg_steihaug preconditioner
+    p3 = p2
     Hp0 = flat_hessian_matvec(x, p3, inputs, J_aux, g_aux)
-    Hp1 = apply_tangent_mass_matrix(Hp0, isqrtM_helper) # <-- correct
+    # Hp1 = apply_tangent_mass_matrix(Hp0, isqrtM_helper) # <-- correct
     # Hp1 = apply_tangent_mass_matrix(Hp0, sqrtM_helper)
-    # Hp1 = Hp0
+    Hp1 = Hp0 # <-- Correct if mass matrix used as cg_steihaug preconditioner
     Hp2 = tangent_orthogonal_projection(x, Hp1)
     return Hp2
 
@@ -525,11 +527,11 @@ def manifold_hessian_matvec(
 def retract_arbitrary_rank(
         x, p, x_aux, rank,
 ):
-    M_helper, sqrtM_helper, isqrtM_helper = x_aux
+    M_helper, sqrtM_helper, isqrtM_helper, iM_helper = x_aux
     p2 = tangent_orthogonal_projection(x, p)
-    p3 = apply_tangent_mass_matrix(p2, isqrtM_helper) # <-- correct
+    # p3 = apply_tangent_mass_matrix(p2, isqrtM_helper) # <-- correct
     # p3 = apply_tangent_mass_matrix(p2, sqrtM_helper)
-    # p3 = p2
+    p3 = p2
     x_plus_p = retract_tangent_vector(x, p3, rank)
     return x_plus_p
 
@@ -537,7 +539,9 @@ retract = lambda x, p, x_aux: retract_arbitrary_rank(x, p, x_aux, None)
 
 add     = lambda u, v, x, x_aux: add_sequences(u, v)
 scale   = lambda u, c, x, x_aux: scale_sequence(u, c)
-inner_product = lambda u, v, x, x_aux: inner_product_of_sequences(u, v)
+dual_pairing = lambda u, v, x, x_aux: inner_product_of_sequences(u, v)
+preconditioner_apply = lambda u, x, x_aux, J_aux, g_aux: apply_tangent_mass_matrix(u, x_aux[0])
+preconditioner_solve = lambda u, x, x_aux, J_aux, g_aux: apply_tangent_mass_matrix(u, x_aux[3])
 
 # J_aux_callback = lambda J_aux: print(str(J_aux[0]) + '\n' + str(J_aux[1]))
 
@@ -564,7 +568,7 @@ def low_rank_manifold_trust_region_optimize_fixed_rank(
         lambda x, i, t_o, J_aux: gradient_func(x, i, t_o), # flat_gradient
         inputs, true_outputs,
     ))
-    H_matvec_func = jax.jit(lambda x, p, x_aux, J_aux, g_aux: manifold_hessian_matvec(
+    H_matvec_func = jax.jit(lambda p, x, x_aux, J_aux, g_aux: manifold_hessian_matvec(
         x, p, x_aux, J_aux, g_aux,
         lambda x, p, i, J_aux, g_aux: gn_hessian_matvec(x, p, i), # flat_hessian_matvec
         inputs,
@@ -574,10 +578,14 @@ def low_rank_manifold_trust_region_optimize_fixed_rank(
         g_func,
         H_matvec_func,
         x0,
-        add,
-        retract,
-        scale,
-        inner_product,
+        add_vectors=add,
+        add_covectors=add,
+        scale_vector=scale,
+        scale_covector=scale,
+        dual_pairing=dual_pairing,
+        retract=retract,
+        preconditioner_apply=preconditioner_apply,
+        preconditioner_solve=preconditioner_solve,
         compute_x_aux=compute_x_aux,
         J_aux_callback=J_aux_callback,
         **kwargs,

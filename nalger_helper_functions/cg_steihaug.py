@@ -1,24 +1,24 @@
 import numpy as np
-import jax.numpy as jnp
+# import jax.numpy as jnp
 import typing as typ
 
 
-_Vec    = typ.Any
-_Covec  = typ.Any
-_Scalar = typ.Any
+Vec    = typ.Any # type of tangent vector
+Covec  = typ.Any # type of cotangent vector
+Scalar = typ.Any # type of scalar
 
 def cg_steihaug(
-        hessian_matvec:         typ.Callable[[_Vec], _Covec], # u_vec -> H @ u_vec
-        gradient:               _Covec,
-        trust_region_radius:    _Scalar,
-        rtol:                   _Scalar,
-        preconditioner_apply:   typ.Callable[[_Vec],            _Covec]  = None, # u    -> M @ u
-        preconditioner_solve:   typ.Callable[[_Covec],          _Vec]    = None, # b    -> M^-1 @ b
-        add_vectors:            typ.Callable[[_Vec,      _Vec], _Vec]    = None, # u, v -> u + v
-        add_covectors:          typ.Callable[[_Covec,  _Covec], _Covec]  = None, # b, c -> b + c
-        scale_vector:           typ.Callable[[_Vec,   _Scalar], _Vec]    = None, # u, s -> s * u
-        scale_covector:         typ.Callable[[_Covec, _Scalar], _Covec]  = None, # b, s -> s * b
-        dual_pairing:           typ.Callable[[_Covec,    _Vec], _Scalar] = None, # b, u -> b(u)
+        hessian_matvec:         typ.Callable[[Vec], Covec], # u_vec -> H @ u_vec
+        gradient:               Covec,
+        trust_region_radius:    Scalar,
+        rtol:                   Scalar,
+        preconditioner_apply:   typ.Callable[[Vec],           Covec]  = None, # u    -> M @ u
+        preconditioner_solve:   typ.Callable[[Covec],         Vec]    = None, # b    -> M^-1 @ b
+        add_vectors:            typ.Callable[[Vec,      Vec], Vec]    = None, # u, v -> u + v
+        add_covectors:          typ.Callable[[Covec,  Covec], Covec]  = None, # b, c -> b + c
+        scale_vector:           typ.Callable[[Vec,   Scalar], Vec]    = None, # u, s -> s * u
+        scale_covector:         typ.Callable[[Covec, Scalar], Covec]  = None, # b, s -> s * b
+        dual_pairing:           typ.Callable[[Covec,    Vec], Scalar] = None, # b, u -> b(u)
         max_iter:   int  = 250,
         display:    bool = True,
         callback:   typ.Callable = None, #used as callback(xk), where xk is the current iterate
@@ -123,15 +123,15 @@ def cg_steihaug(
         _print(
             'CG Iter:' + str(jj)
             + ', ||r||_iM / ||r0||_iM=' + str(np.sqrt(r_iM_r / r0_iM_r0))
-            + ', ||x||_M=' + str(jnp.sqrt(x_M_x))
+            + ', ||x||_M=' + str(np.sqrt(x_M_x))
             + ', Delta=' + str(trust_region_radius)
         )
         if r_iM_r < atol_squared:
-            _print('rtol=' + str(rtol) + ' achieved. ||r||/||g||=' + str(jnp.sqrt(r_iM_r / r0_iM_r0)))
+            _print('rtol=' + str(rtol) + ' achieved. ||r||/||g||=' + str(np.sqrt(r_iM_r / r0_iM_r0)))
             callback(x_vec)
             return x_vec, (jj+1, 'tolerance_achieved')
 
-        beta: jnp.ndarray = r_iM_r / r_iM_r_previous # scalar, shape=()
+        beta = r_iM_r / r_iM_r_previous # scalar, shape=()
         p_vec = add_vectors(iM_r_vec, scale_vector(p_vec, beta))
 
         callback(x_vec)
@@ -145,9 +145,9 @@ def _interpolate_to_trust_region_boundary(
         x_M_x, # scalar
         p_M_p, # scalar
         p_M_x, # scalar
-        trust_region_radius:    jnp.ndarray, # shape=()
+        trust_region_radius:    Scalar, # shape=()
         display:                bool,
-) -> typ.Tuple[jnp.ndarray, jnp.ndarray]: # (tau1, tau2), scalars, elm_shape=()
+) -> typ.Tuple[Scalar, Scalar]: # (tau1, tau2), scalars, elm_shape=()
     '''Find tau such that:
         Delta^2 = ||x + tau*p||^2
                 = ||x||^2 + tau*2*(x, p) + tau^2*||p||^2
@@ -160,8 +160,8 @@ def _interpolate_to_trust_region_boundary(
     b = 2.0 * p_M_x
     c = x_M_x - trust_region_radius ** 2
 
-    tau1 = (-b + jnp.sqrt(b ** 2 - 4.0 * a * c)) / (2.0 * a)  # quadratic formula, first root
-    tau2 = (-b - jnp.sqrt(b ** 2 - 4.0 * a * c)) / (2.0 * a)  # quadratic formula, second root
+    tau1 = (-b + np.sqrt(b ** 2 - 4.0 * a * c)) / (2.0 * a)  # quadratic formula, first root
+    tau2 = (-b - np.sqrt(b ** 2 - 4.0 * a * c)) / (2.0 * a)  # quadratic formula, second root
     if display:
         print('a=', a, ', b=', b, ', c=', c, ', tau1=', tau1, ', tau2=', tau2)
     return tau1, tau2

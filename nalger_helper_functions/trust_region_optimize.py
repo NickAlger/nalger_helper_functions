@@ -1,16 +1,21 @@
 import numpy as np
 import jax.numpy as jnp
 import typing as typ
-from inspect import signature
 
-from nalger_helper_functions.cg_steihaug import cg_steihaug
+from nalger_helper_functions.cg_steihaug import cg_steihaug, Vec, Covec, Scalar
 
+
+Point   = typ.Any # type of point on manifold
+Xaux    = typ.Any # type of auxiliary data computed for a base point x
+Jaux    = typ.Any # type of auxiliary data returned when computing objective function
+Gaux    = typ.Any # type of auxiliary data returned when computing gradient
 
 def trust_region_optimize(
-        objective_func:         typ.Callable, # (x, x_aux)                      -> (J(x), J_aux)
-        gradient_func:          typ.Callable, # (x, x_aux, J_aux)               -> (g(x), g_aux)
-        hessian_matvec_func:    typ.Callable, # (u_vec, x, x_aux, J_aux, g_aux) -> H(m) @ u_vector
-        x0:             typ.Any, # initial guess
+        objective:      typ.Callable[[Point, Xaux],                  typ.Tuple[Scalar, Jaux]], # x, x_aux              -> J(x), J_aux
+        gradient:       typ.Callable[[Point, Xaux, Jaux],            typ.Tuple[Covec, Gaux]],  # x, x_aux, J_aux       -> g(x), g_aux
+        hessian_matvec: typ.Callable[[Vec, Point, Xaux, Jaux, Gaux], Covec],                   # u, x, x, J_aux, g_aux -> H(x) @ u
+        x0:             Point, # initial guess
+        #
         newton_rtol:        float = 1e-5,
         cg_rtol_power:      float = 0.5, # between 0 and 1
         cg_max_iter:        int  = 250,
@@ -22,18 +27,22 @@ def trust_region_optimize(
         trust_region_minimum_reduction_ratio:   float = 0.1,  # trust region parameter
         newton_display: bool = True,
         cg_display:     bool = True,
-        preconditioner_apply: typ.Callable = None,  # u_vec, x, x_aux, J_aux, g_aux   -> M(x) @ u_vec
-        preconditioner_solve: typ.Callable = None,  # w_covec, x, x_aux, J_aux, g_aux -> M(x)^-1 @ p_covec
-        dual_pairing:   typ.Callable = None,  # w_covec, u_vec,  x, x_aux    -> <w_covec, u_vec>
-        add:            typ.Callable = None,  # u_vec,   v_vec,  x, x_aux    -> u_vec + v_vec
-        scale:          typ.Callable = None,  # u_vec,   c_scalar,  x, x_aux -> c_scalar * u_vec
-        retract:        typ.Callable = None,  # x,       u_vec, x_aux        -> x (+) u_vec: retract vector from tangent plane to manifold
-        newton_callback: typ.Callable = None, # used as newton_callback(x), where x is the current newton iterate
-        cg_callback:     typ.Callable = None, # used as cg_callback(z), where z is the current cg iterate
-        compute_x_aux:   typ.Callable = None, # x -> x_aux
-        x_aux_callback:  typ.Callable = None, # used as x_aux_callback(x_aux), where x_aux = compute_x_aux(x)
-        J_aux_callback:  typ.Callable = None, # used as J_aux_callback(J_aux), where J, J_aux = objective(x)
-        g_aux_callback:  typ.Callable = None, # used as g_aux_callback(g_aux), where g, g_aux = objective(x, J_aux)
+        #
+        compute_x_aux:        typ.Callable[[Point],                            Xaux]   = None, # x -> x_aux
+        preconditioner_apply: typ.Callable[[Vec,   Point,  Xaux,  Jaux, Gaux], Covec]  = None, # u, x, x_aux, J_aux, G_aux -> M(x) @ u
+        preconditioner_solve: typ.Callable[[Covec, Point,  Xaux,  Jaux, Gaux], Vec]    = None, # b, x, x_aux, J_aux, G_aux -> M(x)^-1 @ b
+        add_vectors:          typ.Callable[[Vec,   Vec,    Point, Xaux],       Vec]    = None, # u, v, x, x_aux -> u + v
+        add_covectors:        typ.Callable[[Covec, Covec,  Point, Xaux],       Covec]  = None, # b, c, x, x_aux -> b + c
+        scale_vector:         typ.Callable[[Vec,   Scalar, Point, Xaux],       Vec]    = None, # u, s, x, x_aux -> s * u
+        scale_covector:       typ.Callable[[Covec, Scalar, Point, Xaux],       Covec]  = None, # b, s, x, x_aux -> s * b
+        dual_pairing:         typ.Callable[[Covec, Vec,    Point, Xaux],       Scalar] = None, # b, u, x, x_aux -> b(u)
+        retract:              typ.Callable[[Point, Vec,    Xaux],              Point]  = None, # x, u, x_aux -> x (+) u_vec: retract vector from tangent plane to manifold
+        #
+        newton_callback: typ.Callable[[Point], typ.Any] = None, # used as newton_callback(x), where x is the current newton iterate
+        cg_callback:     typ.Callable[[Vec],   typ.Any] = None, # used as cg_callback(p), where p is the current cg iterate
+        x_aux_callback:  typ.Callable[[Xaux],  typ.Any] = None, # used as x_aux_callback(x_aux), where x_aux = compute_x_aux(x)
+        J_aux_callback:  typ.Callable[[Jaux],  typ.Any] = None, # used as J_aux_callback(J_aux), where J, J_aux = objective(x)
+        g_aux_callback:  typ.Callable[[Gaux],  typ.Any] = None, # used as g_aux_callback(g_aux), where g, g_aux = objective(x, J_aux)
 ):
     def _print(*args, **kwargs):
         if newton_display:
@@ -41,15 +50,17 @@ def trust_region_optimize(
 
     newton_max_steps = newton_max_iter if newton_max_steps is None else newton_max_steps
 
+    preconditioner_apply    = (lambda u, x, x_aux, J_aux, g_aux: u)           if preconditioner_apply is None else preconditioner_apply
+    preconditioner_solve    = (lambda w, x, x_aux, J_aux, g_aux: w)           if preconditioner_solve is None else preconditioner_solve
+    dual_pairing            = (lambda w, u, x,     x_aux:        np.sum(w*u)) if dual_pairing         is None else dual_pairing
+    add_vectors             = (lambda u, v, x,     x_aux:        u + v)       if add_vectors          is None else add_vectors
+    add_covectors           = (lambda u, v, x,     x_aux:        u + v)       if add_covectors        is None else add_covectors
+    scale_vector            = (lambda u, c, x,     x_aux:        c*u)         if scale_vector         is None else scale_vector
+    scale_covector          = (lambda u, c, x,     x_aux:        c*u)         if scale_covector       is None else scale_covector
+    retract                 = (lambda x, u, x_aux:               x + u)       if retract              is None else retract
+
     null_func = lambda x: None
     null_func_if_none = lambda func: null_func if func is None else func
-
-    preconditioner_apply    = lambda u_vec,   x,        x_aux, J_aux, g_aux: u_vec                    if preconditioner_apply is None else preconditioner_apply
-    preconditioner_solve    = lambda w_covec, x,        x_aux, J_aux, g_aux: w_covec                  if preconditioner_solve is None else preconditioner_solve
-    dual_pairing            = lambda w_covec, u_vec,    x,     x_aux:        jnp.sum(w_covec * u_vec) if dual_pairing         is None else dual_pairing
-    add                     = lambda u_vec,   v_vec,    x,     x_aux:        u_vec + v_vec            if add                  is None else add
-    scale                   = lambda u_vec,   c_scalar, x,     x_aux:        c_scalar * u_vec         if scale                is None else scale
-    retract                 = lambda x,       u_vec,    x_aux:               x + u_vec                if retract              is None else retract
 
     newton_callback     = null_func_if_none(newton_callback)
     cg_callback         = null_func_if_none(cg_callback)
@@ -60,15 +71,15 @@ def trust_region_optimize(
 
     x = x0
     x_aux = compute_x_aux(x)
-    J, J_aux = objective_func(x, x_aux)
-    g, g_aux = gradient_func(x, x_aux, J_aux)
-    invM_g = preconditioner_solve(g, x, x_aux, J_aux, g_aux)
-    norm_g = dual_pairing(g, invM_g, x, x_aux)
+    J, J_aux = objective(x, x_aux)
+    g, g_aux = gradient(x, x_aux, J_aux)
+    iM_g = preconditioner_solve(g, x, x_aux, J_aux, g_aux)
+    g_iM_g = dual_pairing(g, iM_g, x, x_aux)
 
-    norm_g0 = norm_g
+    g0_iM_g0 = g_iM_g
 
     _print('J0=' + str(J))
-    _print('||g0||=' + str(norm_g))
+    _print('||g0||_iM=' + str(np.sqrt(g_iM_g)))
     newton_callback(x_aux)
     x_aux_callback(x_aux)
     J_aux_callback(J_aux)
@@ -82,43 +93,52 @@ def trust_region_optimize(
     for newton_iter in range(1, newton_max_iter + 1):
         _print('{:<12s}'.format('Newton Iter: ') + str(newton_iter) + '\n')
 
-        hvp_func = lambda p: hessian_matvec_func(x, p, x_aux, J_aux, g_aux)
-        cg_add = lambda u, v: add(u, v, x, x_aux)
-        cg_scale = lambda u, c: scale(u, c, x, x_aux)
-        cg_preconditioner_apply = lambda u_vec:   preconditioner_apply(x, u_vec,   x_aux, J_aux, g_aux)
-        cg_preconditioner_apply = lambda w_covec: preconditioner_apply(x, w_covec, x_aux, J_aux, g_aux)
-        cg_dual_pairing = lambda w_covec, u_vec: dual_pairing(w_covec, u_vec,  x, x_aux)
+        hvp_func            = lambda p:     hessian_matvec(p, x, x_aux, J_aux, g_aux)
+        cg_dual_pairing     = lambda w, u:  dual_pairing(w, u, x, x_aux)
+        cg_add_vectors      = lambda u, v:  add_vectors(u, v, x, x_aux)
+        cg_add_covectors    = lambda u, v:  add_covectors(u, v, x, x_aux)
+        cg_scale_vector     = lambda u, c:  scale_vector(u, c, x, x_aux)
+        cg_scale_covector   = lambda u, c:  scale_covector(u, c, x, x_aux)
+        cg_preconditioner_apply = lambda u: preconditioner_apply(u, x, x_aux, J_aux, g_aux)
+        cg_preconditioner_solve = lambda w: preconditioner_solve(w, x, x_aux, J_aux, g_aux)
+
+        cg_max_iter2 = cg_max_iter
+        if newton_iter == 1:
+            cg_max_iter2 = 1
+            trust_region_radius = np.inf
+
+        cg_rtol = np.maximum(np.minimum(0.5, np.power(np.sqrt(g_iM_g / g0_iM_g0), cg_rtol_power)), newton_rtol / 3.0)
+        p, (num_cg_iter, termination_reason) = cg_steihaug(
+            hvp_func, g, trust_region_radius, cg_rtol,
+            preconditioner_apply=cg_preconditioner_apply,
+            preconditioner_solve=cg_preconditioner_solve,
+            add_vectors=cg_add_vectors,
+            add_covectors=cg_add_covectors,
+            scale_vector=cg_scale_vector,
+            scale_covector=cg_scale_covector,
+            dual_pairing=cg_dual_pairing,
+            max_iter=cg_max_iter2, display=cg_display, callback=cg_callback,
+        )
 
         if newton_iter == 1:
-            Hg = hvp_func(g)
-            iM_Hg = preconditioner_solve(x, Hg, x_aux, J_aux, g_aux)
-            a = norm_g / dual_pairing(g, iM_Hg, x, x_aux)
-            p = scale(g, -a, x, x_aux)
             termination_reason = 'first_iteration'
             num_cg_iter = 1
             cg_rtol = jnp.array(1.0)
-            M_p = preconditioner_apply(p)
-            trust_region_radius = dual_pairing(M_p, p, x, x_aux)
+            M_p = cg_preconditioner_apply(p)
+            trust_region_radius = cg_dual_pairing(M_p, p)
             min_trust_region_radius = trust_region_min_radius_factor * trust_region_radius
-        else:
-            cg_rtol = np.maximum(np.minimum(0.5, np.power(norm_g / norm_g0, cg_rtol_power)), newton_rtol / 3.0)
-            # cg_rtol = 1e-1
-            p, (num_cg_iter, termination_reason) = cg_steihaug(
-                hvp_func, g, cg_add, cg_scale, cg_inner_product, trust_region_radius,
-                cg_rtol, cg_max_iter, cg_display, cg_callback,
-            )
 
         s = '{:<12s}'.format('trust size') + '{:<10s}'.format('CG rtol') + '{:<10s}'.format('#CG') + 'CG termination reason' + '\n'
         s += '{:<12.1E}'.format(trust_region_radius) + '{:<10.1E}'.format(cg_rtol) + '{:<10d}'.format(num_cg_iter) + termination_reason + '\n'
         _print(s)
 
-        predicted_J = J + dual_pairing(g, p, x, x_aux) + 0.5 * dual_pairing(hvp_func(p), p, x, x_aux)
+        predicted_J = J + cg_dual_pairing(g, p) + 0.5 * cg_dual_pairing(hvp_func(p), p)
 
         previous_step = (x, p, x_aux)
         new_x = retract(x, p, x_aux)
 
         new_x_aux = compute_x_aux(new_x)
-        new_J, new_J_aux = objective_func(new_x, new_x_aux)
+        new_J, new_J_aux = objective(new_x, new_x_aux)
 
         new_trust_region_radius, reduction_ratio = _update_trust_region_size(
             J, new_J, predicted_J, trust_region_radius,
@@ -132,15 +152,14 @@ def trust_region_optimize(
             x_aux = new_x_aux
             J = new_J
             J_aux = new_J_aux
-            g, g_aux = gradient_func(x, x_aux, J_aux)
-            invM_g = preconditioner_solve(x, g, x_aux, J_aux, g_aux)
-            norm_g = dual_pairing(g, invM_g, x, x_aux)
+            g, g_aux = gradient(x, x_aux, J_aux)
+            iM_g = preconditioner_solve(g, x, x_aux, J_aux, g_aux)
+            g_iM_g = dual_pairing(g, iM_g, x, x_aux)
             newton_steps_taken += 1
         else:
             _print('Keeping x the same.\n')
 
-        _print('J0=' + str(J))
-        _print('||g||/||g0||=' + str(norm_g / norm_g0))
+        _print('||g||/||g0||=' + str(np.sqrt(g_iM_g / g0_iM_g0)))
         newton_callback(x_aux)
         x_aux_callback(x_aux)
         J_aux_callback(J_aux)
@@ -152,7 +171,7 @@ def trust_region_optimize(
             end_newton_iter = True
 
         if newton_iter + 1 >= newton_min_iter:
-            if norm_g <= norm_g0 * newton_rtol:
+            if g_iM_g <= g0_iM_g0 * newton_rtol**2:
                 g_reduction_achieved = True
                 end_newton_iter = True
 
