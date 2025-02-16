@@ -40,12 +40,12 @@ StateCoTangent  = typ.TypeVar('StateCoTangent')
 ForwardAux      = typ.TypeVar('ForwardAux')
 ForwardJvpAux   = typ.TypeVar('ForwardJvpAux')
 ForwardVjpAux   = typ.TypeVar('ForwardVjpAux')
+LossAux         = typ.TypeVar('LossAux')
 
 Outputs             = typ.TypeVar('Outputs')
 OutputsTangent      = typ.TypeVar('OutputsTangent')
 OutputsCoTangent    = typ.TypeVar('OutputsCoTangent')
 
-LossAux = typ.TypeVar('LossAux')
 Scalar  = typ.TypeVar('Scalar')
 
 
@@ -76,6 +76,9 @@ default_combine_misfits_gradient    = lambda misfits: 0.5 * tla.tree_ones(misfit
 default_residual_to_misfits_vjp     = lambda residual, misfits_cotangent: tla.tree_mult(tla.tree_scale(misfits_cotangent, 2.0), residual)
 default_obs_operator_vjp            = lambda outputs, obs_cotangent: obs_cotangent
 
+default_regularization = tla.tree_normsquared
+default_regularization_gradient: lambda m: m
+default_regularization_gauss_newton_hessian_matvec: lambda m, dm: dm
 
 def misfit(
         m:              Param,
@@ -86,12 +89,16 @@ def misfit(
         compute_loss:   typ.Callable[[Outputs, Outputs],    typ.Tuple[Scalar,   LossAux]]   = default_compute_loss, # true_obs, obs -> J, J_aux
 ) -> typ.Tuple[
     Scalar, # misfit Jd
-    LossAux
+    typ.Tuple[
+        LossAux,
+        Outputs, # predicted outputs y based on the model m
+        ForwardAux, # Auxiliary data computed when computing the forward map
+    ]
 ]:
-    u, state_aux    = forward_map(m, x)
+    u, f_aux    = forward_map(m, x)
     y               = observe(u)
     J, J_aux        = compute_loss(y, y_true)
-    return J, (J_aux, y, u, state_aux)
+    return J, (J_aux, y, f_aux)
 
 
 def misfit_gradient(
@@ -104,12 +111,14 @@ def misfit_gradient(
         forward_map_vjp:    typ.Callable[[Param, Inputs, StateCoTangent, ForwardAux],   typ.Tuple[ParamCoTangent, ForwardVjpAux]],
         observe_vjp:        typ.Callable[[State, OutputsCoTangent],                     StateCoTangent]   = default_observe_vjp,
         compute_loss_vjp:   typ.Callable[[Outputs, Outputs, Scalar],                    OutputsCoTangent] = default_compute_loss_vjp,
-) -> ParamCoTangent:
+) -> typ.Tuple[
+    ParamCoTangent, # gradient g
+    ForwardVjpAux,
+]:
     z1: OutputsCoTangent    = compute_loss_vjp(y, y_true, 1.0)
     z2: StateCoTangent      = observe_vjp(u, z1)
     g, fvjp_aux = forward_map_vjp(m, z2, x, f_aux)
     return g, fvjp_aux
-
 
 
 def misfit_gauss_newton_hessian_matvec(
@@ -126,17 +135,68 @@ def misfit_gauss_newton_hessian_matvec(
         observe_vjp:        typ.Callable[[State, OutputsCoTangent], StateCoTangent] = default_observe_vjp,
         compute_loss_jvp:   typ.Callable[[Outputs, Outputs, OutputsTangent],    Scalar]              = default_compute_loss_jvp,
         compute_loss_vjp:   typ.Callable[[Outputs, Outputs, Scalar],            OutputsCoTangent]    = default_compute_loss_vjp,
-) -> ParamCoTangent:
+) -> typ.Tuple[
+    ParamCoTangent, # H @ dm, Gauss-Newton Hessian vector product
+    typ.Tuple[
+        ForwardJvpAux,
+        ForwardVjpAux,
+    ]
+]:
     du, fjvp_aux = forward_map_jvp(m, dm, x, f_aux)
     dy = observe_jvp(x, du)
     dJ = compute_loss_jvp(y, y_true, dy)
     dy2 = compute_loss_vjp(y, y_true, dJ)
     du2 = observe_vjp(x, dy2)
-    Hdm, fvjp_aux = forward_map_vjp(m, )
+    Hdm, fvjp_aux = forward_map_vjp(m, x, du2, f_aux)
     return Hdm, (fjvp_aux, fvjp_aux)
 
 
+def objective(
+        m:      Param,
+        x:      Inputs,
+        y_true: Outputs,
+        forward_map:    typ.Callable[[Param, Inputs], typ.Tuple[State, ForwardAux]],
+        observe:        typ.Callable[[State],               Outputs] = default_observe,
+        compute_loss:   typ.Callable[[Outputs, Outputs],    typ.Tuple[Scalar, LossAux]] = default_compute_loss, # true_obs, obs -> J, J_aux
+        a_reg: Scalar,  # regularization parameter
+        regularization_function: typ.Callable[[Param], Scalar] = default_regularization,
+):
+    Jd, (Jd_aux, y, f_aux) = misfit(m, x, y_true, forward_map, observe, compute_loss)
+    Jr0 = regularization_function(m)
+    Jr = a_reg * Jr0
+    J = Jd + Jr
+    return J, (Jd, Jr, Jd_aux, y, f_aux)
 
+
+def gradient(
+        m: Param,
+        x: Inputs,
+        u: State,
+        f_aux: ForwardAux,
+        y:      Outputs,
+        y_true: Outputs,
+        a_reg: Scalar,
+        forward_map_vjp:    typ.Callable[[Param, Inputs, StateCoTangent, ForwardAux],   typ.Tuple[ParamCoTangent, ForwardVjpAux]],
+        observe_vjp:        typ.Callable[[State, OutputsCoTangent],     StateCoTangent]   = default_observe_vjp,
+        compute_loss_vjp:   typ.Callable[[Outputs, Outputs, Scalar],    OutputsCoTangent] = default_compute_loss_vjp,
+        regularization_gradient: typ.Callable[[Param], ParamCoTangent] = default_regularization_gradient,
+) -> typ.Tuple[
+    ParamCoTangent, # gradient g
+    typ.Tuple[
+        ParamCoTangent, # gd
+        ParamCoTangent, # gr
+        ForwardVjpAux,
+    ]
+]:
+    gd, fvjp_aux = misfit_gradient(m, x, u, f_aux, y, y_true, forward_map_vjp, observe_vjp, compute_loss_vjp)
+    gr0 = regularization_gradient(m)
+    gr = a_reg * gr0
+    g = gd + gr
+    return g, (gd, gr, fvjp_aux)
+
+
+
+# regularization_gauss_newton_hessian_matvec: typ.Callable[[Param, ParamTangent], ParamCoTangent] = default_regularization_gauss_newton_hessian_matvec,
 
 ######## Low rank matvecs objective function
 
