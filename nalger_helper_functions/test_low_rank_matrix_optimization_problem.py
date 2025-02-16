@@ -110,15 +110,15 @@ print('err_forward_map_vjp=', err_forward_map_vjp)
 
 #
 
-J = tangent_space_objective(
+J = tangent_space_misfit(
     left_orthogonal_base, standard_perturbation, inputs, true_outputs
 )
 
 big_base = attached_tangent_vector_as_low_rank(left_orthogonal_base, standard_perturbation)
 J_true, _ = misfit(big_base, inputs, true_outputs)
 
-err_tangent_space_objective = np.abs(J - J_true) / np.abs(J_true)
-print('err_tangent_space_objective=', err_tangent_space_objective)
+err_tangent_space_misfit = np.abs(J - J_true) / np.abs(J_true)
+print('err_tangent_space_misfit=', err_tangent_space_misfit)
 
 #
 

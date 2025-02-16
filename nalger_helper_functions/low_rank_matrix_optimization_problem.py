@@ -17,8 +17,11 @@ __all__ = [
     'regularization',
     'regularization_gradient',
     'regularization_hessian_matvec',
+    'objective',
+    'gradient',
+    'gn_hessian_vector_product',
     'spd_sqrtm',
-    'tangent_space_objective',
+    'tangent_space_misfit',
 ]
 
 
@@ -177,12 +180,12 @@ def regularization(
             jnp.ndarray,  # X, shape=(N,r)
             jnp.ndarray,  # Y, shape=(r,M)
         ],
-        apply_M_left: typ.Callable[[jnp.ndarray], jnp.ndarray], # X -> ML @ X
-        apply_M_right: typ.Callable[[jnp.ndarray], jnp.ndarray], # Y -> Y @ MR
+        apply_ML: typ.Callable[[jnp.ndarray], jnp.ndarray], # X -> ML @ X
+        apply_MR: typ.Callable[[jnp.ndarray], jnp.ndarray], # Y -> Y @ MR
 ): # 1/2 * ||ML @ X @ Y @ MR||^2
     X, Y = base
-    Xhat = apply_M_left(X)
-    Yhat = apply_M_right(Y)
+    Xhat = apply_ML(X)
+    Yhat = apply_MR(Y)
     return 0.5 * np.sum((Xhat.T @ Xhat) * (Yhat @ Yhat.T))
 
 
@@ -229,6 +232,82 @@ def regularization_hessian_matvec(
     return HX, HY
 
 
+def objective(
+        left_orthogonal_base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray,  # Omega, shape=(M,k)
+            jnp.ndarray,  # Omega_r, shape=(k_r,N)
+        ],
+        true_outputs: typ.Tuple[
+            jnp.ndarray,  # Ztrue, shape=(N,k)
+            jnp.ndarray,  # Ztrue_r, shape=(k_r,M)
+        ],
+        a_reg,
+        apply_ML: typ.Callable[[jnp.ndarray], jnp.ndarray],  # X -> ML @ X
+        apply_MR: typ.Callable[[jnp.ndarray], jnp.ndarray],  # Y -> Y @ MR
+):
+    Jd, (rsq, rsq_r) = misfit(left_orthogonal_base, inputs, true_outputs)
+    Jr0 = regularization(left_orthogonal_base, apply_ML, apply_MR)
+    Jr = a_reg * Jr0
+    J = Jd + Jr
+    return J, (Jd, Jr, rsq, rsq_r)
+
+
+def gradient(
+        left_orthogonal_base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray,  # Omega, shape=(M,k)
+            jnp.ndarray,  # Omega_r, shape=(k_r,N)
+        ],
+        true_outputs: typ.Tuple[
+            jnp.ndarray,  # Ztrue, shape=(N,k)
+            jnp.ndarray,  # Ztrue_r, shape=(k_r,M)
+        ],
+        a_reg,
+        apply_ML: typ.Callable[[jnp.ndarray], jnp.ndarray],  # X -> ML @ X
+        apply_MLT: typ.Callable[[jnp.ndarray], jnp.ndarray],
+        apply_MR: typ.Callable[[jnp.ndarray], jnp.ndarray],  # Y -> Y @ MR
+        apply_MRT: typ.Callable[[jnp.ndarray], jnp.ndarray],
+):
+    gd, gd_aux = misfit_gradient_func(left_orthogonal_base, inputs, true_outputs)
+    gr0 = regularization_gradient(left_orthogonal_base, apply_ML, apply_MLT, apply_MR, apply_MRT)
+    gr = tla.tree_scale(gr0, a_reg)
+    g = tla.tree_add(gd, gr)
+    return g, (gd, gr, gd_aux)
+
+
+def gn_hessian_vector_product(
+        left_orthogonal_base: typ.Tuple[
+            jnp.ndarray,  # X, shape=(N,r)
+            jnp.ndarray,  # Y, shape=(r,M)
+        ],
+        perturbation: typ.Tuple[
+            jnp.ndarray,  # dX, shape=(N,r)
+            jnp.ndarray,  # dY, shape=(r,M)
+        ],
+        inputs: typ.Tuple[
+            jnp.ndarray,  # Omega, shape=(M,k)
+            jnp.ndarray,  # Omega_r, shape=(k_r,N)
+        ],
+        a_reg,
+        apply_ML: typ.Callable[[jnp.ndarray], jnp.ndarray],  # X -> ML @ X
+        apply_MLT: typ.Callable[[jnp.ndarray], jnp.ndarray],
+        apply_MR: typ.Callable[[jnp.ndarray], jnp.ndarray],  # Y -> Y @ MR
+        apply_MRT: typ.Callable[[jnp.ndarray], jnp.ndarray],
+):
+    Hd_p = misfit_gn_hessian_matvec(left_orthogonal_base, perturbation, inputs)
+    Hr_p0 = regularization_hessian_matvec(left_orthogonal_base, perturbation, apply_ML, apply_MLT, apply_MR, apply_MRT)
+    Hr_p = tla.tree_scale(Hr_p0, a_reg)
+    Hp = tla.tree_add(Hd_p, Hr_p)
+    return Hp
+
+
 @jax.jit
 def spd_sqrtm(A):
     ee, P = jnp.linalg.eigh(A)
@@ -236,7 +315,7 @@ def spd_sqrtm(A):
 
 
 @jax.jit
-def tangent_space_objective(
+def tangent_space_misfit(
         left_orthogonal_base: typ.Tuple[
             jnp.ndarray,  # X, shape=(N,r)
             jnp.ndarray,  # Y, shape=(r,M)

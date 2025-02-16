@@ -21,14 +21,26 @@ def low_rank_manifold_trust_region_optimize_fixed_rank(
         inputs,
         true_outputs,
         x0,
+        a_reg = 0.0,
+        apply_ML: typ.Callable[[jnp.ndarray], jnp.ndarray] = None,  # X -> ML @ X
+        apply_MLT: typ.Callable[[jnp.ndarray], jnp.ndarray] = None,
+        apply_MR: typ.Callable[[jnp.ndarray], jnp.ndarray] = None,  # Y -> Y @ MR
+        apply_MRT: typ.Callable[[jnp.ndarray], jnp.ndarray] = None,
+        optimize_for_delta: bool = False,
         **kwargs,
 ):
-    _J_func         = jax.jit(lambda x, x_aux:                          misfit(x, inputs, true_outputs))
-    _g_func         = jax.jit(lambda x, x_aux,  J_aux:                  projected_gradient(x, inputs, true_outputs))
-    _H_matvec_func  = jax.jit(lambda p, x,      x_aux, J_aux, g_aux:    projected_hessian_matvec(x, p, inputs))
-    _apply_M_func   = jax.jit(lambda p, x,      x_aux, J_aux, g_aux:    preconditioner_apply(p, x, x_aux))
-    _solve_M_func   = jax.jit(lambda p, x,      x_aux, J_aux, g_aux:    preconditioner_solve(p, x, x_aux))
+    apply_ML    = (lambda u: u) if apply_ML     is None else apply_ML
+    apply_MLT   = (lambda u: u) if apply_MLT    is None else apply_MLT
+    apply_MR    = (lambda u: u) if apply_MR     is None else apply_MR
+    apply_MRT   = (lambda u: u) if apply_MRT    is None else apply_MRT
+
+    _J_func         = lambda x, x_aux:                          objective(x, inputs, true_outputs, a_reg, apply_ML, apply_MR)
+    _g_func         = lambda x, x_aux,  J_aux:                  projected_gradient(x, inputs, true_outputs, a_reg, apply_ML, apply_MLT, apply_MR, apply_MRT)
+    _H_matvec_func  = lambda p, x,      x_aux, J_aux, g_aux:    projected_hessian_matvec(x, p, inputs, a_reg, apply_ML, apply_MLT, apply_MR, apply_MRT)
+    _apply_M_func   = lambda p, x,      x_aux, J_aux, g_aux:    preconditioner_apply(p, x, x_aux)
+    _solve_M_func   = lambda p, x,      x_aux, J_aux, g_aux:    preconditioner_solve(p, x, x_aux)
     _retract_func   = lambda x, p,      x_aux:                  projected_retract(x, p)
+
     return trust_region_optimize(
         _J_func,
         _g_func,
@@ -41,7 +53,6 @@ def low_rank_manifold_trust_region_optimize_fixed_rank(
         J_aux_callback=J_aux_callback,
         **kwargs,
     )
-
 
 def svd_initial_guess(
         true_outputs,
@@ -65,9 +76,9 @@ def projected_gradient(
         # arguments used by optimizer:
         x,
         # arguments removed by partial application:
-        inputs, true_outputs,
+        inputs, true_outputs, a_reg, apply_ML, apply_MLT, apply_MR, apply_MRT,
 ):
-    g0, g_aux = misfit_gradient_func(x, inputs, true_outputs)
+    g0, g_aux = gradient(x, inputs, true_outputs, a_reg, apply_ML, apply_MLT, apply_MR, apply_MRT)
     g1 = tangent_orthogonal_projection(x, g0)
     return g1, g_aux
 
@@ -76,10 +87,10 @@ def projected_hessian_matvec(
         # arguments used by optimizer
         x, p,
         # arguments removed by partial application
-        inputs,
+        inputs, a_reg, apply_ML, apply_MLT, apply_MR, apply_MRT,
 ):
     p2 = tangent_orthogonal_projection(x, p)
-    Hp0 = misfit_gn_hessian_matvec(x, p2, inputs)
+    Hp0 = gn_hessian_vector_product(x, p2, inputs, a_reg, apply_ML, apply_MLT, apply_MR, apply_MRT)
     Hp1 = tangent_orthogonal_projection(x, Hp0)
     return Hp1
 
@@ -97,8 +108,12 @@ preconditioner_apply = lambda u, x, x_aux: apply_tangent_mass_matrix(u, x_aux[0]
 preconditioner_solve = lambda u, x, x_aux: apply_tangent_mass_matrix(u, x_aux[1])
 
 def J_aux_callback(J_aux):
-    relerrs, relerrs_r = J_aux
-    s = '\nRelative errors forward:\n'
+    Jd, Jr, relerrs, relerrs_r = J_aux
+
+    s = '\n'
+    s += 'Jd=' + "{:<10.2e}".format(Jd)
+    s += ', Jr=' + "{:<10.2e}".format(Jr)
+    s += '\nRelative errors forward:\n'
     for ii in range(len(relerrs)):
         s += "{:<10.2e}".format(relerrs[ii])
     s += '\nRelative errors reverse:\n'
@@ -106,5 +121,7 @@ def J_aux_callback(J_aux):
         s += "{:<10.2e}".format(relerrs_r[ii])
     s += '\n'
     print(s)
+
+
 
 

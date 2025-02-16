@@ -5,6 +5,7 @@ import typing as typ
 import functools as ft
 
 import nalger_helper_functions.tree_linalg as tla
+from nalger_helper_functions.rsvd import rsvd_double_pass
 
 # jax.config.update("jax_enable_x64", True) # enable double precision
 
@@ -269,7 +270,10 @@ def retract_tangent_vector(
     # U, ss, Vt = jnp.linalg.svd(RX @ RYT.T, full_matrices=False)
     QX, RX = np.linalg.qr(bigX, mode='reduced')
     QYT, RYT = np.linalg.qr(bigY.T, mode='reduced')
-    U, ss, Vt = np.linalg.svd(RX @ RYT.T, full_matrices=False)
+    # U, ss, Vt = np.linalg.svd(RX @ RYT.T, full_matrices=False)
+    M = RX @ RYT.T
+    U, ss, Vt = rsvd_double_pass(M.shape, lambda X: M @ X, lambda X: X @ M, np.minimum(*M.shape), 0) # somehow makes it more stable
+
     Q = QX @ U[:,:rank]
     Y2 = (ss[:rank].reshape(-1,1) * Vt[:rank,:]) @ (QYT.T)
     retracted_vector = (jnp.array(Q), jnp.array(Y2))
