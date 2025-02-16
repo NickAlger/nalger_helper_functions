@@ -46,7 +46,7 @@ def default_loss(y: Outputs, y_true: Outputs) -> typ.Tuple[Scalar, LossAux]:
     return J, all_relative_squared_errors
 
 def default_loss_vjp(y: Outputs, y_true: Outputs, dJ: Scalar) -> OutputsCoTangent:
-    return tla.tree_scale(y - y_true, dJ)
+    return tla.tree_scale(tla.tree_sub(y, y_true), dJ)
 
 
 def default_loss_gnhvp(y: Outputs, dy: OutputsTangent) -> OutputsCoTangent:

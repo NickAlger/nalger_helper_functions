@@ -53,10 +53,12 @@ print('err_forward_map_r=', err_forward_map_r)
 
 #
 
-J, (rsq, rsq_r) = misfit(base, inputs, true_outputs)
+J, (Jd, Jr, state, outputs, (rsq, rsq_r)) = objective(base, inputs, true_outputs)
 
-rsq_true = np.linalg.norm(Y2 - Ytrue, axis=0)**2
-rsq_true_r = np.linalg.norm(Y2_r - Ytrue_r, axis=1)**2
+#
+
+rsq_true = np.linalg.norm(Y2 - Ytrue, axis=0)**2 / np.linalg.norm(Ytrue, axis=0)**2
+rsq_true_r = np.linalg.norm(Y2_r - Ytrue_r, axis=1)**2 / np.linalg.norm(Ytrue_r, axis=1)**2
 Jtrue = 0.5 * np.linalg.norm(Y2 - Ytrue)**2 + 0.5 * np.linalg.norm(Y2_r - Ytrue_r)**2
 
 err_rsq_objective = np.linalg.norm(rsq - rsq_true)
@@ -72,7 +74,7 @@ dX = np.random.randn(N, r)
 dY = np.random.randn(r, M)
 perturbation = (dX, dY)
 
-df = forward_map_jvp(base, perturbation, inputs)
+df = forward_map_jvp(base, inputs, perturbation)
 
 s = 1e-6
 f = forward_map(base, inputs)
@@ -99,7 +101,7 @@ Z = np.random.randn(*Ytrue.shape)
 Z_r = np.random.randn(*Ytrue_r.shape)
 ZZ = (Z, Z_r)
 
-Jp = forward_map_jvp(left_orthogonal_base, standard_perturbation, inputs)
+Jp = forward_map_jvp(left_orthogonal_base, inputs, standard_perturbation)
 JtZ = forward_map_vjp(left_orthogonal_base, inputs, ZZ)
 
 t1 = tla.tree_dot(Jp, ZZ) # np.sum(Jp[0] * ZZ[0]) + np.sum(Jp[1] * ZZ[1])
@@ -110,41 +112,49 @@ print('err_forward_map_vjp=', err_forward_map_vjp)
 
 #
 
-J = tangent_space_misfit(
-    left_orthogonal_base, standard_perturbation, inputs, true_outputs
-)
-
-big_base = attached_tangent_vector_as_low_rank(left_orthogonal_base, standard_perturbation)
-J_true, _ = misfit(big_base, inputs, true_outputs)
-
-err_tangent_space_misfit = np.abs(J - J_true) / np.abs(J_true)
-print('err_tangent_space_misfit=', err_tangent_space_misfit)
+# J = tangent_space_misfit(
+#     left_orthogonal_base, standard_perturbation, inputs, true_outputs
+# )
+#
+# big_base = attached_tangent_vector_as_low_rank(left_orthogonal_base, standard_perturbation)
+# J_true, _ = misfit(big_base, inputs, true_outputs)
+#
+# err_tangent_space_misfit = np.abs(J - J_true) / np.abs(J_true)
+# print('err_tangent_space_misfit=', err_tangent_space_misfit)
 
 #
 
 ML = np.random.randn(N,N)
 MR = np.random.randn(M,M)
 
-apply_ML = lambda X: ML @ X
-apply_MLT = lambda X: ML.T @ X
-apply_MR = lambda Y: Y @ MR
-apply_MRT = lambda Y: Y @ MR.T
+def apply_R(
+        base,
+):
+    X, Y = base
+    return ML @ X, Y @ MR
 
-R0 = regularization(base, apply_ML, apply_MR)
-gR0 = regularization_gradient(base, apply_ML, apply_MLT, apply_MR, apply_MRT)
+def apply_RT(
+        base,
+):
+    X, Y = base
+    return ML.T @ X, Y @ MR.T
+
+
+R0 = regularization(base, apply_R)
+gR0 = regularization_gradient(base, apply_R, apply_RT)
 
 dX = np.random.randn(N, r)
 dY = np.random.randn(r, M)
 perturbation = (dX, dY)
 
-dG = regularization_hessian_matvec(base, perturbation, apply_ML, apply_MLT, apply_MR, apply_MRT)
+dG = regularization_hessian_matvec(base, perturbation, apply_R, apply_RT)
 
 dR = tla.tree_dot(gR0, perturbation)
 
 s = 1e-7
 base1 = tla.tree_add(base, tla.tree_scale(perturbation, s))
-R1 = regularization(base1, apply_ML, apply_MR)
-gR1 = regularization_gradient(base1, apply_ML, apply_MLT, apply_MR, apply_MRT)
+R1 = regularization(base1, apply_R)
+gR1 = regularization_gradient(base1, apply_R, apply_RT)
 
 dR_diff = (R1 - R0) / s
 err_regularization_gradient = np.abs(dR_diff - dR) / np.abs(dR_diff)
@@ -156,6 +166,81 @@ print('s=', s, ', err_regularization_hessian_matvec=', err_regularization_hessia
 
 #
 
+a_reg = 0.324
+
+J0, J_aux0 = objective(
+    base, inputs, true_outputs,
+    a_reg=a_reg, apply_R=apply_R,
+)
+g0, (gd0, gr0) = gradient(
+        base, inputs, J_aux0, true_outputs,
+        a_reg=a_reg, apply_R=apply_R, apply_RT=apply_RT,
+)
+
+dJ = tla.tree_dot(g0, perturbation)
+
+s = 1e-7
+base1 = tla.tree_add(base, tla.tree_scale(perturbation, s))
+
+J1, J_aux1 = objective(
+    base1, inputs, true_outputs,
+    a_reg=a_reg, apply_R=apply_R,
+)
+
+dJ_diff = (J1 - J0) / s
+
+err_gradient = np.abs(dJ - dJ_diff) / np.abs(dJ_diff)
+print('s=', s, ', err_gradient=', err_gradient)
+
+# Finite difference check Gauss-Newton Hessian at location with zero residual
+
+J0, J_aux0 = objective(
+    base, inputs, outputs, # <-- true_outputs=outputs here
+    a_reg=a_reg, apply_R=apply_R,
+)
+g0, (gd0, gr0) = gradient(
+        base, inputs, J_aux0, outputs,
+        a_reg=a_reg, apply_R=apply_R, apply_RT=apply_RT,
+)
+dg = gauss_newton_hessian_matvec(
+    perturbation, base, inputs, J_aux0,
+        a_reg=a_reg, apply_R=apply_R, apply_RT=apply_RT,
+)
+
+s = 1e-7
+base1 = tla.tree_add(base, tla.tree_scale(perturbation, s))
+
+J1, J_aux1 = objective(
+    base1, inputs, outputs,
+    a_reg=a_reg, apply_R=apply_R,
+)
+g1, (gd1, gr1) = gradient(
+        base1, inputs, J_aux1, outputs,
+        a_reg=a_reg, apply_R=apply_R, apply_RT=apply_RT,
+)
+dg_diff = tla.tree_scale(tla.tree_sub(g1, g0), 1.0/s)
+
+err_gnhess = tla.tree_norm(tla.tree_sub(dg, dg_diff)) / tla.tree_norm(dg_diff)
+print('s=', s, ', err_gnhess=', err_gnhess)
 
 
 
+
+
+#
+#
+# g1, (gd1, gr1) = gradient(
+#         base, inputs, J_aux1, true_outputs,
+#         a_reg=a_reg, apply_R=apply_R, apply_RT=apply_RT,
+# )
+#
+#
+#
+#
+#
+#
+dg = gauss_newton_hessian_matvec(
+    perturbation, base, inputs, J_aux0,
+        a_reg=0.0, apply_R=lambda u: u, apply_RT=lambda u:u,
+)
+#
