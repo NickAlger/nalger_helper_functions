@@ -2,10 +2,8 @@ import numpy as np
 import jax.numpy as jnp
 import jax
 import typing as typ
-import functools as ft
 
 import nalger_helper_functions.tree_linalg as tla
-import nalger_helper_functions.least_squares_framework as lsf
 
 
 __all__ = [
@@ -23,27 +21,49 @@ __all__ = [
 ]
 
 
-# jax.config.update("jax_enable_x64", True) # enable double precision
+Param = typ.Tuple[
+    jnp.ndarray,  # X, shape=(N,r)
+    jnp.ndarray,  # Y, shape=(r,M)
+]
+ParamTangent = typ.Tuple[
+    jnp.ndarray,  # X, shape=(N,r)
+    jnp.ndarray,  # Y, shape=(r,M)
+]
+ParamCoTangent = typ.Tuple[
+    jnp.ndarray,  # X, shape=(N,r)
+    jnp.ndarray,  # Y, shape=(r,M)
+]
 
+Inputs = typ.Tuple[
+    jnp.ndarray, # Omega, shape=(M,k)
+    jnp.ndarray, # Omega_r, shape=(k_r,N)
+]
 
-# regularization_gauss_newton_hessian_matvec: typ.Callable[[Param, ParamTangent], ParamCoTangent] = default_regularization_gauss_newton_hessian_matvec,
+LossAux = typ.Tuple[
+    jnp.ndarray, # relerrs, shape=(k,)
+    jnp.ndarray, # relerrs_r, shape=(k_r)
 
-######## Low rank matvecs objective function
+]
+Outputs = typ.Tuple[
+    jnp.ndarray,  # Z, shape=(N,k)
+    jnp.ndarray,  # Z_r, shape=(k_r,M)
+]
+OutputsTangent = typ.Tuple[
+    jnp.ndarray,  # Z, shape=(N,k)
+    jnp.ndarray,  # Z_r, shape=(k_r,M)
+]
+OutputsCoTangent = typ.Tuple[
+    jnp.ndarray,  # Z, shape=(N,k)
+    jnp.ndarray,  # Z_r, shape=(k_r,M)
+]
+
+Scalar  = typ.TypeVar('Scalar')
 
 @jax.jit
 def forward_map(
-        base: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        inputs: typ.Tuple[
-            jnp.ndarray, # Omega, shape=(M,k)
-            jnp.ndarray, # Omega_r, shape=(k_r,N)
-        ],
-) -> typ.Tuple[
-    jnp.ndarray,  # Z, shape=(N,k)
-    jnp.ndarray,  # Z_r, shape=(k_r,M)
-]: # outputs
+        base:   Param,
+        inputs: Inputs,
+) -> Outputs:
     X, Y = base
     Omega, Omega_r = inputs
     Z = X @ (Y @ Omega)
@@ -54,29 +74,15 @@ def forward_map(
 
 @jax.jit
 def forward_map_jvp(
-        base: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        inputs: typ.Tuple[
-            jnp.ndarray, # Omega, shape=(M,k)
-            jnp.ndarray, # Omega_r, shape=(k_r,N)
-        ],
-        perturbation: typ.Tuple[
-            jnp.ndarray,  # dX, shape=(N,r)
-            jnp.ndarray,  # dY, shape=(r,M)
-        ],
-) -> typ.Tuple[
-    jnp.ndarray,  # Z, shape=(M,k)
-    jnp.ndarray,  # Z_r, shape=(k_r,N)
-]:
+        base:           Param,
+        inputs:         Inputs,
+        perturbation:   ParamTangent,
+) -> OutputsTangent:
     '''Returns:
     Z, Z_r = lim s->0 forward_map((X + s*dX, Y + s*dY), Omega) - forward_map((X, Y), Omega) / s
     '''
     X, Y = base
     dX, dY = perturbation
-    # dX, dY = tangent_oblique_projection(base, perturbation)
-
     Omega, Omega_r = inputs
     Z = dX @ (Y @ Omega) + X @ (dY @ Omega)
     Z_r = (Omega_r @ dX) @ Y + (Omega_r @ X) @ dY
@@ -85,28 +91,15 @@ def forward_map_jvp(
 
 @jax.jit
 def forward_map_vjp(
-        base: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        inputs: typ.Tuple[
-            jnp.ndarray, # Omega, shape=(M,k)
-            jnp.ndarray, # Omega_r, shape=(k_r,N)
-        ],
-        ZZ: typ.Tuple[
-            jnp.ndarray,  # Z, shape=(N,k)
-            jnp.ndarray,  # Z_r, shape=(k_r,M)
-        ],
-) -> typ.Tuple[
-    jnp.ndarray, # shape=(N,r)
-    jnp.ndarray, # shape=(r,M)
-]:
+        base:   Param,
+        inputs: Inputs,
+        ZZ:     OutputsCoTangent,
+) -> ParamCoTangent:
     '''<forward_map_jvp(x,i,p), z> = <p, forward_map_vjp(x,i,z)>
     < . , .> is dumb frobenius norm
     '''
     X, Y = base
     Z, Z_r = ZZ
-
     Omega, Omega_r = inputs
     dX = jnp.einsum('ix,aj,jx->ia', Z, Y, Omega) + jnp.einsum('xi,aj,xj->ia', Omega_r, Y, Z_r)
     dY = jnp.einsum('ix,ia,jx->aj', Z, X, Omega) + jnp.einsum('xi,ia,xj->aj', Omega_r, X, Z_r)
@@ -115,41 +108,29 @@ def forward_map_vjp(
 
 
 def regularization(
-        base: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        apply_R: typ.Callable[[typ.Tuple[jnp.ndarray, jnp.ndarray]], typ.Tuple[jnp.ndarray, jnp.ndarray]],
+        base: Param,
+        apply_R: typ.Callable[[Param], Scalar],
 ): # 1/2 * ||ML @ X @ Y @ MR||^2
     Xhat, Yhat = apply_R(base)
     return 0.5 * np.sum((Xhat.T @ Xhat) * (Yhat @ Yhat.T))
 
 
 def regularization_gradient(
-        base: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        apply_R: typ.Callable[[typ.Tuple[jnp.ndarray, jnp.ndarray]], typ.Tuple[jnp.ndarray, jnp.ndarray]],
-        apply_RT: typ.Callable[[typ.Tuple[jnp.ndarray, jnp.ndarray]], typ.Tuple[jnp.ndarray, jnp.ndarray]],
-):
+        base: Param,
+        apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
+        apply_RT: typ.Callable[[ParamTangent], ParamCoTangent],
+) -> ParamCoTangent:
     X, Y = base
     Xhat, Yhat = apply_R(base)
     return apply_RT((Xhat @ (Yhat @ Yhat.T), (Xhat.T @ Xhat) @ Yhat))
 
 
 def regularization_hessian_matvec(
-        base: typ.Tuple[
-            jnp.ndarray,  # X, shape=(N,r)
-            jnp.ndarray,  # Y, shape=(r,M)
-        ],
-        perturbation: typ.Tuple[
-            jnp.ndarray,  # dX, shape=(N,r)
-            jnp.ndarray,  # dY, shape=(r,M)
-        ],
-        apply_R: typ.Callable[[typ.Tuple[jnp.ndarray, jnp.ndarray]], typ.Tuple[jnp.ndarray, jnp.ndarray]],
-        apply_RT: typ.Callable[[typ.Tuple[jnp.ndarray, jnp.ndarray]], typ.Tuple[jnp.ndarray, jnp.ndarray]],
-):
+        base: Param,
+        perturbation: ParamTangent,
+        apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
+        apply_RT: typ.Callable[[ParamTangent], ParamCoTangent],
+) -> ParamCoTangent:
     Xhat, Yhat = apply_R(base)
     PXhat, PYhat = apply_R(perturbation)
     PYY = PYhat @ Yhat.T
@@ -159,184 +140,145 @@ def regularization_hessian_matvec(
 
 #
 
-def loss(Y, Y_true):
+@jax.jit
+def loss(
+        Y: Outputs,
+        Y_true: Outputs
+) -> typ.Tuple[
+    Scalar,
+    LossAux,
+]:
     y, y_r = Y
     yt, yt_r = Y_true
-    rsq_num = np.linalg.norm(y - yt, axis=0) ** 2
-    rsq_den = np.linalg.norm(yt, axis=0) ** 2
-    rsq_num_r = np.linalg.norm(y_r - yt_r, axis=1) ** 2
-    rsq_den_r = np.linalg.norm(yt_r, axis=1) ** 2
+    rsq_num = jnp.linalg.norm(y - yt, axis=0) ** 2
+    rsq_den = jnp.linalg.norm(yt, axis=0) ** 2
+    rsq_num_r = jnp.linalg.norm(y_r - yt_r, axis=1) ** 2
+    rsq_den_r = jnp.linalg.norm(yt_r, axis=1) ** 2
     relerrs = rsq_num / rsq_den
     relerrs_r = rsq_num_r / rsq_den_r
 
-    J = 0.5 * np.sum(rsq_num) + 0.5 * np.sum(rsq_num_r)
+    J = 0.5 * jnp.sum(rsq_num) + 0.5 * jnp.sum(rsq_num_r)
     return J, (relerrs, relerrs_r)
 
 
+@jax.jit
+def loss_grad(y: Outputs, y_true: Outputs) -> OutputsCoTangent:
+    return tla.tree_sub(y, y_true)
+
+
+@jax.jit
+def loss_gnhvp(dy: OutputsTangent) -> OutputsCoTangent:
+    return dy
+
+
+@jax.jit
+def misfit(
+        m:              Param,
+        x:              Inputs,
+        y_true:         Outputs, # true observations
+) -> typ.Tuple[
+    Scalar, # misfit Jd
+    typ.Tuple[
+        Outputs,  # predicted outputs y based on the model m
+        LossAux,
+    ]
+]:
+    y  = forward_map(m, x)
+    J, J_aux = loss(y, y_true)
+    return J, (y, J_aux)
+
+
+@jax.jit
+def misfit_gradient(
+        m:      Param,
+        x:      Inputs,
+        y:      Outputs,
+        y_true: Outputs,
+) -> ParamCoTangent: # gradient g
+    z: OutputsCoTangent = loss_grad(y, y_true)
+    g, fvjp_aux = forward_map_vjp(m, x,  z)
+    return g, fvjp_aux
+
+
+@jax.jit
+def misfit_gauss_newton_hessian_matvec(
+        dm: ParamTangent,
+        m:  Param,
+        x:  Inputs,
+) -> ParamCoTangent: # H @ dm, Gauss-Newton Hessian vector product
+    dy = forward_map_jvp(m, x, dm)
+    dy2 = loss_gnhvp(dy)
+    Hdm = forward_map_vjp(m, x, dy2)
+    return Hdm
+
+
 def objective(
-        base, inputs, true_outputs,
-        a_reg=0.0, apply_R=lambda u: u,
-):
-    J, (Jd, Jr, _, state, outputs, Jd_aux) = lsf.objective(
-        base, inputs, true_outputs,
-        lambda b, i: (forward_map(b, i), None),
-        a_reg,
-        observe=lambda u: u,
-        regularization_function=lambda b: regularization(b, apply_R),
-        loss=loss,
-    )
-    return J, (Jd, Jr, state, outputs, Jd_aux)
+        m:      Param,
+        x:      Inputs,
+        y_true: Outputs,
+        a_reg: Scalar,  # regularization parameter
+        apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
+) -> typ.Tuple[
+    Scalar, # J, objective
+    typ.Tuple[
+        Scalar, # Jd, misfit component
+        Scalar, # Jr, regularization component
+        Outputs, # outputs y
+        LossAux,
+    ]
+]:
+    Jd, (y, Jd_aux) = misfit(m, x, y_true)
+    Jr0 = regularization(m, apply_R)
+    Jr = tla.tree_scale(Jr0, a_reg)
+    J = tla.tree_add(Jd, Jr)
+    return J, (Jd, Jr, y, Jd_aux)
 
 
 def gradient(
-        base, inputs, J_aux, true_outputs,
-        a_reg=0.0, apply_R=lambda u: u, apply_RT=lambda u: u,
-):
-    _, _, state, outputs, _ = J_aux
-    g, (gd, gr, _) = lsf.gradient(
-        base, inputs, state, None, outputs, true_outputs, a_reg,
-        lambda b, i, z, f_aux: (forward_map_vjp(b, i, z), None),
-        observe_vjp=lambda u, du: du,
-        regularization_gradient=lambda b: regularization_gradient(b, apply_R, apply_RT)
-    )
+        m: Param,
+        x: Inputs,
+        y:      Outputs,
+        y_true: Outputs,
+        a_reg: Scalar,
+        apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
+        apply_RT: typ.Callable[[ParamTangent], ParamCoTangent],
+) -> typ.Tuple[
+    ParamCoTangent, # gradient g
+    typ.Tuple[
+        ParamCoTangent, # gd, misfit component
+        ParamCoTangent, # gr, # regularization component
+    ]
+]:
+    gd = misfit_gradient(m, x, y, y_true)
+    gr0 = regularization_gradient(m, apply_R, apply_RT)
+    gr = tla.tree_scale(gr0, a_reg)
+    g = tla.tree_add(gd, gr)
     return g, (gd, gr)
 
 
 def gauss_newton_hessian_matvec(
-    perturbation, base, inputs, J_aux,
-        a_reg=0.0, apply_R=lambda u: u, apply_RT=lambda u:u,
-):
-    _, _, state, outputs, _ = J_aux
-    H_dm, (Hd_dm, Hr_dm, fjvp_aux, fvjp_aux) = lsf.gauss_newton_hessian_matvec(
-        perturbation, base, inputs, state, None, outputs,
-        lambda b, i, p, f_aux: (forward_map_jvp(b, i, p), None),
-        lambda b, i, z, f_aux: (forward_map_vjp(b, i, z), None),
-        a_reg,
-        observe_jvp=lambda u, du: du,
-        observe_vjp=lambda u, du: du,
-        regularization_gnhvp=lambda b, p: regularization_hessian_matvec(b, p, apply_R, apply_RT,),
-    )
-    return H_dm
+        dm: ParamTangent,
+        m: Param,
+        x: Inputs,
+        a_reg: Scalar,
+        apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
+        apply_RT: typ.Callable[[ParamTangent], ParamCoTangent],
+) -> typ.Tuple[
+    ParamCoTangent, # H @ dm, Gauss-Newton Hessian matvec
+    typ.Tuple[
+        ParamCoTangent, # Hd @ dm, misfit component
+        ParamCoTangent, # Hr @ dm, misfit component
+    ]
+]:
+    Hd_dm = misfit_gauss_newton_hessian_matvec(dm, m, x)
+    Hr_dm0 = regularization_hessian_matvec(m, dm, apply_R, apply_RT)
+    Hr_dm = tla.tree_scale(Hr_dm0, a_reg)
+    H_dm = tla.tree_add(Hd_dm, Hr_dm)
+    return H_dm, (Hd_dm, Hr_dm)
 
-#
-# def objective(
-#         left_orthogonal_base: typ.Tuple[
-#             jnp.ndarray,  # X, shape=(N,r)
-#             jnp.ndarray,  # Y, shape=(r,M)
-#         ],
-#         inputs: typ.Tuple[
-#             jnp.ndarray,  # Omega, shape=(M,k)
-#             jnp.ndarray,  # Omega_r, shape=(k_r,N)
-#         ],
-#         true_outputs: typ.Tuple[
-#             jnp.ndarray,  # Ztrue, shape=(N',k)
-#             jnp.ndarray,  # Ztrue_r, shape=(k_r,M')
-#         ],
-#         left_observation_operator:              typ.Callable[[jnp.ndarray], jnp.ndarray],  # (N,   k)  -> (N',  k)
-#         right_observation_operator:             typ.Callable[[jnp.ndarray], jnp.ndarray],  # (k_r, M)  -> (k_r, M')
-#         a_reg,
-#         apply_ML: typ.Callable[[jnp.ndarray], jnp.ndarray],  # X -> ML @ X
-#         apply_MR: typ.Callable[[jnp.ndarray], jnp.ndarray],  # Y -> Y @ MR
-# ):
-#     Jd, (residual, residual_norms_squared) = misfit(
-#         left_orthogonal_base, inputs, true_outputs, left_observation_operator, right_observation_operator
-#     )
-#     Jr0 = regularization(left_orthogonal_base, apply_ML, apply_MR)
-#     Jr = a_reg * Jr0
-#     J = Jd + Jr
-#     return J, (Jd, Jr, residual, residual_norms_squared)
-#
-#
-# def gradient(
-#         left_orthogonal_base: typ.Tuple[
-#             jnp.ndarray,  # X, shape=(N,r)
-#             jnp.ndarray,  # Y, shape=(r,M)
-#         ],
-#         inputs: typ.Tuple[
-#             jnp.ndarray,  # Omega, shape=(M,k)
-#             jnp.ndarray,  # Omega_r, shape=(k_r,N)
-#         ],
-#         residual: typ.Tuple[
-#             jnp.ndarray,  # forward_residual. shape=(N',k)
-#             jnp.ndarray,  # reverse_residual. shape=(k_r, M')
-#         ],
-#         left_observation_operator_transpose: typ.Callable[[jnp.ndarray], jnp.ndarray],  # (N',  k)  -> (N,   k)
-#         right_observation_operator_transpose: typ.Callable[[jnp.ndarray], jnp.ndarray],  # (k_r, M') -> (k_r, M)
-#         a_reg,
-#         apply_ML: typ.Callable[[jnp.ndarray], jnp.ndarray],  # X -> ML @ X
-#         apply_MLT: typ.Callable[[jnp.ndarray], jnp.ndarray],
-#         apply_MR: typ.Callable[[jnp.ndarray], jnp.ndarray],  # Y -> Y @ MR
-#         apply_MRT: typ.Callable[[jnp.ndarray], jnp.ndarray],
-# ):
-#     gd = misfit_gradient(
-#         left_orthogonal_base, inputs, residual,
-#         left_observation_operator_transpose, right_observation_operator_transpose
-#     )
-#     gr0 = regularization_gradient(left_orthogonal_base, apply_ML, apply_MLT, apply_MR, apply_MRT)
-#     gr = tla.tree_scale(gr0, a_reg)
-#     g = tla.tree_add(gd, gr)
-#     return g, (gd, gr)
-#
-#
-# def gn_hessian_vector_product(
-#         left_orthogonal_base: typ.Tuple[
-#             jnp.ndarray,  # X, shape=(N,r)
-#             jnp.ndarray,  # Y, shape=(r,M)
-#         ],
-#         perturbation: typ.Tuple[
-#             jnp.ndarray,  # dX, shape=(N,r)
-#             jnp.ndarray,  # dY, shape=(r,M)
-#         ],
-#         inputs: typ.Tuple[
-#             jnp.ndarray,  # Omega, shape=(M,k)
-#             jnp.ndarray,  # Omega_r, shape=(k_r,N)
-#         ],
-#         left_observation_operator: typ.Callable[[jnp.ndarray], jnp.ndarray],  # (N,   k)  -> (N',  k)
-#         right_observation_operator: typ.Callable[[jnp.ndarray], jnp.ndarray],  # (k_r, M)  -> (k_r, M')
-#         left_observation_operator_transpose: typ.Callable[[jnp.ndarray], jnp.ndarray],  # (N',  k)  -> (N,   k)
-#         right_observation_operator_transpose: typ.Callable[[jnp.ndarray], jnp.ndarray],  # (k_r, M') -> (k_r, M)
-#         a_reg,
-#         apply_ML: typ.Callable[[jnp.ndarray], jnp.ndarray],  # X -> ML @ X
-#         apply_MLT: typ.Callable[[jnp.ndarray], jnp.ndarray],
-#         apply_MR: typ.Callable[[jnp.ndarray], jnp.ndarray],  # Y -> Y @ MR
-#         apply_MRT: typ.Callable[[jnp.ndarray], jnp.ndarray],
-# ):
-#     Hd_p = misfit_gn_hessian_matvec(left_orthogonal_base, perturbation, inputs)
-#     Hr_p0 = regularization_hessian_matvec(left_orthogonal_base, perturbation, apply_ML, apply_MLT, apply_MR, apply_MRT)
-#     Hr_p = tla.tree_scale(Hr_p0, a_reg)
-#     Hp = tla.tree_add(Hd_p, Hr_p)
-#     return Hp
 
 
 @jax.jit
 def spd_sqrtm(A):
     ee, P = jnp.linalg.eigh(A)
     return P @ (jnp.sqrt(jnp.abs(ee)).reshape((-1,1)) * P.T)
-
-
-# @jax.jit
-# def tangent_space_misfit(
-#         left_orthogonal_base: typ.Tuple[
-#             jnp.ndarray,  # X, shape=(N,r)
-#             jnp.ndarray,  # Y, shape=(r,M)
-#         ],
-#         perturbation: typ.Tuple[
-#             jnp.ndarray,  # dX, shape=(N,r)
-#             jnp.ndarray,  # dY, shape=(r,M)
-#         ],
-#         inputs: typ.Tuple[
-#             jnp.ndarray,  # Omega, shape=(M,k)
-#             jnp.ndarray,  # Omega_r, shape=(k_r,N)
-#         ],
-#         true_outputs: typ.Tuple[
-#             jnp.ndarray,  # Ztrue, shape=(N,k)
-#             jnp.ndarray,  # Ztrue_r, shape=(k_r,M)
-#         ],
-# ):
-#     J0, _ = misfit(left_orthogonal_base, inputs, true_outputs)
-#     p = perturbation
-#     g, _ = misfit_gradient_func(left_orthogonal_base, inputs, true_outputs)
-#     gp = tla.tree_dot(g, p)
-#     Hp = misfit_gn_hessian_matvec(left_orthogonal_base, p, inputs)
-#     pHp = tla.tree_dot(p, Hp)
-#     return 0.5 * pHp + gp + J0

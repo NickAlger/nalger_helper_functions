@@ -27,26 +27,26 @@ y_true = np.random.randn(3)
 a_reg = np.random.rand()
 
 J_func = lambda m: objective(m, x, y_true, forward_map, a_reg)
-g_func = lambda m, u, f_aux, y: gradient(m, x, u, f_aux, y, y_true, a_reg, forward_map_vjp)
-Hgn_matvec_func = lambda dm, m, u, f_aux, y: gauss_newton_hessian_matvec(dm, m, x, u, f_aux, y, forward_map_jvp, forward_map_vjp, a_reg)
+g_func = lambda m, f_aux, y: gradient(m, x, f_aux, y, y_true, a_reg, forward_map_vjp)
+Hgn_matvec_func = lambda dm, m, f_aux, y: gauss_newton_hessian_matvec(dm, m, x, f_aux, y, forward_map_jvp, forward_map_vjp, a_reg)
 
 
 m0 = np.random.randn(2)
-J0, (Jd0, Jr0, f_aux0, u0, y0, Jd_aux0) = J_func(m0)
-g0, (gd0, gr0, fvjp_aux0) = g_func(m0, u0, f_aux0, y0)
+J0, (Jd0, Jr0, f_aux0, y0, Jd_aux0) = J_func(m0)
+g0, (gd0, gr0, fvjp_aux0) = g_func(m0, f_aux0, y0)
 
 dm = np.random.randn(2)
 dJ = np.dot(g0, dm)
 dJd = np.dot(gd0, dm)
 dJr = np.dot(gr0, dm)
-H_dm0, (Hd_dm0, Hr_dm0, fjvp_aux0, fvjp_aux0) = Hgn_matvec_func(dm, m0, u0, f_aux0, y0)
+H_dm0, (Hd_dm0, Hr_dm0, fjvp_aux0, fvjp_aux0) = Hgn_matvec_func(dm, m0, f_aux0, y0)
 dg = H_dm0
 
 s = 1e-7
 
 m1 = m0 + s * dm
-J1, (Jd1, Jr1, f_aux1, u1, y1, Jd_aux1) = J_func(m1)
-g1, (gd1, gr1, fvjp_aux1) = g_func(m1, u1, f_aux1, y1)
+J1, (Jd1, Jr1, f_aux1, y1, Jd_aux1) = J_func(m1)
+g1, (gd1, gr1, fvjp_aux1) = g_func(m1, f_aux1, y1)
 
 dJ_diff = (J1 - J0) / s
 dJd_diff = (Jd1 - Jd0) / s
@@ -63,20 +63,20 @@ print('s=', s, ', err_gr=', err_gr)
 y_true = forward_map(m0, x)[0]
 
 J_func = lambda m: objective(m, x, y_true, forward_map, a_reg)
-g_func = lambda m, u, f_aux, y: gradient(m, x, u, f_aux, y, y_true, a_reg, forward_map_vjp)
-Hgn_matvec_func = lambda dm, m, u, f_aux, y: gauss_newton_hessian_matvec(dm, m, x, u, f_aux, y, forward_map_jvp, forward_map_vjp, a_reg)
+g_func = lambda m, f_aux, y: gradient(m, x, f_aux, y, y_true, a_reg, forward_map_vjp)
+Hgn_matvec_func = lambda dm, m, f_aux, y: gauss_newton_hessian_matvec(dm, m, x, f_aux, y, forward_map_jvp, forward_map_vjp, a_reg)
 
-J0, (Jd0, Jr0, f_aux0, u0, y0, Jd_aux0) = J_func(m0)
-g0, (gd0, gr0, fvjp_aux0) = g_func(m0, u0, f_aux0, y0)
+J0, (Jd0, Jr0, f_aux0, y0, Jd_aux0) = J_func(m0)
+g0, (gd0, gr0, fvjp_aux0) = g_func(m0, f_aux0, y0)
 
 dm = np.random.randn(2)
-dg, (dgd, dgr, fjvp_aux0, fvjp_aux0) = Hgn_matvec_func(dm, m0, u0, f_aux0, y0)
+dg, (dgd, dgr, fjvp_aux0, fvjp_aux0) = Hgn_matvec_func(dm, m0, f_aux0, y0)
 
 s = 1e-7
 
 m1 = m0 + s * dm
-J1, (Jd1, Jr1, f_aux1, u1, y1, Jd_aux1) = J_func(m1)
-g1, (gd1, gr1, fvjp_aux1) = g_func(m1, u1, f_aux1, y1)
+J1, (Jd1, Jr1, f_aux1, y1, Jd_aux1) = J_func(m1)
+g1, (gd1, gr1, fvjp_aux1) = g_func(m1, f_aux1, y1)
 
 dg_diff = (g1 - g0) / s
 dgd_diff = (gd1 - gd0) / s

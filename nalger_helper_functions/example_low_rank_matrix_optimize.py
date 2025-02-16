@@ -40,10 +40,10 @@ x0 = svd_initial_guess(true_outputs, rank)
 x0 = left_orthogonalize_low_rank(x0)
 
 x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
-    inputs, true_outputs, x0, a_reg=0.0,
+    inputs, true_outputs, x0, a_reg=1e-2,
     newton_max_iter=50, newton_rtol=1e-5,
-    # cg_rtol_power=0.5,
-    cg_rtol_power=1.0,
+    cg_rtol_power=0.5,
+    # cg_rtol_power=1.0,
 )
 
 A2 = low_rank_to_full(x)
@@ -103,19 +103,17 @@ x0 = svd_initial_guess(true_outputs, rank)
 # x0 = (ML @ np.random.randn(N,rank), np.random.randn(rank, M) @ MR)
 x0 = left_orthogonalize_low_rank(x0)
 
-apply_ML = lambda X: ML @ X
-apply_MLT = lambda X: ML.T @ X
-apply_MR = lambda Y: Y @ MR
-apply_MRT = lambda Y: Y @ MR.T
+apply_R = lambda b: (ML @ b[0], b[1] @ MR)
+apply_RT = lambda b: (ML.T @ b[0], b[1] @ MR.T)
 
 
 x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
     inputs, true_outputs, x0,
-    a_reg=1e-2,
-    apply_ML=apply_ML, apply_MLT=apply_MLT, apply_MR=apply_MR, apply_MRT=apply_MRT,
+    a_reg=1e-3,
+    apply_R=apply_R, apply_RT=apply_RT,
     newton_max_iter=50, newton_rtol=1e-5,
-    # cg_rtol_power=0.5,
-    cg_rtol_power=1.0,
+    cg_rtol_power=0.5,
+    # cg_rtol_power=1.0,
 )
 
 A2 = low_rank_to_full(x)

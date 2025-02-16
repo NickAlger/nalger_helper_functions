@@ -53,7 +53,10 @@ print('err_forward_map_r=', err_forward_map_r)
 
 #
 
-J, (Jd, Jr, state, outputs, (rsq, rsq_r)) = objective(base, inputs, true_outputs)
+a_reg = np.random.rand()
+apply_R = lambda u: u
+
+J, (Jd, Jr, outputs, (rsq, rsq_r)) = objective(base, inputs, true_outputs, a_reg, apply_R)
 
 #
 
@@ -168,13 +171,13 @@ print('s=', s, ', err_regularization_hessian_matvec=', err_regularization_hessia
 
 a_reg = 0.324
 
-J0, J_aux0 = objective(
+J0, (_, _, y0, _) = objective(
     base, inputs, true_outputs,
-    a_reg=a_reg, apply_R=apply_R,
+    a_reg, apply_R,
 )
 g0, (gd0, gr0) = gradient(
-        base, inputs, J_aux0, true_outputs,
-        a_reg=a_reg, apply_R=apply_R, apply_RT=apply_RT,
+        base, inputs, y0, true_outputs,
+        a_reg, apply_R, apply_RT,
 )
 
 dJ = tla.tree_dot(g0, perturbation)
@@ -182,9 +185,9 @@ dJ = tla.tree_dot(g0, perturbation)
 s = 1e-7
 base1 = tla.tree_add(base, tla.tree_scale(perturbation, s))
 
-J1, J_aux1 = objective(
+J1, (_, _, y1, _) = objective(
     base1, inputs, true_outputs,
-    a_reg=a_reg, apply_R=apply_R,
+    a_reg, apply_R,
 )
 
 dJ_diff = (J1 - J0) / s
@@ -194,53 +197,32 @@ print('s=', s, ', err_gradient=', err_gradient)
 
 # Finite difference check Gauss-Newton Hessian at location with zero residual
 
-J0, J_aux0 = objective(
+J0, (_, _, y0, _) = objective(
     base, inputs, outputs, # <-- true_outputs=outputs here
-    a_reg=a_reg, apply_R=apply_R,
+    a_reg, apply_R,
 )
 g0, (gd0, gr0) = gradient(
-        base, inputs, J_aux0, outputs,
-        a_reg=a_reg, apply_R=apply_R, apply_RT=apply_RT,
+        base, inputs, y0, outputs,
+        a_reg, apply_R, apply_RT,
 )
-dg = gauss_newton_hessian_matvec(
-    perturbation, base, inputs, J_aux0,
-        a_reg=a_reg, apply_R=apply_R, apply_RT=apply_RT,
+dg, (_, _) = gauss_newton_hessian_matvec(
+    perturbation, base, inputs,
+    a_reg, apply_R, apply_RT,
 )
 
 s = 1e-7
 base1 = tla.tree_add(base, tla.tree_scale(perturbation, s))
 
-J1, J_aux1 = objective(
+J1, (_, _, y1, _) = objective(
     base1, inputs, outputs,
-    a_reg=a_reg, apply_R=apply_R,
+    a_reg, apply_R,
 )
 g1, (gd1, gr1) = gradient(
-        base1, inputs, J_aux1, outputs,
-        a_reg=a_reg, apply_R=apply_R, apply_RT=apply_RT,
+        base1, inputs, y1, outputs,
+        a_reg, apply_R, apply_RT,
 )
 dg_diff = tla.tree_scale(tla.tree_sub(g1, g0), 1.0/s)
 
 err_gnhess = tla.tree_norm(tla.tree_sub(dg, dg_diff)) / tla.tree_norm(dg_diff)
 print('s=', s, ', err_gnhess=', err_gnhess)
 
-
-
-
-
-#
-#
-# g1, (gd1, gr1) = gradient(
-#         base, inputs, J_aux1, true_outputs,
-#         a_reg=a_reg, apply_R=apply_R, apply_RT=apply_RT,
-# )
-#
-#
-#
-#
-#
-#
-dg = gauss_newton_hessian_matvec(
-    perturbation, base, inputs, J_aux0,
-        a_reg=0.0, apply_R=lambda u: u, apply_RT=lambda u:u,
-)
-#
