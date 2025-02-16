@@ -11,10 +11,12 @@ __all__ = [
     'tree_sub',
     'tree_mult',
     'tree_scale',
+    'tree_div',
     'tree_power',
     'tree_abs',
     'tree_sum_leaves',
     'tree_dot_leaves',
+    'tree_norm_leaves',
     'tree_sum',
     'tree_dot',
     'tree_normsquared',
@@ -88,14 +90,17 @@ tree_add    = lambda U, V:  tree_binary_operation(lambda u, v: u + v, U, V)
 tree_sub    = lambda U, V:  tree_binary_operation(lambda u, v: u - v, U, V)
 tree_mult   = lambda U, V:  tree_binary_operation(lambda u, v: u * v, U, V)
 tree_scale  = lambda U, c:  tree_binary_operation(lambda u, v: c * u, U, U)
+tree_div    = lambda U, V:  tree_binary_operation(lambda u, v: u / v, U, V)
 
 tree_power                  = lambda U, p:  tree_elementwise_operation(lambda u: u**p, U)
 tree_abs                    = lambda U:     tree_elementwise_operation(lambda u: np.abs(u), U)
+tree_sqrt                   = lambda U:     tree_elementwise_operation(lambda u: np.sqrt(u), U)
 tree_elementwise_inverse    = lambda U:     tree_elementwise_operation(lambda u: 1.0 / u, U)
 tree_sum_leaves             = lambda U:     tree_elementwise_operation(lambda u: np.sum(u), U) # sums within leaves only
 
 tree_dot_leaves             = lambda U, V:  tree_binary_operation(lambda u, v: np.sum(u * v), U, V) # sums within leaves only
 tree_normsquared_leaves     = lambda U:     tree_dot_leaves(U, U)
+tree_norm_leaves            = lambda U:     tree_elementwise_operation(lambda u: np.sqrt(u), tree_normsquared_leaves(U))
 
 tree_ones = lambda U: tree_elementwise_operation(lambda u: np.ones(np.array(u).shape), U)
 
