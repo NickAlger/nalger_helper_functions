@@ -17,6 +17,7 @@ __all__ = [
     'svd_initial_guess',
 ]
 
+
 def low_rank_manifold_trust_region_optimize_fixed_rank(
         inputs,
         true_outputs,
@@ -26,7 +27,10 @@ def low_rank_manifold_trust_region_optimize_fixed_rank(
         apply_MLT: typ.Callable[[jnp.ndarray], jnp.ndarray] = None,
         apply_MR: typ.Callable[[jnp.ndarray], jnp.ndarray] = None,  # Y -> Y @ MR
         apply_MRT: typ.Callable[[jnp.ndarray], jnp.ndarray] = None,
-        optimize_for_delta: bool = False,
+        solve_ML: typ.Callable[[jnp.ndarray], jnp.ndarray] = None,  # X -> ML^-1 @ X
+        solve_MLT: typ.Callable[[jnp.ndarray], jnp.ndarray] = None,
+        solve_MR: typ.Callable[[jnp.ndarray], jnp.ndarray] = None,  # Y -> Y @ MR^-1
+        solve_MRT: typ.Callable[[jnp.ndarray], jnp.ndarray] = None,
         **kwargs,
 ):
     apply_ML    = (lambda u: u) if apply_ML     is None else apply_ML
@@ -53,6 +57,7 @@ def low_rank_manifold_trust_region_optimize_fixed_rank(
         J_aux_callback=J_aux_callback,
         **kwargs,
     )
+
 
 def svd_initial_guess(
         true_outputs,

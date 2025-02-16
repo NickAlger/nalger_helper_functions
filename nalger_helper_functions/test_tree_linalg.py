@@ -111,6 +111,29 @@ iT = tree_elementwise_inverse(T)
 err_tree_elementwise_inverse = np.linalg.norm(flatten(iT_true) - flatten(iT))
 print('err_tree_elementwise_inverse=', err_tree_elementwise_inverse)
 
+# tree_sum_leaves()
+
+TSL = tree_sum_leaves(T)
+TSL_true = make_tree(np.sum(t1), np.sum(t2), np.sum(t3), np.sum(t4), np.sum(t5))
+
+print('TSL=', TSL)
+print('TSL_true=', TSL_true)
+
+err_tree_sum_leaves = tree_norm(tree_abs(tree_sub(TSL, TSL_true)))
+print('err_tree_sum_leaves=', err_tree_sum_leaves)
+
+# tree_dot_leaves()
+
+T_dot_S_leaves = tree_dot_leaves(T, S)
+T_dot_S_leaves_true = make_tree(np.sum(t1*s1), np.sum(t2*s2), np.sum(t3*s3), np.sum(t4*s4), np.sum(t5*s5))
+
+print('T_dot_S_leaves=', T_dot_S_leaves)
+print('T_dot_S_leaves_true=', T_dot_S_leaves_true)
+
+err_tree_dot_leaves = tree_norm(tree_abs(tree_sub(T_dot_S_leaves, T_dot_S_leaves_true)))
+print('err_tree_dot_leaves=', err_tree_dot_leaves)
+
+
 # tree_sum()
 
 sum_T = tree_sum(T)
