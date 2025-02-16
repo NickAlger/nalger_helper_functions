@@ -327,10 +327,10 @@ try:
 except ImportError:
     print('low_rank_approximation not loaded')
 
-try:
-    from .low_rank_matrix_manifold import *
-except ImportError:
-    print('low_rank_matrix_manifold not loaded')
+# try:
+#     from .low_rank_matrix_manifold import *
+# except ImportError:
+#     print('low_rank_matrix_manifold not loaded')
 
 try:
     from .cg_steihaug import cg_steihaug
@@ -346,3 +346,8 @@ try:
     from .tree_linalg import *
 except ImportError:
     print('tree_linalg not loaded')
+
+try:
+    from .rsvd import rsvd_double_pass
+except ImportError:
+    print('rsvd_double_pass not loaded')
