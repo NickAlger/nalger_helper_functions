@@ -150,10 +150,10 @@ def loss(
 ]:
     y, y_r = Y
     yt, yt_r = Y_true
-    rsq_num = jnp.linalg.norm(y - yt, axis=0) ** 2
-    rsq_den = jnp.linalg.norm(yt, axis=0) ** 2
-    rsq_num_r = jnp.linalg.norm(y_r - yt_r, axis=1) ** 2
-    rsq_den_r = jnp.linalg.norm(yt_r, axis=1) ** 2
+    rsq_num = jnp.sum((y - yt)**2, axis=0) ** 2
+    rsq_den = jnp.sum(yt**2, axis=0) ** 2
+    rsq_num_r = jnp.sum((y_r - yt_r)**2, axis=1) ** 2
+    rsq_den_r = jnp.sum(yt_r**2, axis=1) ** 2
     relerrs = rsq_num / rsq_den
     relerrs_r = rsq_num_r / rsq_den_r
 
@@ -161,14 +161,14 @@ def loss(
     return J, (relerrs, relerrs_r)
 
 
-@jax.jit
-def loss_grad(y: Outputs, y_true: Outputs) -> OutputsCoTangent:
-    return tla.sub(y, y_true)
+_loss_grad_helper = jax.grad(loss, argnums=0, has_aux=True)
+loss_grad = jax.jit(lambda *args, **kwargs: _loss_grad_helper(*args, **kwargs)[0])
 
 
 @jax.jit
-def loss_gnhvp(dy: OutputsTangent) -> OutputsCoTangent:
-    return dy
+def loss_gnhvp(y: Outputs, y_true: Outputs, dy: OutputsTangent) -> OutputsCoTangent:
+    g_func = lambda z: loss_grad(z, y_true)
+    return jax.jvp(g_func, (y,), (dy,))[1]
 
 
 @jax.jit
@@ -205,9 +205,11 @@ def misfit_gauss_newton_hessian_matvec(
         dm: ParamTangent,
         m:  Param,
         x:  Inputs,
+        y:  Outputs,
+        y_true:  Outputs,
 ) -> ParamCoTangent: # H @ dm, Gauss-Newton Hessian vector product
     dy = forward_map_jvp(m, x, dm)
-    dy2 = loss_gnhvp(dy)
+    dy2 = loss_gnhvp(y, y_true, dy)
     Hdm = forward_map_vjp(m, x, dy2)
     return Hdm
 
@@ -259,6 +261,8 @@ def gauss_newton_hessian_matvec(
         dm: ParamTangent,
         m: Param,
         x: Inputs,
+        y: Outputs,
+        y_true: Outputs,
         a_reg: Scalar,
         apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
 ) -> typ.Tuple[
@@ -268,7 +272,7 @@ def gauss_newton_hessian_matvec(
         ParamCoTangent, # Hr @ dm, misfit component
     ]
 ]:
-    Hd_dm = misfit_gauss_newton_hessian_matvec(dm, m, x)
+    Hd_dm = misfit_gauss_newton_hessian_matvec(dm, m, x, y, y_true)
     Hr_dm0 = regularization_hessian_matvec(m, dm, apply_R)
     Hr_dm = tla.scale(Hr_dm0, a_reg)
     H_dm = tla.add(Hd_dm, Hr_dm)

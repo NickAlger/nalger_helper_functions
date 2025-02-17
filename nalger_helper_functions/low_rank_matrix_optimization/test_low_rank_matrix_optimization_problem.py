@@ -206,7 +206,7 @@ g0, (gd0, gr0) = gradient(
         a_reg, apply_R,
 )
 dg, (_, _) = gauss_newton_hessian_matvec(
-    perturbation, base, inputs,
+    perturbation, base, inputs, y0, outputs,
     a_reg, apply_R,
 )
 
