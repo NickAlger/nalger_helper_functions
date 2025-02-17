@@ -75,15 +75,15 @@ print('svals=', svals)
 
 N = 100
 M = 89
-noise_level = 3e-1
+noise_level = 2e-1
 num_samples = 20
 
 def laplacian(n):
     return np.diag(2*np.ones(n), 0) + np.diag(-np.ones(n-1), -1) + np.diag(-np.ones(n-1), 1)
 
-ML = 3e-2 * np.eye(N) + laplacian(N)
+ML = 1e-2 * np.eye(N) + laplacian(N)
 CL = np.linalg.inv(ML)
-MR = 3e-2 * np.eye(M) + laplacian(M)
+MR = 1e-2 * np.eye(M) + laplacian(M)
 CR = np.linalg.inv(MR)
 
 K = np.minimum(N,M)
@@ -106,7 +106,7 @@ inputs = (Omega, Omega_r)
 true_outputs = (Ytrue, Ytrue_r)
 
 
-rank = 10
+rank = 5
 
 # RL = ML @ ML.T
 # RR = MR @ MR.T
@@ -135,7 +135,7 @@ x0 = left_orthogonalize_low_rank(x0)
 
 x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
     inputs, true_outputs, x0,
-    a_reg=1e0,
+    a_reg=1e-2,
     apply_R=apply_R,
     newton_max_iter=50, newton_rtol=1e-2,
     cg_rtol_power=0.5,

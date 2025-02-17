@@ -119,7 +119,7 @@ def regularization(
     X, Y = base
     Xhat, Yhat = apply_R(base)
     # t1 = 0.5 * np.sum((Xhat @ Y)**2) # <-- slow
-    t1 = 0.5 * np.sum((Xhat.T @ Xhat) * (Y @ Y.T)) # <-- fast
+    t1 = 1e2 * 0.5 * np.sum((Xhat.T @ Xhat) * (Y @ Y.T)) # <-- fast
     t2 = 0.5 * np.sum((X.T @ X) * (Yhat @ Yhat.T))
     t3 = 0.5 * np.sum((Xhat.T @ Xhat) * (Yhat @ Yhat.T))
     # return t1
