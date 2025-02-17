@@ -109,7 +109,7 @@ true_outputs = (Ytrue, Ytrue_r)
 
 rank = 5
 
-a_reg = 1e0
+a_reg = 1e2
 
 RL = a_reg * ML
 RR = a_reg * MR
@@ -148,7 +148,8 @@ x0 = left_orthogonalize_low_rank(x0)
 
 xhat, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
     inputs_hat, true_outputs_hat, x0_hat,
-    apply_P=lambda b: (iRL @ b[0], b[1] @ iRR),
+    apply_R = lambda b: (b[0], b[1] * a_reg),
+    apply_P = lambda b: (iRL @ b[0], b[1] @ iRR),
     newton_max_iter=50, newton_rtol=1e-2,
     cg_rtol_power=0.5,
     # cg_rtol_power=1.0,
