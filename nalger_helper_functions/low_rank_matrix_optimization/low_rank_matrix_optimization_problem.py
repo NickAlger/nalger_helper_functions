@@ -109,6 +109,7 @@ def forward_map_vjp(
 
 def regularization(
         base: Param,
+        a_reg: Scalar,
         apply_R: typ.Callable[[Param], Scalar],
 ):
     '''
@@ -119,12 +120,12 @@ def regularization(
     X, Y = base
     Xhat, Yhat = apply_R(base)
     # t1 = 0.5 * np.sum((Xhat @ Y)**2) # <-- slow
-    t1 = 1e2 * 0.5 * np.sum((Xhat.T @ Xhat) * (Y @ Y.T)) # <-- fast
+    t1 = 0.5 * np.sum((Xhat.T @ Xhat) * (Y @ Y.T)) # <-- fast
     t2 = 0.5 * np.sum((X.T @ X) * (Yhat @ Yhat.T))
     t3 = 0.5 * np.sum((Xhat.T @ Xhat) * (Yhat @ Yhat.T))
     # return t1
-    return t1 + t2
-    # return t1 + t2 + t3
+    # return t1 + t2
+    return a_reg * t1 + a_reg * t2 + a_reg**2 * t3
     # return t3 # double sided
 
 
@@ -133,9 +134,10 @@ regularization_gradient = jax.grad(regularization)
 def regularization_hessian_matvec(
         base: Param,
         perturbation: ParamTangent,
+        a_reg,
         apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
 ) -> ParamCoTangent:
-    g_func = lambda b: regularization_gradient(b, apply_R)
+    g_func = lambda b: regularization_gradient(b, a_reg, apply_R)
     return jax.jvp(g_func, (base,), (perturbation,))[1]
 
 #
@@ -230,8 +232,8 @@ def objective(
     ]
 ]:
     Jd, (y, Jd_aux) = misfit(m, x, y_true)
-    Jr0 = regularization(m, apply_R)
-    Jr = tla.scale(Jr0, a_reg)
+    Jr = regularization(m, a_reg, apply_R)
+    # Jr = tla.scale(Jr0, a_reg)
     J = tla.add(Jd, Jr)
     return J, (Jd, Jr, y, Jd_aux)
 
@@ -251,8 +253,8 @@ def gradient(
     ]
 ]:
     gd = misfit_gradient(m, x, y, y_true)
-    gr0 = regularization_gradient(m, apply_R)
-    gr = tla.scale(gr0, a_reg)
+    gr = regularization_gradient(m, a_reg, apply_R)
+    # gr = tla.scale(gr0, a_reg)
     g = tla.add(gd, gr)
     return g, (gd, gr)
 
@@ -273,8 +275,8 @@ def gauss_newton_hessian_matvec(
     ]
 ]:
     Hd_dm = misfit_gauss_newton_hessian_matvec(dm, m, x, y, y_true)
-    Hr_dm0 = regularization_hessian_matvec(m, dm, apply_R)
-    Hr_dm = tla.scale(Hr_dm0, a_reg)
+    Hr_dm = regularization_hessian_matvec(m, dm, a_reg, apply_R)
+    # Hr_dm = tla.scale(Hr_dm0, a_reg)
     H_dm = tla.add(Hd_dm, Hr_dm)
     return H_dm, (Hd_dm, Hr_dm)
 

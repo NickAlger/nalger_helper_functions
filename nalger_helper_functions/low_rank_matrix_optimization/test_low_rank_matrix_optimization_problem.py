@@ -143,21 +143,21 @@ def apply_RT(
     return ML.T @ X, Y @ MR.T
 
 
-R0 = regularization(base, apply_R)
-gR0 = regularization_gradient(base, apply_R)
+R0 = regularization(base, a_reg, apply_R)
+gR0 = regularization_gradient(base, a_reg, apply_R)
 
 dX = np.random.randn(N, r)
 dY = np.random.randn(r, M)
 perturbation = (dX, dY)
 
-dG = regularization_hessian_matvec(base, perturbation, apply_R)
+dG = regularization_hessian_matvec(base, perturbation, a_reg, apply_R)
 
 dR = tla.dot(gR0, perturbation)
 
 s = 1e-7
 base1 = tla.add(base, tla.scale(perturbation, s))
-R1 = regularization(base1, apply_R)
-gR1 = regularization_gradient(base1, apply_R)
+R1 = regularization(base1, a_reg, apply_R)
+gR1 = regularization_gradient(base1, a_reg, apply_R)
 
 dR_diff = (R1 - R0) / s
 err_regularization_gradient = np.abs(dR_diff - dR) / np.abs(dR_diff)

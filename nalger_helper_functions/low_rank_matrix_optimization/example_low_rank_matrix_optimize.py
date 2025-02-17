@@ -4,6 +4,7 @@ import jax
 import typing as typ
 import functools as ft
 import scipy.linalg as sla
+import matplotlib.pyplot as plt
 
 from nalger_helper_functions.low_rank_matrix_optimization.low_rank_matrix_manifold import *
 from nalger_helper_functions.rsvd import rsvd_double_pass
@@ -76,14 +77,14 @@ print('svals=', svals)
 N = 100
 M = 89
 noise_level = 2e-1
-num_samples = 20
+num_samples = 10
 
 def laplacian(n):
     return np.diag(2*np.ones(n), 0) + np.diag(-np.ones(n-1), -1) + np.diag(-np.ones(n-1), 1)
 
-ML = 1e-2 * np.eye(N) + laplacian(N)
+ML = 3e-2 * np.eye(N) + laplacian(N)
 CL = np.linalg.inv(ML)
-MR = 1e-2 * np.eye(M) + laplacian(M)
+MR = 3e-2 * np.eye(M) + laplacian(M)
 CR = np.linalg.inv(MR)
 
 K = np.minimum(N,M)
@@ -126,18 +127,18 @@ Ax_Y = U[:,:rank].T @ Ytrue_r
 Ax = Ax_X @ Ax_Y
 # Ax_smooth = low_rank_to_full(solve_R((Ax_X, Ax_Y)))
 
-# x0 = (Ax_X, Ax_Y)
+x0 = (Ax_X, Ax_Y)
 # x0 = solve_R((Ax_X, Ax_Y))
-x0 = svd_initial_guess(solve_R(true_outputs), rank) # <-- best
+# x0 = svd_initial_guess(solve_R(true_outputs), rank)
 # x0 = svd_initial_guess(true_outputs, rank)
 # x0 = solve_R((np.random.randn(N,rank), np.random.randn(rank, M)))
 x0 = left_orthogonalize_low_rank(x0)
 
 x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
     inputs, true_outputs, x0,
-    a_reg=1e-2,
+    a_reg=1e0,
     apply_R=apply_R,
-    newton_max_iter=50, newton_rtol=1e-2,
+    newton_max_iter=50, newton_rtol=1e-3,
     cg_rtol_power=0.5,
     # cg_rtol_power=1.0,
 )
@@ -170,8 +171,6 @@ svals = np.linalg.svd(x[1])[1]
 print('svals=', svals)
 
 #
-
-import matplotlib.pyplot as plt
 
 plt.figure(figsize=(12,8))
 plt.subplot(2,3,1)
