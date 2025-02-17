@@ -53,10 +53,10 @@ print('err_forward_map_r=', err_forward_map_r)
 
 #
 
-a_reg = np.random.rand()
 apply_R = lambda u: u
+apply_P = lambda u: u
 
-J, (Jd, Jr, outputs, (rsq, rsq_r)) = objective(base, inputs, true_outputs, a_reg, apply_R)
+J, (Jd, Jr, outputs, (rsq, rsq_r)) = objective(base, inputs, true_outputs, apply_P, apply_R)
 
 #
 
@@ -142,22 +142,39 @@ def apply_RT(
     X, Y = base
     return ML.T @ X, Y @ MR.T
 
+PL = np.random.randn(N,N)
+PR = np.random.randn(M,M)
 
-R0 = regularization(base, a_reg, apply_R)
-gR0 = regularization_gradient(base, a_reg, apply_R)
+def apply_P(
+        Y,
+):
+    y, y_r = Y
+    return PL @ y, y_r @ PR
+
+def apply_PT(
+        Y,
+):
+    y, y_r = Y
+    return PL.T @ y, y_r @ PR.T
+
+
+
+
+R0 = regularization(base, apply_R)
+gR0 = regularization_gradient(base, apply_R)
 
 dX = np.random.randn(N, r)
 dY = np.random.randn(r, M)
 perturbation = (dX, dY)
 
-dG = regularization_hessian_matvec(base, perturbation, a_reg, apply_R)
+dG = regularization_hessian_matvec(base, perturbation, apply_R)
 
 dR = tla.dot(gR0, perturbation)
 
 s = 1e-7
 base1 = tla.add(base, tla.scale(perturbation, s))
-R1 = regularization(base1, a_reg, apply_R)
-gR1 = regularization_gradient(base1, a_reg, apply_R)
+R1 = regularization(base1, apply_R)
+gR1 = regularization_gradient(base1, apply_R)
 
 dR_diff = (R1 - R0) / s
 err_regularization_gradient = np.abs(dR_diff - dR) / np.abs(dR_diff)
@@ -169,15 +186,11 @@ print('s=', s, ', err_regularization_hessian_matvec=', err_regularization_hessia
 
 #
 
-a_reg = 0.324
-
 J0, (_, _, y0, _) = objective(
-    base, inputs, true_outputs,
-    a_reg, apply_R,
+    base, inputs, true_outputs, apply_P, apply_R,
 )
 g0, (gd0, gr0) = gradient(
-        base, inputs, y0, true_outputs,
-        a_reg, apply_R
+        base, inputs, y0, true_outputs, apply_P, apply_R,
 )
 
 dJ = tla.dot(g0, perturbation)
@@ -186,8 +199,7 @@ s = 1e-7
 base1 = tla.add(base, tla.scale(perturbation, s))
 
 J1, (_, _, y1, _) = objective(
-    base1, inputs, true_outputs,
-    a_reg, apply_R,
+    base1, inputs, true_outputs, apply_P, apply_R,
 )
 
 dJ_diff = (J1 - J0) / s
@@ -199,27 +211,23 @@ print('s=', s, ', err_gradient=', err_gradient)
 
 J0, (_, _, y0, _) = objective(
     base, inputs, outputs, # <-- true_outputs=outputs here
-    a_reg, apply_R,
+    apply_P, apply_R,
 )
 g0, (gd0, gr0) = gradient(
-        base, inputs, y0, outputs,
-        a_reg, apply_R,
+        base, inputs, y0, outputs, apply_P, apply_R,
 )
 dg, (_, _) = gauss_newton_hessian_matvec(
-    perturbation, base, inputs, y0, outputs,
-    a_reg, apply_R,
+    perturbation, base, inputs, y0, outputs, apply_P, apply_R,
 )
 
 s = 1e-7
 base1 = tla.add(base, tla.scale(perturbation, s))
 
 J1, (_, _, y1, _) = objective(
-    base1, inputs, outputs,
-    a_reg, apply_R,
+    base1, inputs, outputs, apply_P, apply_R,
 )
 g1, (gd1, gr1) = gradient(
-        base1, inputs, y1, outputs,
-        a_reg, apply_R,
+        base1, inputs, y1, outputs, apply_P, apply_R,
 )
 dg_diff = tla.scale(tla.sub(g1, g0), 1.0 / s)
 

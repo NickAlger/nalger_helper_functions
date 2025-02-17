@@ -109,25 +109,45 @@ def trust_region_optimize(
             trust_region_radius = np.inf
 
         cg_rtol = np.maximum(np.minimum(0.5, np.power(np.sqrt(g_iM_g / g0_iM_g0), cg_rtol_power)), newton_rtol / 3.0)
-        p, (num_cg_iter, termination_reason) = cg_steihaug(
-            hvp_func, g, trust_region_radius, cg_rtol,
-            preconditioner_apply=cg_preconditioner_apply,
-            preconditioner_solve=cg_preconditioner_solve,
-            add_vectors=cg_add_vectors,
-            add_covectors=cg_add_covectors,
-            scale_vector=cg_scale_vector,
-            scale_covector=cg_scale_covector,
-            dual_pairing=cg_dual_pairing,
-            max_iter=cg_max_iter2, display=cg_display, callback=cg_callback,
-        )
-
         if newton_iter == 1:
+            r = cg_scale_covector(g, -1)
+            print('|r|=', tla.norm(r))
+            z = cg_preconditioner_solve(r)
+            print('|z|=', tla.norm(z))
+            Hz = hvp_func(z)
+            print('|Hz|=', tla.norm(Hz))
+            a = cg_dual_pairing(r, z) / cg_dual_pairing(Hz, z)
+            print('a=', a)
+            p = cg_scale_vector(z, a)
+            print('|p|=', tla.norm(p))
             termination_reason = 'first_iteration'
             num_cg_iter = 1
             cg_rtol = jnp.array(1.0)
             M_p = cg_preconditioner_apply(p)
-            trust_region_radius = cg_dual_pairing(M_p, p)
+            print('|M_p|=', tla.norm(M_p))
+            trust_region_radius = np.sqrt(cg_dual_pairing(M_p, p))
+            print('ASDF trust_region_radius=', trust_region_radius)
             min_trust_region_radius = trust_region_min_radius_factor * trust_region_radius
+        else:
+            p, (num_cg_iter, termination_reason) = cg_steihaug(
+                hvp_func, g, trust_region_radius, cg_rtol,
+                preconditioner_apply=cg_preconditioner_apply,
+                preconditioner_solve=cg_preconditioner_solve,
+                add_vectors=cg_add_vectors,
+                add_covectors=cg_add_covectors,
+                scale_vector=cg_scale_vector,
+                scale_covector=cg_scale_covector,
+                dual_pairing=cg_dual_pairing,
+                max_iter=cg_max_iter2, display=cg_display, callback=cg_callback,
+            )
+
+        # if newton_iter == 1:
+        #     termination_reason = 'first_iteration'
+        #     num_cg_iter = 1
+        #     cg_rtol = jnp.array(1.0)
+        #     M_p = cg_preconditioner_apply(p)
+        #     trust_region_radius = cg_dual_pairing(M_p, p)
+        #     min_trust_region_radius = trust_region_min_radius_factor * trust_region_radius
 
         s = '{:<12s}'.format('trust size') + '{:<10s}'.format('CG rtol') + '{:<10s}'.format('#CG') + 'CG termination reason' + '\n'
         s += '{:<12.1E}'.format(trust_region_radius) + '{:<10.1E}'.format(cg_rtol) + '{:<10d}'.format(num_cg_iter) + termination_reason + '\n'
@@ -169,6 +189,7 @@ def trust_region_optimize(
         end_newton_iter = False
         if trust_region_radius <= min_trust_region_radius or np.isnan(trust_region_radius):
             print('Trust region too small: ending Newton iteration.')
+            print('trust_region_radius=', trust_region_radius, ', min_trust_region_radius=', min_trust_region_radius)
             end_newton_iter = True
 
         if newton_iter + 1 >= newton_min_iter:

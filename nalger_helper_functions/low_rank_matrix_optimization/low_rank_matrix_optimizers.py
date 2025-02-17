@@ -22,13 +22,13 @@ def low_rank_manifold_trust_region_optimize_fixed_rank(
         inputs,
         true_outputs,
         x0,
-        a_reg = 0.0,
-        apply_R: typ.Callable[[typ.Tuple[jnp.ndarray, jnp.ndarray]], typ.Tuple[jnp.ndarray, jnp.ndarray]] = lambda u: u,
+        apply_P: typ.Callable[[typ.Tuple[jnp.ndarray, jnp.ndarray]], typ.Tuple[jnp.ndarray, jnp.ndarray]] = lambda u: u,
+        apply_R: typ.Callable[[typ.Tuple[jnp.ndarray, jnp.ndarray]], typ.Tuple[jnp.ndarray, jnp.ndarray]] = lambda u: tla.scale(u, 0.0),
         **kwargs,
 ):
-    _J_func         = lambda x, x_aux:                          lrmop.objective(x, inputs, true_outputs, a_reg, apply_R)
-    _g_func         = lambda x, x_aux,  J_aux:                  projected_gradient(x, J_aux, inputs, true_outputs, a_reg, apply_R)
-    _H_matvec_func  = lambda p, x,      x_aux, J_aux, g_aux:    projected_hessian_matvec(x, p, J_aux, inputs, true_outputs, a_reg, apply_R)
+    _J_func         = lambda x, x_aux:                          lrmop.objective(x, inputs, true_outputs, apply_P, apply_R)
+    _g_func         = lambda x, x_aux,  J_aux:                  projected_gradient(x, J_aux, inputs, true_outputs, apply_P, apply_R)
+    _H_matvec_func  = lambda p, x,      x_aux, J_aux, g_aux:    projected_hessian_matvec(x, p, J_aux, inputs, true_outputs, apply_P, apply_R)
     _apply_M_func   = lambda p, x,      x_aux, J_aux, g_aux:    preconditioner_apply(p, x, x_aux)
     _solve_M_func   = lambda p, x,      x_aux, J_aux, g_aux:    preconditioner_solve(p, x, x_aux)
     _retract_func   = lambda x, p,      x_aux:                  projected_retract(x, p)
@@ -69,10 +69,10 @@ def projected_gradient(
         # arguments used by optimizer:
         x, J_aux,
         # arguments removed by partial application:
-        inputs, true_outputs, a_reg, apply_R,
+        inputs, true_outputs, apply_P, apply_R,
 ):
     _, _, y, _ = J_aux
-    g0, g_aux = lrmop.gradient(x, inputs, y, true_outputs, a_reg, apply_R)
+    g0, g_aux = lrmop.gradient(x, inputs, y, true_outputs, apply_P, apply_R)
     g1 = lrmm.tangent_orthogonal_projection(x, g0)
     return g1, g_aux
 
@@ -81,11 +81,11 @@ def projected_hessian_matvec(
         # arguments used by optimizer
         x, p, J_aux,
         # arguments removed by partial application
-        inputs, true_outputs, a_reg, apply_R,
+        inputs, true_outputs, apply_P, apply_R,
 ):
     Jd, Jr, outputs, Jd_aux = J_aux
     p2 = lrmm.tangent_orthogonal_projection(x, p)
-    Hp0, _ = lrmop.gauss_newton_hessian_matvec(p2, x, inputs, outputs, true_outputs, a_reg, apply_R)
+    Hp0, _ = lrmop.gauss_newton_hessian_matvec(p2, x, inputs, outputs, true_outputs, apply_P, apply_R)
     Hp1 = lrmm.tangent_orthogonal_projection(x, Hp0)
     return Hp1
 

@@ -2,6 +2,7 @@ import numpy as np
 import jax.numpy as jnp
 import jax
 import typing as typ
+import functools as ft
 
 import nalger_helper_functions.tree_linalg as tla
 
@@ -107,9 +108,9 @@ def forward_map_vjp(
     return dX, dY # <-- agrees with vjp autodiff
 
 
+@ft.partial(jax.jit, static_argnames=['apply_R'])
 def regularization(
         base: Param,
-        a_reg: Scalar,
         apply_R: typ.Callable[[Param], Scalar],
 ):
     '''
@@ -120,42 +121,46 @@ def regularization(
     X, Y = base
     Xhat, Yhat = apply_R(base)
     # t1 = 0.5 * np.sum((Xhat @ Y)**2) # <-- slow
-    t1 = 0.5 * np.sum((Xhat.T @ Xhat) * (Y @ Y.T)) # <-- fast
-    t2 = 0.5 * np.sum((X.T @ X) * (Yhat @ Yhat.T))
-    t3 = 0.5 * np.sum((Xhat.T @ Xhat) * (Yhat @ Yhat.T))
+    t1 = 0.5 * jnp.sum((Xhat.T @ Xhat) * (Y @ Y.T)) # <-- fast
+    t2 = 0.5 * jnp.sum((X.T @ X) * (Yhat @ Yhat.T))
+    t3 = 0.5 * jnp.sum((Xhat.T @ Xhat) * (Yhat @ Yhat.T))
     # return t1
     # return t1 + t2
-    return a_reg * t1 + a_reg * t2 + a_reg**2 * t3
+    return t1 + t2 + t3
     # return t3 # double sided
 
 
-regularization_gradient = jax.grad(regularization)
+regularization_gradient = jax.jit(jax.grad(regularization), static_argnames=['apply_R'])
 
+
+@ft.partial(jax.jit, static_argnames=['apply_R'])
 def regularization_hessian_matvec(
         base: Param,
         perturbation: ParamTangent,
-        a_reg,
         apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
 ) -> ParamCoTangent:
-    g_func = lambda b: regularization_gradient(b, a_reg, apply_R)
+    g_func = lambda b: regularization_gradient(b, apply_R)
     return jax.jvp(g_func, (base,), (perturbation,))[1]
 
 #
 
-@jax.jit
 def loss(
-        Y: Outputs,
-        Y_true: Outputs
+        Y:          Outputs,
+        Y_true:     Outputs,
+        apply_P:    typ.Callable[[Outputs], OutputsCoTangent],
 ) -> typ.Tuple[
     Scalar,
     LossAux,
 ]:
-    y, y_r = Y
-    yt, yt_r = Y_true
-    rsq_num = jnp.sum((y - yt)**2, axis=0) ** 2
-    rsq_den = jnp.sum(yt**2, axis=0) ** 2
-    rsq_num_r = jnp.sum((y_r - yt_r)**2, axis=1) ** 2
-    rsq_den_r = jnp.sum(yt_r**2, axis=1) ** 2
+    PY = apply_P(Y)
+    PY_true = apply_P(Y_true)
+    py, py_r = PY
+    pyt, pyt_r = PY_true
+
+    rsq_num = jnp.sum((py - pyt)**2, axis=0) ** 2
+    rsq_den = jnp.sum(pyt**2, axis=0) ** 2
+    rsq_num_r = jnp.sum((py_r - pyt_r)**2, axis=1) ** 2
+    rsq_den_r = jnp.sum(pyt_r**2, axis=1) ** 2
     relerrs = rsq_num / rsq_den
     relerrs_r = rsq_num_r / rsq_den_r
 
@@ -164,20 +169,25 @@ def loss(
 
 
 _loss_grad_helper = jax.grad(loss, argnums=0, has_aux=True)
-loss_grad = jax.jit(lambda *args, **kwargs: _loss_grad_helper(*args, **kwargs)[0])
+loss_grad = lambda *args, **kwargs: _loss_grad_helper(*args, **kwargs)[0]
 
 
-@jax.jit
-def loss_gnhvp(y: Outputs, y_true: Outputs, dy: OutputsTangent) -> OutputsCoTangent:
-    g_func = lambda z: loss_grad(z, y_true)
+def loss_gnhvp(
+        y:          Outputs,
+        y_true:     Outputs,
+        apply_P:    typ.Callable[[Outputs], OutputsCoTangent],
+        dy:         OutputsTangent
+) -> OutputsCoTangent:
+    g_func = lambda z: loss_grad(z, y_true, apply_P)
     return jax.jvp(g_func, (y,), (dy,))[1]
 
 
-@jax.jit
+@ft.partial(jax.jit, static_argnames=['apply_P'])
 def misfit(
         m:              Param,
         x:              Inputs,
         y_true:         Outputs, # true observations
+        apply_P:        typ.Callable[[Outputs], OutputsCoTangent],
 ) -> typ.Tuple[
     Scalar, # misfit Jd
     typ.Tuple[
@@ -186,32 +196,34 @@ def misfit(
     ]
 ]:
     y  = forward_map(m, x)
-    J, J_aux = loss(y, y_true)
+    J, J_aux = loss(y, y_true, apply_P)
     return J, (y, J_aux)
 
 
-@jax.jit
+@ft.partial(jax.jit, static_argnames=['apply_P'])
 def misfit_gradient(
-        m:      Param,
-        x:      Inputs,
-        y:      Outputs,
-        y_true: Outputs,
+        m:          Param,
+        x:          Inputs,
+        y:          Outputs,
+        y_true:     Outputs,
+        apply_P:    typ.Callable[[Outputs], OutputsCoTangent],
 ) -> ParamCoTangent: # gradient g
-    z: OutputsCoTangent = loss_grad(y, y_true)
+    z: OutputsCoTangent = loss_grad(y, y_true, apply_P)
     g, fvjp_aux = forward_map_vjp(m, x,  z)
     return g, fvjp_aux
 
 
-@jax.jit
+@ft.partial(jax.jit, static_argnames=['apply_P'])
 def misfit_gauss_newton_hessian_matvec(
         dm: ParamTangent,
         m:  Param,
         x:  Inputs,
         y:  Outputs,
         y_true:  Outputs,
+        apply_P: typ.Callable[[Outputs], OutputsCoTangent],
 ) -> ParamCoTangent: # H @ dm, Gauss-Newton Hessian vector product
     dy = forward_map_jvp(m, x, dm)
-    dy2 = loss_gnhvp(y, y_true, dy)
+    dy2 = loss_gnhvp(y, y_true, apply_P, dy)
     Hdm = forward_map_vjp(m, x, dy2)
     return Hdm
 
@@ -220,7 +232,7 @@ def objective(
         m:      Param,
         x:      Inputs,
         y_true: Outputs,
-        a_reg: Scalar,  # regularization parameter
+        apply_P: typ.Callable[[Outputs], OutputsCoTangent],
         apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
 ) -> typ.Tuple[
     Scalar, # J, objective
@@ -231,9 +243,8 @@ def objective(
         LossAux,
     ]
 ]:
-    Jd, (y, Jd_aux) = misfit(m, x, y_true)
-    Jr = regularization(m, a_reg, apply_R)
-    # Jr = tla.scale(Jr0, a_reg)
+    Jd, (y, Jd_aux) = misfit(m, x, y_true, apply_P)
+    Jr = regularization(m, apply_R)
     J = tla.add(Jd, Jr)
     return J, (Jd, Jr, y, Jd_aux)
 
@@ -243,7 +254,7 @@ def gradient(
         x: Inputs,
         y:      Outputs,
         y_true: Outputs,
-        a_reg: Scalar,
+        apply_P: typ.Callable[[Outputs], OutputsCoTangent],
         apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
 ) -> typ.Tuple[
     ParamCoTangent, # gradient g
@@ -252,9 +263,8 @@ def gradient(
         ParamCoTangent, # gr, # regularization component
     ]
 ]:
-    gd = misfit_gradient(m, x, y, y_true)
-    gr = regularization_gradient(m, a_reg, apply_R)
-    # gr = tla.scale(gr0, a_reg)
+    gd = misfit_gradient(m, x, y, y_true, apply_P)
+    gr = regularization_gradient(m, apply_R)
     g = tla.add(gd, gr)
     return g, (gd, gr)
 
@@ -265,7 +275,7 @@ def gauss_newton_hessian_matvec(
         x: Inputs,
         y: Outputs,
         y_true: Outputs,
-        a_reg: Scalar,
+        apply_P: typ.Callable[[Outputs], OutputsCoTangent],
         apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
 ) -> typ.Tuple[
     ParamCoTangent, # H @ dm, Gauss-Newton Hessian matvec
@@ -274,9 +284,8 @@ def gauss_newton_hessian_matvec(
         ParamCoTangent, # Hr @ dm, misfit component
     ]
 ]:
-    Hd_dm = misfit_gauss_newton_hessian_matvec(dm, m, x, y, y_true)
-    Hr_dm = regularization_hessian_matvec(m, dm, a_reg, apply_R)
-    # Hr_dm = tla.scale(Hr_dm0, a_reg)
+    Hd_dm = misfit_gauss_newton_hessian_matvec(dm, m, x, y, y_true, apply_P)
+    Hr_dm = regularization_hessian_matvec(m, dm, apply_R)
     H_dm = tla.add(Hd_dm, Hr_dm)
     return H_dm, (Hd_dm, Hr_dm)
 
