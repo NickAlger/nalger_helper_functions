@@ -75,15 +75,15 @@ print('svals=', svals)
 
 N = 100
 M = 89
-noise_level = 2e-1
-num_samples = 10
+noise_level = 3e-1
+num_samples = 20
 
 def laplacian(n):
     return np.diag(2*np.ones(n), 0) + np.diag(-np.ones(n-1), -1) + np.diag(-np.ones(n-1), 1)
 
-ML = 1e-2 * np.eye(N) + laplacian(N)
+ML = 3e-2 * np.eye(N) + laplacian(N)
 CL = np.linalg.inv(ML)
-MR = 1e-2 * np.eye(M) + laplacian(M)
+MR = 3e-2 * np.eye(M) + laplacian(M)
 CR = np.linalg.inv(MR)
 
 K = np.minimum(N,M)
@@ -106,7 +106,7 @@ inputs = (Omega, Omega_r)
 true_outputs = (Ytrue, Ytrue_r)
 
 
-rank = 5
+rank = 10
 
 # RL = ML @ ML.T
 # RR = MR @ MR.T
@@ -119,6 +119,15 @@ iRR = np.linalg.inv(RR)
 apply_R = lambda b: (RL @ b[0], b[1] @ RR)
 solve_R = lambda b: (iRL @ b[0], b[1] @ iRR)
 
+
+U, ss, Vt = np.linalg.svd(0.5 * (Omega_r @ Ytrue + Ytrue_r @ Omega), full_matrices=False)
+Ax_X = Ytrue @ Vt[:rank,:].T @ np.diag(1.0 / ss[:rank])
+Ax_Y = U[:,:rank].T @ Ytrue_r
+Ax = Ax_X @ Ax_Y
+# Ax_smooth = low_rank_to_full(solve_R((Ax_X, Ax_Y)))
+
+# x0 = (Ax_X, Ax_Y)
+# x0 = solve_R((Ax_X, Ax_Y))
 x0 = svd_initial_guess(solve_R(true_outputs), rank) # <-- best
 # x0 = svd_initial_guess(true_outputs, rank)
 # x0 = solve_R((np.random.randn(N,rank), np.random.randn(rank, M)))
@@ -134,25 +143,28 @@ x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
 )
 
 A2 = low_rank_to_full(x)
-computed_err = np.linalg.norm(A2 - A0) / np.linalg.norm(A0)
+optimization_err = np.linalg.norm(A2 - A0) / np.linalg.norm(A0)
 print('rank=', rank)
-print('computed_err=', computed_err)
+print('optimization_err=', optimization_err)
 
 U, ss, Vt = np.linalg.svd(A)
 Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
 
-ideal_err = np.linalg.norm(Ar - A0) / np.linalg.norm(A0)
-print('ideal_err=', ideal_err)
+direct_svd_err = np.linalg.norm(Ar - A0) / np.linalg.norm(A0)
+print('direct_svd_err=', direct_svd_err)
 
 num_samples = true_outputs[0].shape[1]
 Ursvd, ssrsvd, Vtrsvd = rsvd_double_pass(
     (N, M), lambda X: A @ X, lambda Z: Z @ A, rank, num_samples-rank,
 )
 
+single_rsvd_err = np.linalg.norm(Ax - A0) / np.linalg.norm(A0)
+print('single_rsvd_err=', single_rsvd_err)
+
 Arsvd = Ursvd @ np.diag(ssrsvd) @ Vtrsvd
 
-rsvd_err = np.linalg.norm(Arsvd - A0) / np.linalg.norm(A0)
-print('rsvd_err=', rsvd_err)
+double_rsvd_err = np.linalg.norm(Arsvd - A0) / np.linalg.norm(A0)
+print('double_rsvd_err=', double_rsvd_err)
 
 svals = np.linalg.svd(x[1])[1]
 print('svals=', svals)
@@ -161,16 +173,25 @@ print('svals=', svals)
 
 import matplotlib.pyplot as plt
 
-plt.matshow(A0)
-plt.title('A0')
-plt.matshow(A)
-plt.title('A')
-plt.matshow(A2)
-plt.title('A2')
-plt.matshow(Ar)
-plt.title('Ar')
-plt.matshow(Arsvd)
-plt.title('Arsvd')
+plt.figure(figsize=(12,8))
+plt.subplot(2,3,1)
+plt.imshow(A0)
+plt.title('Original A')
+plt.subplot(2,3,2)
+plt.imshow(A)
+plt.title('Noisy A')
+plt.subplot(2,3,3)
+plt.imshow(A2)
+plt.title('Optimization')
+plt.subplot(2,3,4)
+plt.imshow(Ax)
+plt.title('One pass rsvd of noisy A')
+plt.subplot(2,3,5)
+plt.imshow(Ar)
+plt.title('Exact svd of noisy A')
+plt.subplot(2,3,6)
+plt.imshow(Arsvd)
+plt.title('Double pass rsvd of noisy A')
 #
 
 if False:
