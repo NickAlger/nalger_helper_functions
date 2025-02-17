@@ -103,6 +103,7 @@ leaf_normsquared     = lambda U:     leaf_dot(U, U)
 leaf_norm            = lambda U:     tree_elementwise_operation(lambda u: np.sqrt(u), leaf_normsquared(U))
 
 ones = lambda U: tree_elementwise_operation(lambda u: np.ones(np.array(u).shape), U)
+randn = lambda U: tree_elementwise_operation(lambda u: np.random.randn(*np.array(u).shape), U)
 
 sum            = lambda U:     tree_reduce(np.sum, lambda u, v: u + v, U)
 dot            = lambda U, V:  sum(mult(U, V))

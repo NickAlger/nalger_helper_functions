@@ -109,10 +109,14 @@ true_outputs = (Ytrue, Ytrue_r)
 
 rank = 5
 
-a_reg = 1e2
+a_reg = 1e0
 
-RL = a_reg * ML
-RR = a_reg * MR
+RL = a_reg * laplacian(N)
+RR = a_reg * laplacian(M)
+# RL = a_reg * ML
+# RR = a_reg * MR
+# RL = ML
+# RR = MR
 
 iRL = np.linalg.inv(RL)
 iRR = np.linalg.inv(RR)
@@ -133,28 +137,28 @@ x0 = (Ax_X, Ax_Y)
 # x0 = solve_R((np.random.randn(N,rank), np.random.randn(rank, M)))
 x0 = left_orthogonalize_low_rank(x0)
 
-# x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
-#     inputs, true_outputs, x0,
-#     apply_R=apply_R,
-#     newton_max_iter=50, newton_rtol=1e-3,
-#     cg_rtol_power=0.5,
-#     # cg_rtol_power=1.0,
-# )
-
-inputs_hat = (iRR @ Omega, Omega_r @ iRL)
-true_outputs_hat = (RL @ Ytrue, Ytrue_r @ RR)
-x0_hat = (RL @ x0[0], x0[1] @ RR)
-x0 = left_orthogonalize_low_rank(x0)
-
-xhat, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
-    inputs_hat, true_outputs_hat, x0_hat,
-    apply_R = lambda b: (b[0], b[1] * a_reg),
-    apply_P = lambda b: (iRL @ b[0], b[1] @ iRR),
+x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
+    inputs, true_outputs, x0,
+    apply_R=apply_R,
     newton_max_iter=50, newton_rtol=1e-2,
     cg_rtol_power=0.5,
     # cg_rtol_power=1.0,
 )
-x = (iRL @ x[0], x[1] @ iRR)
+
+# inputs_hat = (iRR @ Omega, Omega_r @ iRL)
+# true_outputs_hat = (RL @ Ytrue, Ytrue_r @ RR)
+# x0_hat = (RL @ x0[0], x0[1] @ RR)
+# x0 = left_orthogonalize_low_rank(x0)
+#
+# xhat, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
+#     inputs_hat, true_outputs_hat, x0_hat,
+#     apply_R = lambda b: (b[0], b[1]),
+#     apply_P = lambda b: (iRL @ b[0], b[1] @ iRR),
+#     newton_max_iter=50, newton_rtol=1e-2,
+#     cg_rtol_power=0.5,
+#     # cg_rtol_power=1.0,
+# )
+# x = (iRL @ xhat[0], xhat[1] @ iRR)
 
 A2 = low_rank_to_full(x)
 optimization_err = np.linalg.norm(A2 - A0) / np.linalg.norm(A0)

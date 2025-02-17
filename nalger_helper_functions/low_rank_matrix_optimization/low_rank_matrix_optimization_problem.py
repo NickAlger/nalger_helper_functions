@@ -126,8 +126,8 @@ def regularization(
     t3 = 0.5 * jnp.sum((Xhat.T @ Xhat) * (Yhat @ Yhat.T))
     # return t1
     # return t1 + t2
-    # return t1 + t2 + t3
-    return t3 # double sided
+    return t1 + t2 + t3
+    # return t3 # double sided
 
 
 regularization_gradient = jax.jit(jax.grad(regularization), static_argnames=['apply_R'])

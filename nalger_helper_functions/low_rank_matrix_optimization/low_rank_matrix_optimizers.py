@@ -23,7 +23,7 @@ def low_rank_manifold_trust_region_optimize_fixed_rank(
         true_outputs,
         x0,
         apply_P: typ.Callable[[typ.Tuple[jnp.ndarray, jnp.ndarray]], typ.Tuple[jnp.ndarray, jnp.ndarray]] = lambda u: u,
-        apply_R: typ.Callable[[typ.Tuple[jnp.ndarray, jnp.ndarray]], typ.Tuple[jnp.ndarray, jnp.ndarray]] = lambda u: tla.scale(u, 0.0),
+        apply_R: typ.Callable[[typ.Tuple[jnp.ndarray, jnp.ndarray]], typ.Tuple[jnp.ndarray, jnp.ndarray]] = lambda u: u,
         **kwargs,
 ):
     _J_func         = lambda x, x_aux:                          lrmop.objective(x, inputs, true_outputs, apply_P, apply_R)
