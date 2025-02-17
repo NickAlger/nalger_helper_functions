@@ -231,7 +231,7 @@ def lbfgs(
     def __grad_with_counter(x):
         nonlocal  num_grad_evals, last_grad_x, last_grad_g
         if last_grad_x is not None:
-            if tla.tree_norm(tla.tree_sub(last_grad_x, x)) <= 1e-15 * np.max([tla.tree_norm(x), tla.tree_norm(last_grad_x)]):
+            if tla.norm(tla.sub(last_grad_x, x)) <= 1e-15 * np.max([tla.norm(x), tla.norm(last_grad_x)]):
                 return last_grad_g
 
         last_grad_x = x
@@ -250,14 +250,14 @@ def lbfgs(
     x: VecType  = x0
     f: float    = __cost_with_counter(x)
     g: VecType  = __grad_with_counter(x)
-    gradnorm: float = tla.tree_norm(g)
+    gradnorm: float = tla.norm(g)
 
     cost_history: typ.List[float] = [f]
     gradnorm_history: typ.List[float] = [gradnorm]
 
-    p: VecType = inv_hess.matvec(tla.tree_scale(g, -1.0))
+    p: VecType = inv_hess.matvec(tla.scale(g, -1.0))
     if inv_hess.inv_hess0 is None:
-        old_old_fval = tla.tree_add(f, tla.tree_norm(g) / 2.0)
+        old_old_fval = tla.add(f, tla.norm(g) / 2.0)
     else:
         old_old_fval = None
     line_search_result = _line_search(__cost_with_counter, __grad_with_counter, x, p, g, f, old_old_fval)
@@ -294,10 +294,10 @@ def lbfgs(
         f_old = f
         g_old = g
 
-        x = tla.tree_add(x, tla.tree_scale(p, step_size)) # x + step_size * p
+        x = tla.add(x, tla.scale(p, step_size)) # x + step_size * p
         f = line_search_result[1]
         g = __grad_with_counter(x)
-        gradnorm = tla.tree_norm(g)
+        gradnorm = tla.norm(g)
 
         cost_history.append(f)
         gradnorm_history.append(gradnorm)
@@ -310,8 +310,8 @@ def lbfgs(
             termination_reason: LbfgsTerminationReason = LbfgsTerminationReason.DESCENT_STAGNATED
             break
 
-        inv_hess.add_new_s_y_pair(tla.tree_sub(x, x_old), tla.tree_sub(g, g_old)) # s = x - x_old, y = g - g_old
-        p = inv_hess.matvec(tla.tree_scale(g, -1.0))
+        inv_hess.add_new_s_y_pair(tla.sub(x, x_old), tla.sub(g, g_old)) # s = x - x_old, y = g - g_old
+        p = inv_hess.matvec(tla.scale(g, -1.0))
         line_search_result = _line_search(__cost_with_counter, __grad_with_counter, x, p, g, f, None)
         step_size = line_search_result[0]
 
@@ -389,10 +389,10 @@ class LbfgsInverseHessianApproximation:
             return me.inv_hess0(x)
         else:
             if me.ss:
-                gamma_k = tla.tree_dot(me.ss[0], me.yy[0]) / tla.tree_dot(me.yy[0], me.yy[0]) # <s_(k-1), y_(k-1)> / <y_(k-1), y_(k-1)>
+                gamma_k = tla.dot(me.ss[0], me.yy[0]) / tla.dot(me.yy[0], me.yy[0]) # <s_(k-1), y_(k-1)> / <y_(k-1), y_(k-1)>
             else:
                 gamma_k = 1.0
-            return tla.tree_scale(x, gamma_k) # H0_k = gamma_k*I
+            return tla.scale(x, gamma_k) # H0_k = gamma_k*I
 
     def matvec(me, q: VecType) -> VecType:
         '''Computes
@@ -400,16 +400,16 @@ class LbfgsInverseHessianApproximation:
         via L-BFGS two-loop recursion.
         Algorithm 7.4 on page 178 of Nocedal and Wright.
         '''
-        rhos = [tla.tree_elementwise_inverse(tla.tree_dot(y, s)) for s, y in zip(me.ss, me.yy)] # 1.0 / inner(y, s). equation 7.17 (left) on page 177
+        rhos = [tla.elementwise_inverse(tla.dot(y, s)) for s, y in zip(me.ss, me.yy)] # 1.0 / inner(y, s). equation 7.17 (left) on page 177
         alphas = []
         for s, y, rho in zip(me.ss, me.yy, rhos):
-            alpha = rho * tla.tree_dot(s, q)
-            q = tla.tree_sub(q, tla.tree_scale(y, alpha)) # q = q - alpha*y
+            alpha = rho * tla.dot(s, q)
+            q = tla.sub(q, tla.scale(y, alpha)) # q = q - alpha*y
             alphas.append(alpha)
         r = me.apply_inv_hess0_k(q)
         for s, y, rho, alpha in zip(reversed(me.ss), reversed(me.yy), reversed(rhos), reversed(alphas)):
-            beta = rho * tla.tree_dot(y, r)
-            r = tla.tree_add(r, tla.tree_scale(s, alpha - beta)) # r = r + s * (alpha - beta)
+            beta = rho * tla.dot(y, r)
+            r = tla.add(r, tla.scale(s, alpha - beta)) # r = r + s * (alpha - beta)
         return r
 
 
@@ -458,11 +458,11 @@ class LbfgsInverseHessianApproximation:
 
 def _line_search(cost, grad, x, p, g, f, old_old_fval, **kwargs):
     def cost_1D(s):
-        return cost(tla.tree_add(x, tla.tree_scale(p, s)))
+        return cost(tla.add(x, tla.scale(p, s)))
 
     def grad_1D(s):
-        return tla.tree_dot(p, grad(tla.tree_add(x, tla.tree_scale(p, s))))
+        return tla.dot(p, grad(tla.add(x, tla.scale(p, s))))
 
-    g0 = tla.tree_dot(p, g)
+    g0 = tla.dot(p, g)
     stp, fval, old_fval = ls.scalar_search_wolfe1(cost_1D, grad_1D, f, old_old_fval, g0, **kwargs)
     return stp, fval

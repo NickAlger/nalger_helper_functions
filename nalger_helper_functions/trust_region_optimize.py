@@ -53,12 +53,12 @@ def trust_region_optimize(
 
     preconditioner_apply    = (lambda u, x, x_aux, J_aux, g_aux: u)                    if preconditioner_apply is None else preconditioner_apply
     preconditioner_solve    = (lambda w, x, x_aux, J_aux, g_aux: w)                    if preconditioner_solve is None else preconditioner_solve
-    dual_pairing            = (lambda w, u, x,     x_aux:        tla.tree_dot(w, u))   if dual_pairing         is None else dual_pairing
-    add_vectors             = (lambda u, v, x,     x_aux:        tla.tree_add(u, v))   if add_vectors          is None else add_vectors
-    add_covectors           = (lambda u, v, x,     x_aux:        tla.tree_add(u, v))   if add_covectors        is None else add_covectors
-    scale_vector            = (lambda u, c, x,     x_aux:        tla.tree_scale(u, c)) if scale_vector         is None else scale_vector
-    scale_covector          = (lambda u, c, x,     x_aux:        tla.tree_scale(u, c)) if scale_covector       is None else scale_covector
-    retract                 = (lambda x, u, x_aux:               tla.tree_add(x, u))   if retract              is None else retract
+    dual_pairing            = (lambda w, u, x,     x_aux:        tla.dot(w, u))   if dual_pairing is None else dual_pairing
+    add_vectors             = (lambda u, v, x,     x_aux:        tla.add(u, v))   if add_vectors is None else add_vectors
+    add_covectors           = (lambda u, v, x,     x_aux:        tla.add(u, v))   if add_covectors is None else add_covectors
+    scale_vector            = (lambda u, c, x,     x_aux:        tla.scale(u, c)) if scale_vector is None else scale_vector
+    scale_covector          = (lambda u, c, x,     x_aux:        tla.scale(u, c)) if scale_covector is None else scale_covector
+    retract                 = (lambda x, u, x_aux:               tla.add(x, u))   if retract is None else retract
 
     null_func = lambda x: None
     null_func_if_none = lambda func: null_func if func is None else func

@@ -24,12 +24,11 @@ def low_rank_manifold_trust_region_optimize_fixed_rank(
         x0,
         a_reg = 0.0,
         apply_R: typ.Callable[[typ.Tuple[jnp.ndarray, jnp.ndarray]], typ.Tuple[jnp.ndarray, jnp.ndarray]] = lambda u: u,
-        apply_RT: typ.Callable[[typ.Tuple[jnp.ndarray, jnp.ndarray]], typ.Tuple[jnp.ndarray, jnp.ndarray]] = lambda u: u,
         **kwargs,
 ):
     _J_func         = lambda x, x_aux:                          objective(x, inputs, true_outputs, a_reg, apply_R)
-    _g_func         = lambda x, x_aux,  J_aux:                  projected_gradient(x, J_aux, inputs, true_outputs, a_reg, apply_R, apply_RT)
-    _H_matvec_func  = lambda p, x,      x_aux, J_aux, g_aux:    projected_hessian_matvec(x, p, J_aux, inputs, a_reg, apply_R, apply_RT)
+    _g_func         = lambda x, x_aux,  J_aux:                  projected_gradient(x, J_aux, inputs, true_outputs, a_reg, apply_R)
+    _H_matvec_func  = lambda p, x,      x_aux, J_aux, g_aux:    projected_hessian_matvec(x, p, J_aux, inputs, a_reg, apply_R)
     _apply_M_func   = lambda p, x,      x_aux, J_aux, g_aux:    preconditioner_apply(p, x, x_aux)
     _solve_M_func   = lambda p, x,      x_aux, J_aux, g_aux:    preconditioner_solve(p, x, x_aux)
     _retract_func   = lambda x, p,      x_aux:                  projected_retract(x, p)
@@ -70,10 +69,10 @@ def projected_gradient(
         # arguments used by optimizer:
         x, J_aux,
         # arguments removed by partial application:
-        inputs, true_outputs, a_reg, apply_R, apply_RT,
+        inputs, true_outputs, a_reg, apply_R,
 ):
     _, _, y, _ = J_aux
-    g0, g_aux = gradient(x, inputs, y, true_outputs, a_reg, apply_R, apply_RT)
+    g0, g_aux = gradient(x, inputs, y, true_outputs, a_reg, apply_R)
     g1 = tangent_orthogonal_projection(x, g0)
     return g1, g_aux
 
@@ -82,10 +81,10 @@ def projected_hessian_matvec(
         # arguments used by optimizer
         x, p, J_aux,
         # arguments removed by partial application
-        inputs, a_reg, apply_R, apply_RT,
+        inputs, a_reg, apply_R,
 ):
     p2 = tangent_orthogonal_projection(x, p)
-    Hp0, _ = gauss_newton_hessian_matvec(p2, x, inputs, a_reg, apply_R, apply_RT)
+    Hp0, _ = gauss_newton_hessian_matvec(p2, x, inputs, a_reg, apply_R)
     Hp1 = tangent_orthogonal_projection(x, Hp0)
     return Hp1
 

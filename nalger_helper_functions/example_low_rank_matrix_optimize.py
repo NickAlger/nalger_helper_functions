@@ -21,7 +21,8 @@ M = 89
 num_samples = 10
 
 U, _, Vt = np.linalg.svd(np.random.randn(N, M), full_matrices=False)
-ss = np.logspace(-30, 0, np.minimum(N,M))
+# ss = np.logspace(-30, 0, np.minimum(N,M))
+ss = 1.0 / np.arange(1, np.minimum(N, M)+1)**2
 A = U @ np.diag(ss) @ Vt
 
 Omega = jnp.array(np.random.randn(M, num_samples))
@@ -40,7 +41,7 @@ x0 = svd_initial_guess(true_outputs, rank)
 x0 = left_orthogonalize_low_rank(x0)
 
 x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
-    inputs, true_outputs, x0, a_reg=1e-2,
+    inputs, true_outputs, x0, a_reg=0.0,
     newton_max_iter=50, newton_rtol=1e-5,
     cg_rtol_power=0.5,
     # cg_rtol_power=1.0,
@@ -74,23 +75,31 @@ print('svals=', svals)
 
 N = 100
 M = 89
+noise_level = 2e-1
+num_samples = 10
 
-U, _, Vt = np.linalg.svd(np.random.randn(N, N), full_matrices=False)
-ss = np.logspace(-3, 0, N)
-CL = U @ np.diag(ss) @ Vt
-ML = Vt.T @ np.diag(1.0 / ss) @ U.T
+def laplacian(n):
+    return np.diag(2*np.ones(n), 0) + np.diag(-np.ones(n-1), -1) + np.diag(-np.ones(n-1), 1)
 
-U, _, Vt = np.linalg.svd(np.random.randn(M, M), full_matrices=False)
-ss = np.logspace(-3, 0, M)
-CR = U @ np.diag(ss) @ Vt
-MR = Vt.T @ np.diag(1.0 / ss) @ U.T
+ML = 1e-2 * np.eye(N) + laplacian(N)
+CL = np.linalg.inv(ML)
+MR = 1e-2 * np.eye(M) + laplacian(M)
+CR = np.linalg.inv(MR)
 
 K = np.minimum(N,M)
 
-A = (CL @ np.random.randn(N,K)) @ np.diag(np.logspace(-24, 0, K)) @ (np.random.randn(K,M) @ CR)
+A0 = (CL @ np.random.randn(N,K)) @ (np.random.randn(K,M) @ CR)
+
+noise = np.random.randn(*A0.shape)
+noise = noise * noise_level * np.linalg.norm(A0) / np.linalg.norm(noise)
+A = A0 + noise
 
 Omega = jnp.array(np.random.randn(M, num_samples))
 Omega_r = jnp.array(np.random.randn(num_samples, N))
+
+Omega = Omega / jnp.linalg.norm(Omega, axis=0).reshape((1,-1))
+Omega_r = Omega_r / jnp.linalg.norm(Omega_r, axis=1).reshape((-1,1))
+
 Ytrue = A @ Omega
 Ytrue_r = Omega_r @ A
 inputs = (Omega, Omega_r)
@@ -99,32 +108,40 @@ true_outputs = (Ytrue, Ytrue_r)
 
 rank = 5
 
-x0 = svd_initial_guess(true_outputs, rank)
-# x0 = (ML @ np.random.randn(N,rank), np.random.randn(rank, M) @ MR)
+# RL = ML @ ML.T
+# RR = MR @ MR.T
+RL = ML
+RR = MR
+
+iRL = np.linalg.inv(RL)
+iRR = np.linalg.inv(RR)
+
+apply_R = lambda b: (RL @ b[0], b[1] @ RR)
+solve_R = lambda b: (iRL @ b[0], b[1] @ iRR)
+
+x0 = svd_initial_guess(solve_R(true_outputs), rank) # <-- best
+# x0 = svd_initial_guess(true_outputs, rank)
+# x0 = solve_R((np.random.randn(N,rank), np.random.randn(rank, M)))
 x0 = left_orthogonalize_low_rank(x0)
-
-apply_R = lambda b: (ML @ b[0], b[1] @ MR)
-apply_RT = lambda b: (ML.T @ b[0], b[1] @ MR.T)
-
 
 x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
     inputs, true_outputs, x0,
-    a_reg=1e-3,
-    apply_R=apply_R, apply_RT=apply_RT,
-    newton_max_iter=50, newton_rtol=1e-5,
+    a_reg=1e0,
+    apply_R=apply_R,
+    newton_max_iter=50, newton_rtol=1e-2,
     cg_rtol_power=0.5,
     # cg_rtol_power=1.0,
 )
 
 A2 = low_rank_to_full(x)
-computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
+computed_err = np.linalg.norm(A2 - A0) / np.linalg.norm(A0)
 print('rank=', rank)
 print('computed_err=', computed_err)
 
 U, ss, Vt = np.linalg.svd(A)
 Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
 
-ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
+ideal_err = np.linalg.norm(Ar - A0) / np.linalg.norm(A0)
 print('ideal_err=', ideal_err)
 
 num_samples = true_outputs[0].shape[1]
@@ -134,7 +151,7 @@ Ursvd, ssrsvd, Vtrsvd = rsvd_double_pass(
 
 Arsvd = Ursvd @ np.diag(ssrsvd) @ Vtrsvd
 
-rsvd_err = np.linalg.norm(Arsvd - A) / np.linalg.norm(A)
+rsvd_err = np.linalg.norm(Arsvd - A0) / np.linalg.norm(A0)
 print('rsvd_err=', rsvd_err)
 
 svals = np.linalg.svd(x[1])[1]
@@ -142,51 +159,66 @@ print('svals=', svals)
 
 #
 
-delta_rank = 1
+import matplotlib.pyplot as plt
 
-outputs = forward_map(x0, inputs)
-target_outputs = tla.tree_sub(true_outputs, outputs)
+plt.matshow(A0)
+plt.title('A0')
+plt.matshow(A)
+plt.title('A')
+plt.matshow(A2)
+plt.title('A2')
+plt.matshow(Ar)
+plt.title('Ar')
+plt.matshow(Arsvd)
+plt.title('Arsvd')
+#
 
-x0 = svd_initial_guess(true_outputs, delta_rank)
+if False:
+    delta_rank = 1
 
-dx, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
-    inputs, true_outputs, x0,
-    # a_reg=1e-2,
-    # apply_ML=apply_ML, apply_MLT=apply_MLT, apply_MR=apply_MR, apply_MRT=apply_MRT,
-    newton_max_iter=50, newton_rtol=1e-5,
-    # cg_rtol_power=0.5,
-    cg_rtol_power=1.0,
-)
+    outputs = forward_map(x0, inputs)
+    target_outputs = tla.sub(true_outputs, outputs)
 
-x = add_low_rank_matrices([x, dx])
+    x0 = svd_initial_guess(true_outputs, delta_rank)
 
-rank = x[0].shape[1]
+    dx, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
+        inputs, true_outputs, x0,
+        # a_reg=1e-2,
+        # apply_ML=apply_ML, apply_MLT=apply_MLT, apply_MR=apply_MR, apply_MRT=apply_MRT,
+        newton_max_iter=50, newton_rtol=1e-5,
+        # cg_rtol_power=0.5,
+        cg_rtol_power=1.0,
+    )
 
-A2 = low_rank_to_full(x)
-computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
-print('rank=', rank)
-print('computed_err=', computed_err)
+    x = add_low_rank_matrices([x, dx])
 
-U, ss, Vt = np.linalg.svd(A)
-Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
+    rank = x[0].shape[1]
 
-ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
-print('ideal_err=', ideal_err)
+    A2 = low_rank_to_full(x)
+    computed_err = np.linalg.norm(A2 - A) / np.linalg.norm(A)
+    print('rank=', rank)
+    print('computed_err=', computed_err)
 
-num_samples = true_outputs[0].shape[1]
-Ursvd, ssrsvd, Vtrsvd = rsvd_double_pass(
-    (N, M), lambda X: A @ X, lambda Z: Z @ A, rank, num_samples-rank,
-)
+    U, ss, Vt = np.linalg.svd(A)
+    Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
 
-Arsvd = Ursvd @ np.diag(ssrsvd) @ Vtrsvd
+    ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
+    print('ideal_err=', ideal_err)
 
-rsvd_err = np.linalg.norm(Arsvd - A) / np.linalg.norm(A)
-print('rsvd_err=', rsvd_err)
+    num_samples = true_outputs[0].shape[1]
+    Ursvd, ssrsvd, Vtrsvd = rsvd_double_pass(
+        (N, M), lambda X: A @ X, lambda Z: Z @ A, rank, num_samples-rank,
+    )
 
-svals = np.linalg.svd(x[1])[1]
-print('svals=', svals)
+    Arsvd = Ursvd @ np.diag(ssrsvd) @ Vtrsvd
 
-x0 = left_orthogonalize_low_rank(x)
+    rsvd_err = np.linalg.norm(Arsvd - A) / np.linalg.norm(A)
+    print('rsvd_err=', rsvd_err)
+
+    svals = np.linalg.svd(x[1])[1]
+    print('svals=', svals)
+
+    x0 = left_orthogonalize_low_rank(x)
 
 
 

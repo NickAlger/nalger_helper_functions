@@ -107,8 +107,8 @@ ZZ = (Z, Z_r)
 Jp = forward_map_jvp(left_orthogonal_base, inputs, standard_perturbation)
 JtZ = forward_map_vjp(left_orthogonal_base, inputs, ZZ)
 
-t1 = tla.tree_dot(Jp, ZZ) # np.sum(Jp[0] * ZZ[0]) + np.sum(Jp[1] * ZZ[1])
-t2 = tla.tree_dot(JtZ, standard_perturbation) # np.sum(JtZ[0] * standard_perturbation[0]) + np.sum(JtZ[1] + standard_perturbation[1])
+t1 = tla.dot(Jp, ZZ) # np.sum(Jp[0] * ZZ[0]) + np.sum(Jp[1] * ZZ[1])
+t2 = tla.dot(JtZ, standard_perturbation) # np.sum(JtZ[0] * standard_perturbation[0]) + np.sum(JtZ[1] + standard_perturbation[1])
 
 err_forward_map_vjp = np.abs(t1 - t2) / np.abs(t1 + t2)
 print('err_forward_map_vjp=', err_forward_map_vjp)
@@ -144,27 +144,27 @@ def apply_RT(
 
 
 R0 = regularization(base, apply_R)
-gR0 = regularization_gradient(base, apply_R, apply_RT)
+gR0 = regularization_gradient(base, apply_R)
 
 dX = np.random.randn(N, r)
 dY = np.random.randn(r, M)
 perturbation = (dX, dY)
 
-dG = regularization_hessian_matvec(base, perturbation, apply_R, apply_RT)
+dG = regularization_hessian_matvec(base, perturbation, apply_R)
 
-dR = tla.tree_dot(gR0, perturbation)
+dR = tla.dot(gR0, perturbation)
 
 s = 1e-7
-base1 = tla.tree_add(base, tla.tree_scale(perturbation, s))
+base1 = tla.add(base, tla.scale(perturbation, s))
 R1 = regularization(base1, apply_R)
-gR1 = regularization_gradient(base1, apply_R, apply_RT)
+gR1 = regularization_gradient(base1, apply_R)
 
 dR_diff = (R1 - R0) / s
 err_regularization_gradient = np.abs(dR_diff - dR) / np.abs(dR_diff)
 print('s=', s, ', err_regularization_gradient=', err_regularization_gradient)
 
-dG_diff = tla.tree_scale(tla.tree_sub(gR1, gR0), 1.0 / s)
-err_regularization_hessian_matvec = tla.tree_norm(tla.tree_sub(dG_diff, dG)) / tla.tree_norm(dG_diff)
+dG_diff = tla.scale(tla.sub(gR1, gR0), 1.0 / s)
+err_regularization_hessian_matvec = tla.norm(tla.sub(dG_diff, dG)) / tla.norm(dG_diff)
 print('s=', s, ', err_regularization_hessian_matvec=', err_regularization_hessian_matvec)
 
 #
@@ -177,13 +177,13 @@ J0, (_, _, y0, _) = objective(
 )
 g0, (gd0, gr0) = gradient(
         base, inputs, y0, true_outputs,
-        a_reg, apply_R, apply_RT,
+        a_reg, apply_R
 )
 
-dJ = tla.tree_dot(g0, perturbation)
+dJ = tla.dot(g0, perturbation)
 
 s = 1e-7
-base1 = tla.tree_add(base, tla.tree_scale(perturbation, s))
+base1 = tla.add(base, tla.scale(perturbation, s))
 
 J1, (_, _, y1, _) = objective(
     base1, inputs, true_outputs,
@@ -203,15 +203,15 @@ J0, (_, _, y0, _) = objective(
 )
 g0, (gd0, gr0) = gradient(
         base, inputs, y0, outputs,
-        a_reg, apply_R, apply_RT,
+        a_reg, apply_R,
 )
 dg, (_, _) = gauss_newton_hessian_matvec(
     perturbation, base, inputs,
-    a_reg, apply_R, apply_RT,
+    a_reg, apply_R,
 )
 
 s = 1e-7
-base1 = tla.tree_add(base, tla.tree_scale(perturbation, s))
+base1 = tla.add(base, tla.scale(perturbation, s))
 
 J1, (_, _, y1, _) = objective(
     base1, inputs, outputs,
@@ -219,10 +219,10 @@ J1, (_, _, y1, _) = objective(
 )
 g1, (gd1, gr1) = gradient(
         base1, inputs, y1, outputs,
-        a_reg, apply_R, apply_RT,
+        a_reg, apply_R,
 )
-dg_diff = tla.tree_scale(tla.tree_sub(g1, g0), 1.0/s)
+dg_diff = tla.scale(tla.sub(g1, g0), 1.0 / s)
 
-err_gnhess = tla.tree_norm(tla.tree_sub(dg, dg_diff)) / tla.tree_norm(dg_diff)
+err_gnhess = tla.norm(tla.sub(dg, dg_diff)) / tla.norm(dg_diff)
 print('s=', s, ', err_gnhess=', err_gnhess)
 

@@ -32,7 +32,7 @@ def check_if_tree_is_structured_correctly(X):
     assert(Bb2.shape == (4,))
     assert(np.array(C).shape == ())
 
-# tree_add()
+# add()
 
 t1 = int(np.random.randint(1,10))
 t2 = np.random.randn(2,3)
@@ -58,107 +58,107 @@ print(T)
 print('S:')
 print(S)
 
-T_plus_S = tree_add(T, S)
+T_plus_S = add(T, S)
 check_if_tree_is_structured_correctly(T_plus_S)
 
 print('T_plus_S:')
 print(T_plus_S)
 
-err_tree_add = np.linalg.norm(flatten(T_plus_S) - (flatten(T) + flatten(S)))
-print('err_tree_add=', err_tree_add)
+err_add = np.linalg.norm(flatten(T_plus_S) - (flatten(T) + flatten(S)))
+print('err_add=', err_add)
 
-# tree_sub()
+# sub()
 
-T_minus_S = tree_sub(T, S)
+T_minus_S = sub(T, S)
 check_if_tree_is_structured_correctly(T_minus_S)
-err_tree_sub = np.linalg.norm(flatten(T_minus_S) - (flatten(T) - flatten(S)))
-print('err_tree_sub=', err_tree_sub)
+err_sub = np.linalg.norm(flatten(T_minus_S) - (flatten(T) - flatten(S)))
+print('err_sub=', err_sub)
 
-# tree_mult()
+# mult()
 
-T_times_S = tree_mult(T, S)
+T_times_S = mult(T, S)
 check_if_tree_is_structured_correctly(T_times_S)
-err_tree_mult = np.linalg.norm(flatten(T_times_S) - (flatten(T) * flatten(S)))
-print('err_tree_mult=', err_tree_mult)
+err_mult = np.linalg.norm(flatten(T_times_S) - (flatten(T) * flatten(S)))
+print('err_mult=', err_mult)
 
-# tree_scale()
+# scale()
 
 c = np.random.randn()
-T_times_c = tree_scale(T, c)
+T_times_c = scale(T, c)
 check_if_tree_is_structured_correctly(T_times_c)
-err_tree_scale = np.linalg.norm(flatten(T_times_c) - (c * flatten(T)))
-print('err_tree_scale=', err_tree_scale)
+err_scale = np.linalg.norm(flatten(T_times_c) - (c * flatten(T)))
+print('err_scale=', err_scale)
 
-# tree_power()
+# power()
 
 p = 3
-T_to_the_p = tree_power(T, p)
+T_to_the_p = power(T, p)
 check_if_tree_is_structured_correctly(T_to_the_p)
-err_tree_power = np.linalg.norm(flatten(T_to_the_p) - flatten(T)**p)
-print('err_tree_power=', err_tree_power)
+err_power = np.linalg.norm(flatten(T_to_the_p) - flatten(T)**p)
+print('err_power=', err_power)
 
-# tree_abs()
+# abs()
 
-abs_T = tree_abs(T)
+abs_T = abs(T)
 check_if_tree_is_structured_correctly(abs_T)
-err_tree_abs = np.linalg.norm(flatten(abs_T) - np.abs(flatten(T)))
-print('err_tree_abs=', err_tree_abs)
+err_abs = np.linalg.norm(flatten(abs_T) - np.abs(flatten(T)))
+print('err_abs=', err_abs)
 
-# tree_elementwise_inverse()
+# elementwise_inverse()
 
 iT_true = make_tree(1.0/t1, 1.0/t2, 1.0/t3, 1.0/t4, 1.0/t5)
-iT = tree_elementwise_inverse(T)
-err_tree_elementwise_inverse = np.linalg.norm(flatten(iT_true) - flatten(iT))
-print('err_tree_elementwise_inverse=', err_tree_elementwise_inverse)
+iT = elementwise_inverse(T)
+err_elementwise_inverse = np.linalg.norm(flatten(iT_true) - flatten(iT))
+print('err_elementwise_inverse=', err_elementwise_inverse)
 
-# tree_sum_leaves()
+# sum_leaves()
 
-TSL = tree_sum_leaves(T)
+TSL = leaf_sum(T)
 TSL_true = make_tree(np.sum(t1), np.sum(t2), np.sum(t3), np.sum(t4), np.sum(t5))
 
 print('TSL=', TSL)
 print('TSL_true=', TSL_true)
 
-err_tree_sum_leaves = tree_norm(tree_abs(tree_sub(TSL, TSL_true)))
-print('err_tree_sum_leaves=', err_tree_sum_leaves)
+err_sum_leaves = norm(abs(sub(TSL, TSL_true)))
+print('err_sum_leaves=', err_sum_leaves)
 
-# tree_dot_leaves()
+# dot_leaves()
 
-T_dot_S_leaves = tree_dot_leaves(T, S)
+T_dot_S_leaves = leaf_dot(T, S)
 T_dot_S_leaves_true = make_tree(np.sum(t1*s1), np.sum(t2*s2), np.sum(t3*s3), np.sum(t4*s4), np.sum(t5*s5))
 
 print('T_dot_S_leaves=', T_dot_S_leaves)
 print('T_dot_S_leaves_true=', T_dot_S_leaves_true)
 
-err_tree_dot_leaves = tree_norm(tree_abs(tree_sub(T_dot_S_leaves, T_dot_S_leaves_true)))
-print('err_tree_dot_leaves=', err_tree_dot_leaves)
+err_dot_leaves = norm(abs(sub(T_dot_S_leaves, T_dot_S_leaves_true)))
+print('err_dot_leaves=', err_dot_leaves)
 
 
-# tree_sum()
+# sum()
 
-sum_T = tree_sum(T)
-err_tree_sum = np.abs(sum_T - np.sum(flatten(T)))
-print('err_tree_sum=', err_tree_sum)
+sum_T = sum(T)
+err_sum = np.abs(sum_T - np.sum(flatten(T)))
+print('err_sum=', err_sum)
 
-# tree_dot()
+# dot()
 
-T_dot_S = tree_dot(T, S)
-err_tree_dot = np.abs(T_dot_S - np.dot(flatten(T), flatten(S)))
-print('err_tree_dot=', err_tree_dot)
+T_dot_S = dot(T, S)
+err_dot = np.abs(T_dot_S - np.dot(flatten(T), flatten(S)))
+print('err_dot=', err_dot)
 
-# tree_normsquared()
+# normsquared()
 
-normsq_T = tree_normsquared(T)
-err_tree_normsquared = np.abs(normsq_T - np.linalg.norm(flatten(T))**2)
-print('err_tree_normsquared=', err_tree_normsquared)
+normsq_T = normsquared(T)
+err_normsquared = np.abs(normsq_T - np.linalg.norm(flatten(T))**2)
+print('err_normsquared=', err_normsquared)
 
-# tree_norm()
+# norm()
 
-norm_T = tree_norm(T)
-err_tree_norm = np.abs(norm_T - np.linalg.norm(flatten(T)))
-print('err_tree_norm=', err_tree_norm)
+norm_T = norm(T)
+err_norm = np.abs(norm_T - np.linalg.norm(flatten(T)))
+print('err_norm=', err_norm)
 
-# tree_all()
+# all()
 
 t1_true = True
 t2_true = np.array([[True, True, True], [True, True, True]])
@@ -187,33 +187,33 @@ t5_mixed = np.array(True)
 T_mixed = make_tree(t1_mixed, t2_mixed, t3_mixed, t4_mixed, t5_mixed)
 check_if_tree_is_structured_correctly(T_mixed)
 
-tree_all_test1_passed = (tree_all(T_true) == True)
-tree_all_test2_passed = (tree_all(T_mixed) == False)
-tree_all_test3_passed = (tree_all(T_false) == False)
-print('tree_all_test1_passed=', tree_all_test1_passed)
-print('tree_all_test2_passed=', tree_all_test2_passed)
-print('tree_all_test3_passed=', tree_all_test3_passed)
+all_test1_passed = (all(T_true) == True)
+all_test2_passed = (all(T_mixed) == False)
+all_test3_passed = (all(T_false) == False)
+print('all_test1_passed=', all_test1_passed)
+print('all_test2_passed=', all_test2_passed)
+print('all_test3_passed=', all_test3_passed)
 
-# tree_any()
+# any()
 
-tree_any_test1_passed = (tree_all(T_true) == True)
-tree_any_test2_passed = (tree_any(T_mixed) == True)
-tree_any_test3_passed = (tree_any(T_false) == False)
-print('tree_any_test1_passed=', tree_any_test1_passed)
-print('tree_any_test2_passed=', tree_any_test2_passed)
-print('tree_any_test3_passed=', tree_any_test3_passed)
+any_test1_passed = (all(T_true) == True)
+any_test2_passed = (any(T_mixed) == True)
+any_test3_passed = (any(T_false) == False)
+print('any_test1_passed=', any_test1_passed)
+print('any_test2_passed=', any_test2_passed)
+print('any_test3_passed=', any_test3_passed)
 
-# tree_eq()
+# eq()
 
-T_equals_S = tree_eq(T, S)
+T_equals_S = eq(T, S)
 check_if_tree_is_structured_correctly(T_equals_S)
-tree_eq_test1_passed = np.all(flatten(T_equals_S) == (flatten(T) == flatten(S)))
-print('tree_eq_test1_passed=', tree_eq_test1_passed)
+eq_test1_passed = np.all(flatten(T_equals_S) == (flatten(T) == flatten(S)))
+print('eq_test1_passed=', eq_test1_passed)
 
-T_equals_T = tree_eq(T, T)
+T_equals_T = eq(T, T)
 check_if_tree_is_structured_correctly(T_equals_T)
-tree_eq_test2_passed = np.all(flatten(T_equals_T) == (flatten(T) == flatten(T)))
-print('tree_eq_test2_passed=', tree_eq_test2_passed)
+eq_test2_passed = np.all(flatten(T_equals_T) == (flatten(T) == flatten(T)))
+print('eq_test2_passed=', eq_test2_passed)
 
 t2b = t2.copy()
 t2b[0,1] += 0.5
@@ -222,145 +222,145 @@ t4b = t4 - 1.8
 Tb = make_tree(t1, t2b, t3, t4b, t5)
 check_if_tree_is_structured_correctly(Tb)
 
-T_equals_Tb = tree_eq(T, Tb)
+T_equals_Tb = eq(T, Tb)
 check_if_tree_is_structured_correctly(T_equals_Tb)
-tree_eq_test3_passed = np.all(flatten(T_equals_Tb) == (flatten(T) == flatten(Tb)))
-print('tree_eq_test3_passed=', tree_eq_test3_passed)
+eq_test3_passed = np.all(flatten(T_equals_Tb) == (flatten(T) == flatten(Tb)))
+print('eq_test3_passed=', eq_test3_passed)
 
-# tree_lt()
+# lt()
 
-T_lt_S = tree_lt(T, S)
+T_lt_S = lt(T, S)
 check_if_tree_is_structured_correctly(T_lt_S)
-tree_lt_test1_passed = np.all(flatten(T_lt_S) == (flatten(T) < flatten(S)))
-print('tree_lt_test1_passed=', tree_lt_test1_passed)
+lt_test1_passed = np.all(flatten(T_lt_S) == (flatten(T) < flatten(S)))
+print('lt_test1_passed=', lt_test1_passed)
 
-T_lt_T = tree_lt(T, T)
+T_lt_T = lt(T, T)
 check_if_tree_is_structured_correctly(T_lt_T)
-tree_lt_test2_passed = np.all(flatten(T_lt_T) == (flatten(T) < flatten(T)))
-print('tree_lt_test2_passed=', tree_lt_test2_passed)
+lt_test2_passed = np.all(flatten(T_lt_T) == (flatten(T) < flatten(T)))
+print('lt_test2_passed=', lt_test2_passed)
 
-T_lt_Tb = tree_lt(T, Tb)
+T_lt_Tb = lt(T, Tb)
 check_if_tree_is_structured_correctly(T_lt_Tb)
-tree_lt_test3_passed = np.all(flatten(T_lt_Tb) == (flatten(T) < flatten(Tb)))
-print('tree_lt_test3_passed=', tree_lt_test3_passed)
+lt_test3_passed = np.all(flatten(T_lt_Tb) == (flatten(T) < flatten(Tb)))
+print('lt_test3_passed=', lt_test3_passed)
 
-# tree_le()
+# le()
 
-T_le_S = tree_le(T, S)
+T_le_S = le(T, S)
 check_if_tree_is_structured_correctly(T_le_S)
-tree_le_test1_passed = np.all(flatten(T_le_S) == (flatten(T) <= flatten(S)))
-print('tree_le_test1_passed=', tree_le_test1_passed)
+le_test1_passed = np.all(flatten(T_le_S) == (flatten(T) <= flatten(S)))
+print('le_test1_passed=', le_test1_passed)
 
-T_le_T = tree_le(T, T)
+T_le_T = le(T, T)
 check_if_tree_is_structured_correctly(T_le_T)
-tree_le_test2_passed = np.all(flatten(T_le_T) == (flatten(T) <= flatten(T)))
-print('tree_le_test2_passed=', tree_le_test2_passed)
+le_test2_passed = np.all(flatten(T_le_T) == (flatten(T) <= flatten(T)))
+print('le_test2_passed=', le_test2_passed)
 
-T_le_Tb = tree_le(T, Tb)
+T_le_Tb = le(T, Tb)
 check_if_tree_is_structured_correctly(T_le_Tb)
-tree_le_test3_passed = np.all(flatten(T_le_Tb) == (flatten(T) <= flatten(Tb)))
-print('tree_le_test3_passed=', tree_le_test3_passed)
+le_test3_passed = np.all(flatten(T_le_Tb) == (flatten(T) <= flatten(Tb)))
+print('le_test3_passed=', le_test3_passed)
 
-# tree_gt()
+# gt()
 
-T_gt_S = tree_gt(T, S)
+T_gt_S = gt(T, S)
 check_if_tree_is_structured_correctly(T_gt_S)
-tree_gt_test1_passed = np.all(flatten(T_gt_S) == (flatten(T) > flatten(S)))
-print('tree_gt_test1_passed=', tree_gt_test1_passed)
+gt_test1_passed = np.all(flatten(T_gt_S) == (flatten(T) > flatten(S)))
+print('gt_test1_passed=', gt_test1_passed)
 
-T_gt_T = tree_gt(T, T)
+T_gt_T = gt(T, T)
 check_if_tree_is_structured_correctly(T_gt_T)
-tree_gt_test2_passed = np.all(flatten(T_gt_T) == (flatten(T) > flatten(T)))
-print('tree_gt_test2_passed=', tree_gt_test2_passed)
+gt_test2_passed = np.all(flatten(T_gt_T) == (flatten(T) > flatten(T)))
+print('gt_test2_passed=', gt_test2_passed)
 
-T_gt_Tb = tree_gt(T, Tb)
+T_gt_Tb = gt(T, Tb)
 check_if_tree_is_structured_correctly(T_gt_Tb)
-tree_gt_test3_passed = np.all(flatten(T_gt_Tb) == (flatten(T) > flatten(Tb)))
-print('tree_gt_test3_passed=', tree_gt_test3_passed)
+gt_test3_passed = np.all(flatten(T_gt_Tb) == (flatten(T) > flatten(Tb)))
+print('gt_test3_passed=', gt_test3_passed)
 
-# tree_ge()
+# ge()
 
-T_ge_S = tree_ge(T, S)
+T_ge_S = ge(T, S)
 check_if_tree_is_structured_correctly(T_ge_S)
-tree_ge_test1_passed = np.all(flatten(T_ge_S) == (flatten(T) >= flatten(S)))
-print('tree_ge_test1_passed=', tree_ge_test1_passed)
+ge_test1_passed = np.all(flatten(T_ge_S) == (flatten(T) >= flatten(S)))
+print('ge_test1_passed=', ge_test1_passed)
 
-T_ge_T = tree_ge(T, T)
+T_ge_T = ge(T, T)
 check_if_tree_is_structured_correctly(T_ge_T)
-tree_ge_test2_passed = np.all(flatten(T_ge_T) == (flatten(T) >= flatten(T)))
-print('tree_ge_test2_passed=', tree_ge_test2_passed)
+ge_test2_passed = np.all(flatten(T_ge_T) == (flatten(T) >= flatten(T)))
+print('ge_test2_passed=', ge_test2_passed)
 
-T_ge_Tb = tree_ge(T, Tb)
+T_ge_Tb = ge(T, Tb)
 check_if_tree_is_structured_correctly(T_ge_Tb)
-tree_ge_test3_passed = np.all(flatten(T_ge_Tb) == (flatten(T) >= flatten(Tb)))
-print('tree_ge_test3_passed=', tree_ge_test3_passed)
+ge_test3_passed = np.all(flatten(T_ge_Tb) == (flatten(T) >= flatten(Tb)))
+print('ge_test3_passed=', ge_test3_passed)
 
-# tree_eq_scalar()
+# eq_scalar()
 
 c = t2[1,1]
-T_eq_c = tree_eq_scalar(T,c)
+T_eq_c = eq_scalar(T, c)
 check_if_tree_is_structured_correctly(T_eq_c)
-tree_eq_scalar_test1_passed = np.all(flatten(T_eq_c) == (flatten(T) == c))
-print('tree_eq_scalar_test1_passed=', tree_eq_scalar_test1_passed)
+eq_scalar_test1_passed = np.all(flatten(T_eq_c) == (flatten(T) == c))
+print('eq_scalar_test1_passed=', eq_scalar_test1_passed)
 
 c = t1
-T_eq_c = tree_eq_scalar(T,c)
+T_eq_c = eq_scalar(T, c)
 check_if_tree_is_structured_correctly(T_eq_c)
-tree_eq_scalar_test2_passed = np.all(flatten(T_eq_c) == (flatten(T) == c))
-print('tree_eq_scalar_test2_passed=', tree_eq_scalar_test2_passed)
+eq_scalar_test2_passed = np.all(flatten(T_eq_c) == (flatten(T) == c))
+print('eq_scalar_test2_passed=', eq_scalar_test2_passed)
 
-# tree_lt_scalar()
+# lt_scalar()
 
 c = t2[1,1]
-T_lt_c = tree_lt_scalar(T,c)
+T_lt_c = lt_scalar(T, c)
 check_if_tree_is_structured_correctly(T_lt_c)
-tree_lt_scalar_test1_passed = np.all(flatten(T_lt_c) == (flatten(T) < c))
-print('tree_lt_scalar_test1_passed=', tree_lt_scalar_test1_passed)
+lt_scalar_test1_passed = np.all(flatten(T_lt_c) == (flatten(T) < c))
+print('lt_scalar_test1_passed=', lt_scalar_test1_passed)
 
 c = t1
-T_lt_c = tree_lt_scalar(T,c)
+T_lt_c = lt_scalar(T, c)
 check_if_tree_is_structured_correctly(T_lt_c)
-tree_lt_scalar_test2_passed = np.all(flatten(T_lt_c) == (flatten(T) < c))
-print('tree_lt_scalar_test2_passed=', tree_lt_scalar_test2_passed)
+lt_scalar_test2_passed = np.all(flatten(T_lt_c) == (flatten(T) < c))
+print('lt_scalar_test2_passed=', lt_scalar_test2_passed)
 
-# tree_le_scalar()
+# le_scalar()
 
 c = t2[1,1]
-T_le_c = tree_le_scalar(T,c)
+T_le_c = le_scalar(T, c)
 check_if_tree_is_structured_correctly(T_le_c)
-tree_le_scalar_test1_passed = np.all(flatten(T_le_c) == (flatten(T) <= c))
-print('tree_le_scalar_test1_passed=', tree_le_scalar_test1_passed)
+le_scalar_test1_passed = np.all(flatten(T_le_c) == (flatten(T) <= c))
+print('le_scalar_test1_passed=', le_scalar_test1_passed)
 
 c = t1
-T_le_c = tree_le_scalar(T,c)
+T_le_c = le_scalar(T, c)
 check_if_tree_is_structured_correctly(T_le_c)
-tree_le_scalar_test2_passed = np.all(flatten(T_le_c) == (flatten(T) <= c))
-print('tree_le_scalar_test2_passed=', tree_le_scalar_test2_passed)
+le_scalar_test2_passed = np.all(flatten(T_le_c) == (flatten(T) <= c))
+print('le_scalar_test2_passed=', le_scalar_test2_passed)
 
-# tree_gt_scalar()
-
-c = t2[1,1]
-T_gt_c = tree_gt_scalar(T,c)
-check_if_tree_is_structured_correctly(T_gt_c)
-tree_gt_scalar_test1_passed = np.all(flatten(T_gt_c) == (flatten(T) > c))
-print('tree_gt_scalar_test1_passed=', tree_gt_scalar_test1_passed)
-
-c = t1
-T_gt_c = tree_gt_scalar(T,c)
-check_if_tree_is_structured_correctly(T_gt_c)
-tree_gt_scalar_test2_passed = np.all(flatten(T_gt_c) == (flatten(T) > c))
-print('tree_gt_scalar_test2_passed=', tree_gt_scalar_test2_passed)
-
-# tree_ge_scalar()
+# gt_scalar()
 
 c = t2[1,1]
-T_ge_c = tree_ge_scalar(T,c)
-check_if_tree_is_structured_correctly(T_ge_c)
-tree_ge_scalar_test1_passed = np.all(flatten(T_ge_c) == (flatten(T) >= c))
-print('tree_ge_scalar_test1_passed=', tree_ge_scalar_test1_passed)
+T_gt_c = gt_scalar(T, c)
+check_if_tree_is_structured_correctly(T_gt_c)
+gt_scalar_test1_passed = np.all(flatten(T_gt_c) == (flatten(T) > c))
+print('gt_scalar_test1_passed=', gt_scalar_test1_passed)
 
 c = t1
-T_ge_c = tree_ge_scalar(T,c)
+T_gt_c = gt_scalar(T, c)
+check_if_tree_is_structured_correctly(T_gt_c)
+gt_scalar_test2_passed = np.all(flatten(T_gt_c) == (flatten(T) > c))
+print('gt_scalar_test2_passed=', gt_scalar_test2_passed)
+
+# ge_scalar()
+
+c = t2[1,1]
+T_ge_c = ge_scalar(T, c)
 check_if_tree_is_structured_correctly(T_ge_c)
-tree_ge_scalar_test2_passed = np.all(flatten(T_ge_c) == (flatten(T) >= c))
-print('tree_ge_scalar_test2_passed=', tree_ge_scalar_test2_passed)
+ge_scalar_test1_passed = np.all(flatten(T_ge_c) == (flatten(T) >= c))
+print('ge_scalar_test1_passed=', ge_scalar_test1_passed)
+
+c = t1
+T_ge_c = ge_scalar(T, c)
+check_if_tree_is_structured_correctly(T_ge_c)
+ge_scalar_test2_passed = np.all(flatten(T_ge_c) == (flatten(T) >= c))
+print('ge_scalar_test2_passed=', ge_scalar_test2_passed)

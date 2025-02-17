@@ -191,7 +191,7 @@ def inner_product_of_tangent_vectors(
         ],
         inner_product_helper_matrix: jnp.ndarray, # shape=(r,r)
 ) -> jnp.ndarray: # scalar, shape=()
-    return tla.tree_dot(apply_tangent_mass_matrix(standard_perturbation1, inner_product_helper_matrix), standard_perturbation2)
+    return tla.dot(apply_tangent_mass_matrix(standard_perturbation1, inner_product_helper_matrix), standard_perturbation2)
 
 
 @jax.jit

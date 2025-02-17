@@ -41,13 +41,13 @@ def cg_steihaug(
             print(s)
 
     callback             = (lambda z: None) if callback             is None else callback
-    add_vectors          = tla.tree_add     if add_vectors          is None else add_vectors
-    add_covectors        = tla.tree_add     if add_covectors        is None else add_covectors
-    scale_vector         = tla.tree_scale   if scale_vector         is None else scale_vector
-    scale_covector       = tla.tree_scale   if scale_covector       is None else scale_covector
+    add_vectors          = tla.add     if add_vectors is None else add_vectors
+    add_covectors        = tla.add     if add_covectors is None else add_covectors
+    scale_vector         = tla.scale   if scale_vector is None else scale_vector
+    scale_covector       = tla.scale   if scale_covector is None else scale_covector
     preconditioner_apply = (lambda u: u)    if preconditioner_apply is None else preconditioner_apply
     preconditioner_solve = (lambda u: u)    if preconditioner_solve is None else preconditioner_solve
-    dual_pairing         = tla.tree_dot     if dual_pairing         is None else dual_pairing
+    dual_pairing         = tla.dot     if dual_pairing is None else dual_pairing
 
     g_covec = gradient
 

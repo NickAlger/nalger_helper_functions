@@ -30,20 +30,20 @@ OutputsCoTangent    = typ.TypeVar('OutputsCoTangent')
 Scalar  = typ.TypeVar('Scalar')
 
 def default_loss(y: Outputs, y_true: Outputs) -> typ.Tuple[Scalar, LossAux]:
-    all_num_squared = tla.tree_normsquared_leaves(tla.tree_sub(y_true, y))
-    all_den_squared = tla.tree_normsquared_leaves(y_true)
-    all_relative_squared_errors = tla.tree_div(all_num_squared, all_den_squared)
-    J = 0.5 * tla.tree_sum(all_num_squared)
+    all_num_squared = tla.leaf_normsquared(tla.sub(y_true, y))
+    all_den_squared = tla.leaf_normsquared(y_true)
+    all_relative_squared_errors = tla.div(all_num_squared, all_den_squared)
+    J = 0.5 * tla.sum(all_num_squared)
     return J, all_relative_squared_errors
 
 def default_loss_vjp(y: Outputs, y_true: Outputs, dJ: Scalar) -> OutputsCoTangent:
-    return tla.tree_scale(tla.tree_sub(y, y_true), dJ)
+    return tla.scale(tla.sub(y, y_true), dJ)
 
 
 def default_loss_gnhvp(y: Outputs, dy: OutputsTangent) -> OutputsCoTangent:
     return dy
 
-default_regularization = lambda U: 0.5 * tla.tree_normsquared(U)
+default_regularization = lambda U: 0.5 * tla.normsquared(U)
 default_regularization_gradient = lambda m: m
 default_regularization_gnhvp = lambda m, dm: dm
 
@@ -126,8 +126,8 @@ def objective(
 ]:
     Jd, (f_aux, y, Jd_aux) = misfit(m, x, y_true, forward_map, loss)
     Jr0 = regularization_function(m)
-    Jr = tla.tree_scale(Jr0, a_reg)
-    J = tla.tree_add(Jd, Jr)
+    Jr = tla.scale(Jr0, a_reg)
+    J = tla.add(Jd, Jr)
     return J, (Jd, Jr, f_aux, y, Jd_aux)
 
 
@@ -151,8 +151,8 @@ def gradient(
 ]:
     gd, fvjp_aux = misfit_gradient(m, x, f_aux, y, y_true, forward_map_vjp, loss_vjp)
     gr0 = regularization_gradient(m)
-    gr = tla.tree_scale(gr0, a_reg)
-    g = tla.tree_add(gd, gr)
+    gr = tla.scale(gr0, a_reg)
+    g = tla.add(gd, gr)
     return g, (gd, gr, fvjp_aux)
 
 
@@ -182,7 +182,7 @@ def gauss_newton_hessian_matvec(
         loss_gnhvp,
     )
     Hr_dm0 = regularization_gnhvp(m, dm)
-    Hr_dm = tla.tree_scale(Hr_dm0, a_reg)
-    H_dm = tla.tree_add(Hd_dm, Hr_dm)
+    Hr_dm = tla.scale(Hr_dm0, a_reg)
+    H_dm = tla.add(Hd_dm, Hr_dm)
     return H_dm, (Hd_dm, Hr_dm, fjvp_aux, fvjp_aux)
 

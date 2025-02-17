@@ -7,36 +7,36 @@ __all__ = [
     'tree_binary_operation',
     'tree_elementwise_operation',
     'tree_reduce',
-    'tree_add',
-    'tree_sub',
-    'tree_mult',
-    'tree_scale',
-    'tree_div',
-    'tree_power',
-    'tree_abs',
-    'tree_sum_leaves',
-    'tree_dot_leaves',
-    'tree_norm_leaves',
-    'tree_sum',
-    'tree_dot',
-    'tree_normsquared',
-    'tree_norm',
-    'tree_all',
-    'tree_any',
-    'tree_eq',
-    'tree_lt',
-    'tree_le',
-    'tree_gt',
-    'tree_ge',
-    'tree_eq_scalar',
-    'tree_lt_scalar',
-    'tree_le_scalar',
-    'tree_gt_scalar',
-    'tree_ge_scalar',
-    'tree_elementwise_inverse',
+    'add',
+    'sub',
+    'mult',
+    'scale',
+    'div',
+    'power',
+    'abs',
+    'leaf_sum',
+    'leaf_dot',
+    'leaf_norm',
+    'sum',
+    'dot',
+    'normsquared',
+    'norm',
+    'all',
+    'any',
+    'eq',
+    'lt',
+    'le',
+    'gt',
+    'ge',
+    'eq_scalar',
+    'lt_scalar',
+    'le_scalar',
+    'gt_scalar',
+    'ge_scalar',
+    'elementwise_inverse',
 ]
 
-_Tree = typ.Any
+_Tree = typ.TypeVar('_Tree')
 
 def tree_binary_operation(
         op: typ.Callable[[typ.Any, typ.Any], typ.Any],
@@ -86,41 +86,41 @@ def tree_reduce(
     return s[0]
 
 
-tree_add    = lambda U, V:  tree_binary_operation(lambda u, v: u + v, U, V)
-tree_sub    = lambda U, V:  tree_binary_operation(lambda u, v: u - v, U, V)
-tree_mult   = lambda U, V:  tree_binary_operation(lambda u, v: u * v, U, V)
-tree_scale  = lambda U, c:  tree_binary_operation(lambda u, v: c * u, U, U)
-tree_div    = lambda U, V:  tree_binary_operation(lambda u, v: u / v, U, V)
+add    = lambda U, V:  tree_binary_operation(lambda u, v: u + v, U, V)
+sub    = lambda U, V:  tree_binary_operation(lambda u, v: u - v, U, V)
+mult   = lambda U, V:  tree_binary_operation(lambda u, v: u * v, U, V)
+scale  = lambda U, c:  tree_binary_operation(lambda u, v: c * u, U, U)
+div    = lambda U, V:  tree_binary_operation(lambda u, v: u / v, U, V)
 
-tree_power                  = lambda U, p:  tree_elementwise_operation(lambda u: u**p, U)
-tree_abs                    = lambda U:     tree_elementwise_operation(lambda u: np.abs(u), U)
-tree_sqrt                   = lambda U:     tree_elementwise_operation(lambda u: np.sqrt(u), U)
-tree_elementwise_inverse    = lambda U:     tree_elementwise_operation(lambda u: 1.0 / u, U)
-tree_sum_leaves             = lambda U:     tree_elementwise_operation(lambda u: np.sum(u), U) # sums within leaves only
+power                  = lambda U, p:  tree_elementwise_operation(lambda u: u ** p, U)
+abs                    = lambda U:     tree_elementwise_operation(lambda u: np.abs(u), U)
+sqrt                   = lambda U:     tree_elementwise_operation(lambda u: np.sqrt(u), U)
+elementwise_inverse    = lambda U:     tree_elementwise_operation(lambda u: 1.0 / u, U)
+leaf_sum             = lambda U:     tree_elementwise_operation(lambda u: np.sum(u), U) # sums within leaves only
 
-tree_dot_leaves             = lambda U, V:  tree_binary_operation(lambda u, v: np.sum(u * v), U, V) # sums within leaves only
-tree_normsquared_leaves     = lambda U:     tree_dot_leaves(U, U)
-tree_norm_leaves            = lambda U:     tree_elementwise_operation(lambda u: np.sqrt(u), tree_normsquared_leaves(U))
+leaf_dot             = lambda U, V:  tree_binary_operation(lambda u, v: np.sum(u * v), U, V) # sums within leaves only
+leaf_normsquared     = lambda U:     leaf_dot(U, U)
+leaf_norm            = lambda U:     tree_elementwise_operation(lambda u: np.sqrt(u), leaf_normsquared(U))
 
-tree_ones = lambda U: tree_elementwise_operation(lambda u: np.ones(np.array(u).shape), U)
+ones = lambda U: tree_elementwise_operation(lambda u: np.ones(np.array(u).shape), U)
 
-tree_sum            = lambda U:     tree_reduce(np.sum, lambda u, v: u + v, U)
-tree_dot            = lambda U, V:  tree_sum(tree_mult(U, V))
-tree_normsquared    = lambda U:     tree_dot(U, U)
-tree_norm           = lambda U:     np.sqrt(tree_normsquared(U))
+sum            = lambda U:     tree_reduce(np.sum, lambda u, v: u + v, U)
+dot            = lambda U, V:  sum(mult(U, V))
+normsquared    = lambda U:     dot(U, U)
+norm           = lambda U:     np.sqrt(normsquared(U))
 
-tree_all = lambda U: tree_reduce(np.all, lambda u, v: np.logical_and(u, v), U)
-tree_any = lambda U: tree_reduce(np.any, lambda u, v: np.logical_or(u, v), U)
+all = lambda U: tree_reduce(np.all, lambda u, v: np.logical_and(u, v), U)
+any = lambda U: tree_reduce(np.any, lambda u, v: np.logical_or(u, v), U)
 
-tree_eq = lambda U, V: tree_binary_operation(lambda u, v: u == v, U, V)
-tree_lt = lambda U, V: tree_binary_operation(lambda u, v: u <  v, U, V)
-tree_le = lambda U, V: tree_binary_operation(lambda u, v: u <= v, U, V)
-tree_gt = lambda U, V: tree_binary_operation(lambda u, v: u >  v, U, V)
-tree_ge = lambda U, V: tree_binary_operation(lambda u, v: u >= v, U, V)
+eq = lambda U, V: tree_binary_operation(lambda u, v: u == v, U, V)
+lt = lambda U, V: tree_binary_operation(lambda u, v: u < v, U, V)
+le = lambda U, V: tree_binary_operation(lambda u, v: u <= v, U, V)
+gt = lambda U, V: tree_binary_operation(lambda u, v: u > v, U, V)
+ge = lambda U, V: tree_binary_operation(lambda u, v: u >= v, U, V)
 
-tree_eq_scalar = lambda U, c: tree_elementwise_operation(lambda u: u == c, U)
-tree_lt_scalar = lambda U, c: tree_elementwise_operation(lambda u: u <  c, U)
-tree_le_scalar = lambda U, c: tree_elementwise_operation(lambda u: u <= c, U)
-tree_gt_scalar = lambda U, c: tree_elementwise_operation(lambda u: u >  c, U)
-tree_ge_scalar = lambda U, c: tree_elementwise_operation(lambda u: u >= c, U)
+eq_scalar = lambda U, c: tree_elementwise_operation(lambda u: u == c, U)
+lt_scalar = lambda U, c: tree_elementwise_operation(lambda u: u < c, U)
+le_scalar = lambda U, c: tree_elementwise_operation(lambda u: u <= c, U)
+gt_scalar = lambda U, c: tree_elementwise_operation(lambda u: u > c, U)
+ge_scalar = lambda U, c: tree_elementwise_operation(lambda u: u >= c, U)
 

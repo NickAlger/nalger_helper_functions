@@ -110,33 +110,33 @@ def forward_map_vjp(
 def regularization(
         base: Param,
         apply_R: typ.Callable[[Param], Scalar],
-): # 1/2 * ||ML @ X @ Y @ MR||^2
-    Xhat, Yhat = apply_R(base)
-    return 0.5 * np.sum((Xhat.T @ Xhat) * (Yhat @ Yhat.T))
-
-
-def regularization_gradient(
-        base: Param,
-        apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
-        apply_RT: typ.Callable[[ParamTangent], ParamCoTangent],
-) -> ParamCoTangent:
+):
+    '''
+    t1: 1/2 * ||ML @ X @ Y||^2
+    t2: 1/2 * ||X @ Y @ MR||^2
+    t3: 1/2 * ||ML @ X @ Y @ MR||^2
+    '''
     X, Y = base
     Xhat, Yhat = apply_R(base)
-    return apply_RT((Xhat @ (Yhat @ Yhat.T), (Xhat.T @ Xhat) @ Yhat))
+    # t1 = 0.5 * np.sum((Xhat @ Y)**2) # <-- slow
+    t1 = 0.5 * np.sum((Xhat.T @ Xhat) * (Y @ Y.T)) # <-- fast
+    t2 = 0.5 * np.sum((X.T @ X) * (Yhat @ Yhat.T))
+    t3 = 0.5 * np.sum((Xhat.T @ Xhat) * (Yhat @ Yhat.T))
+    # return t1
+    return t1 + t2
+    # return t1 + t2 + t3
+    # return t3 # double sided
 
+
+regularization_gradient = jax.grad(regularization)
 
 def regularization_hessian_matvec(
         base: Param,
         perturbation: ParamTangent,
         apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
-        apply_RT: typ.Callable[[ParamTangent], ParamCoTangent],
 ) -> ParamCoTangent:
-    Xhat, Yhat = apply_R(base)
-    PXhat, PYhat = apply_R(perturbation)
-    PYY = PYhat @ Yhat.T
-    PXX = PXhat.T @ Xhat
-    HX, HY = apply_RT((PXhat @ (Yhat @ Yhat.T) + Xhat @ (PYY + PYY.T), (PXX + PXX.T) @ Yhat + (Xhat.T @ Xhat) @ PYhat))
-    return HX, HY
+    g_func = lambda b: regularization_gradient(b, apply_R)
+    return jax.jvp(g_func, (base,), (perturbation,))[1]
 
 #
 
@@ -163,7 +163,7 @@ def loss(
 
 @jax.jit
 def loss_grad(y: Outputs, y_true: Outputs) -> OutputsCoTangent:
-    return tla.tree_sub(y, y_true)
+    return tla.sub(y, y_true)
 
 
 @jax.jit
@@ -229,8 +229,8 @@ def objective(
 ]:
     Jd, (y, Jd_aux) = misfit(m, x, y_true)
     Jr0 = regularization(m, apply_R)
-    Jr = tla.tree_scale(Jr0, a_reg)
-    J = tla.tree_add(Jd, Jr)
+    Jr = tla.scale(Jr0, a_reg)
+    J = tla.add(Jd, Jr)
     return J, (Jd, Jr, y, Jd_aux)
 
 
@@ -241,7 +241,6 @@ def gradient(
         y_true: Outputs,
         a_reg: Scalar,
         apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
-        apply_RT: typ.Callable[[ParamTangent], ParamCoTangent],
 ) -> typ.Tuple[
     ParamCoTangent, # gradient g
     typ.Tuple[
@@ -250,9 +249,9 @@ def gradient(
     ]
 ]:
     gd = misfit_gradient(m, x, y, y_true)
-    gr0 = regularization_gradient(m, apply_R, apply_RT)
-    gr = tla.tree_scale(gr0, a_reg)
-    g = tla.tree_add(gd, gr)
+    gr0 = regularization_gradient(m, apply_R)
+    gr = tla.scale(gr0, a_reg)
+    g = tla.add(gd, gr)
     return g, (gd, gr)
 
 
@@ -262,7 +261,6 @@ def gauss_newton_hessian_matvec(
         x: Inputs,
         a_reg: Scalar,
         apply_R: typ.Callable[[ParamTangent], ParamCoTangent],
-        apply_RT: typ.Callable[[ParamTangent], ParamCoTangent],
 ) -> typ.Tuple[
     ParamCoTangent, # H @ dm, Gauss-Newton Hessian matvec
     typ.Tuple[
@@ -271,9 +269,9 @@ def gauss_newton_hessian_matvec(
     ]
 ]:
     Hd_dm = misfit_gauss_newton_hessian_matvec(dm, m, x)
-    Hr_dm0 = regularization_hessian_matvec(m, dm, apply_R, apply_RT)
-    Hr_dm = tla.tree_scale(Hr_dm0, a_reg)
-    H_dm = tla.tree_add(Hd_dm, Hr_dm)
+    Hr_dm0 = regularization_hessian_matvec(m, dm, apply_R)
+    Hr_dm = tla.scale(Hr_dm0, a_reg)
+    H_dm = tla.add(Hd_dm, Hr_dm)
     return H_dm, (Hd_dm, Hr_dm)
 
 
