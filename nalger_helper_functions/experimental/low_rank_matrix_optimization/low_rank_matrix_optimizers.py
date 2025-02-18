@@ -4,8 +4,8 @@ import jax
 import typing as typ
 import functools as ft
 
-import nalger_helper_functions.low_rank_matrix_optimization.low_rank_matrix_optimization_problem as lrmop
-import nalger_helper_functions.low_rank_matrix_optimization.low_rank_matrix_manifold as lrmm
+import nalger_helper_functions.experimental.low_rank_matrix_optimization.low_rank_matrix_optimization_problem as lrmop
+import nalger_helper_functions.experimental.low_rank_matrix_optimization.low_rank_matrix_manifold as lrmm
 from nalger_helper_functions import cg_steihaug, trust_region_optimize
 import nalger_helper_functions.tree_linalg as tla
 from nalger_helper_functions.rsvd import rsvd_double_pass

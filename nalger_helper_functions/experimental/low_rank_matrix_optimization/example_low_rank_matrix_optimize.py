@@ -6,10 +6,10 @@ import functools as ft
 import scipy.linalg as sla
 import matplotlib.pyplot as plt
 
-from nalger_helper_functions.low_rank_matrix_optimization.low_rank_matrix_manifold import *
+from nalger_helper_functions.experimental.low_rank_matrix_optimization.low_rank_matrix_manifold import *
 from nalger_helper_functions.rsvd import rsvd_double_pass
-from nalger_helper_functions.low_rank_matrix_optimization.low_rank_matrix_optimization_problem import *
-from nalger_helper_functions.low_rank_matrix_optimization.low_rank_matrix_optimizers import *
+from nalger_helper_functions.experimental.low_rank_matrix_optimization.low_rank_matrix_optimization_problem import *
+from nalger_helper_functions.experimental.low_rank_matrix_optimization.low_rank_matrix_optimizers import *
 import nalger_helper_functions.tree_linalg as tla
 
 # jax.config.update("jax_enable_x64", True) # enable double precision

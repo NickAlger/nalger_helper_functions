@@ -20,6 +20,7 @@ def cg_steihaug(
         scale_vector:           typ.Callable[[Vec,   Scalar], Vec]    = None, # u, s -> s * u
         scale_covector:         typ.Callable[[Covec, Scalar], Covec]  = None, # b, s -> s * b
         dual_pairing:           typ.Callable[[Covec,    Vec], Scalar] = None, # b, u -> b(u)
+        vector_is_bad:          typ.Callable[[Vec],           bool]   = None, # returns true if vector is bad (e.g., contains nans or infs)
         max_iter:   int  = 250,
         display:    bool = True,
         callback:   typ.Callable = None, #used as callback(xk), where xk is the current iterate
@@ -41,14 +42,15 @@ def cg_steihaug(
         if display:
             print(s)
 
-    callback             = (lambda z: None) if callback             is None else callback
-    add_vectors          = tla.add     if add_vectors is None else add_vectors
-    add_covectors        = tla.add     if add_covectors is None else add_covectors
-    scale_vector         = tla.scale   if scale_vector is None else scale_vector
-    scale_covector       = tla.scale   if scale_covector is None else scale_covector
-    preconditioner_apply = (lambda u: u)    if preconditioner_apply is None else preconditioner_apply
-    preconditioner_solve = (lambda u: u)    if preconditioner_solve is None else preconditioner_solve
-    dual_pairing         = tla.dot     if dual_pairing is None else dual_pairing
+    callback                = (lambda z: None)  if callback             is None else callback
+    add_vectors             = tla.add           if add_vectors          is None else add_vectors
+    add_covectors           = tla.add           if add_covectors        is None else add_covectors
+    scale_vector            = tla.scale         if scale_vector         is None else scale_vector
+    scale_covector          = tla.scale         if scale_covector       is None else scale_covector
+    preconditioner_apply    = (lambda u: u)     if preconditioner_apply is None else preconditioner_apply
+    preconditioner_solve    = (lambda u: u)     if preconditioner_solve is None else preconditioner_solve
+    dual_pairing            = tla.dot           if dual_pairing         is None else dual_pairing
+    vector_is_bad           = tla.isbad         if vector_is_bad        is None else vector_is_bad
 
     g_covec = gradient
 
@@ -93,26 +95,26 @@ def cg_steihaug(
             if m1 <= m2:
                 tau = tau1
                 new_x_vec = x1_vec
-                if tla.isbad(new_x_vec):
+                if vector_is_bad(new_x_vec):
                     print('INF or NAN detected. Terminating CG-Steihaug early')
                     return x_vec, (jj + 1, 'INF OR NAN')
                 else:
                     x_vec = new_x_vec
             else:
                 tau = tau2
-                proposed_x_vec = x2_vec
-                if tla.isbad(new_x_vec):
+                new_x_vec = x2_vec
+                if vector_is_bad(new_x_vec):
                     print('INF or NAN detected. Terminating CG-Steihaug early')
                     return x_vec, (jj + 1, 'INF OR NAN')
                 else:
-                    x_vec = proposed_x_vec
+                    x_vec = new_x_vec
             _print('m1=' + str(m1) + ', m2=' + str(m2))
             _print('Iterate ' + str(jj) + ' encountered negative curvature. tau=' + str(tau))
             return x_vec, (jj+1, 'encountered_negative_curvature')
 
         alpha = r_iM_r / pHp
         new_x_vec = add_vectors(x_vec, scale_vector(p_vec, alpha)) # x <- x + alpha*p
-        if tla.isbad(new_x_vec):
+        if vector_is_bad(new_x_vec):
             print('INF or NAN detected. Terminating CG-Steihaug early')
             return x_vec, (jj + 1, 'INF OR NAN')
         else:
@@ -127,7 +129,7 @@ def cg_steihaug(
             tau, _ = _interpolate_to_trust_region_boundary(x_M_x, p_M_p, p_M_x, trust_region_radius, display=True)
 
             new_x_vec = add_vectors(x_vec, scale_vector(p_vec, tau)) # p = z + tau*d
-            if tla.isbad(new_x_vec):
+            if vector_is_bad(new_x_vec):
                 print('INF or NAN detected. Terminating early')
                 return x_vec, (jj + 1, 'INF OR NAN')
             else:

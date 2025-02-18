@@ -2,8 +2,8 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 
-from nalger_helper_functions.low_rank_matrix_optimization.low_rank_matrix_optimization_problem import *
-from nalger_helper_functions.low_rank_matrix_optimization.low_rank_matrix_manifold import *
+from nalger_helper_functions.experimental.low_rank_matrix_optimization.low_rank_matrix_optimization_problem import *
+from nalger_helper_functions.experimental.low_rank_matrix_optimization.low_rank_matrix_manifold import *
 import nalger_helper_functions.tree_linalg as tla
 
 # Test

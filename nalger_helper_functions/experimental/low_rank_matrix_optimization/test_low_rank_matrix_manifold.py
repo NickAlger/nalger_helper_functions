@@ -1,7 +1,7 @@
 import numpy as np
 import jax
 
-from nalger_helper_functions.low_rank_matrix_optimization.low_rank_matrix_manifold import *
+from nalger_helper_functions.experimental.low_rank_matrix_optimization.low_rank_matrix_manifold import *
 import nalger_helper_functions.tree_linalg as tla
 
 jax.config.update("jax_enable_x64", True) # enable double precision
