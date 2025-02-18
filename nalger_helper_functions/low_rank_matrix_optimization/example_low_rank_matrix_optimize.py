@@ -128,7 +128,7 @@ true_outputs = (Ytrue, Ytrue_r)
 
 rank = 5
 
-a_reg = 1e-1 #1e3
+a_reg = 1e-3 #1e3
 
 # RL = a_reg * laplacian(N)
 # RR = a_reg * laplacian(M)
@@ -149,13 +149,18 @@ Ax_Y = U[:,:rank].T @ Ytrue_r
 Ax = Ax_X @ Ax_Y
 # Ax_smooth = low_rank_to_full(solve_R((Ax_X, Ax_Y)))
 
-B, B_r = solve_R((Ytrue, Ytrue_r))
+# B, B_r = solve_R((Ytrue, Ytrue_r))
+B, B_r = solve_R((np.random.randn(N,num_samples+5), np.random.randn(num_samples+5, M)))
+# B, B_r = solve_R((np.random.randn(N, rank), np.random.randn(rank, M)))
 Q = np.linalg.qr(B, mode='reduced')[0]
 Q_r = np.linalg.qr(B_r.T, mode='reduced')[0].T
 
-# x0 = (Q @ Q.T @ Ax_X, Ax_Y @ Q_r.T @ Q_r)
+projected_Ax_X = Q @ Q.T @ Ax_X
+projected_Ax_Y = Ax_Y @ Q_r.T @ Q_r
+projected_Ax = projected_Ax_X @ projected_Ax_Y
+x0 = (projected_Ax_X, projected_Ax_Y)
 
-x0 = (Ax_X, Ax_Y)
+# x0 = (Ax_X, Ax_Y)
 # x0 = solve_R((Ax_X, Ax_Y))
 # x0 = svd_initial_guess(solve_R(true_outputs), rank)
 # x0 = svd_initial_guess(true_outputs, rank)
@@ -165,9 +170,9 @@ x0 = left_orthogonalize_low_rank(x0)
 x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
     inputs, true_outputs, x0,
     apply_R=apply_R,
-    newton_max_iter=50, newton_rtol=1e-2,
-    # cg_rtol_power=0.5,
-    cg_rtol_power=1.0,
+    newton_max_iter=50, newton_rtol=1e-4,
+    cg_rtol_power=0.5,
+    # cg_rtol_power=1.0,
 )
 
 # inputs_hat = (iRR @ Omega, Omega_r @ iRL)
@@ -215,34 +220,77 @@ print('svals=', svals)
 #
 
 plt.figure(figsize=(12,8))
-plt.subplot(2,3,1)
+plt.subplot(2,4,1)
 plt.imshow(A0)
 plt.title('Original A')
-plt.subplot(2,3,2)
+plt.subplot(2,4,2)
 plt.imshow(A)
 plt.title('Noisy A')
-plt.subplot(2,3,3)
+plt.subplot(2,4,3)
 plt.imshow(A2)
 plt.title('Optimization')
-plt.subplot(2,3,4)
+plt.subplot(2,4,4)
+plt.imshow(projected_Ax)
+plt.title('Projected CUR')
+plt.subplot(2,4,5)
 plt.imshow(Ax)
-plt.title('One pass rsvd of noisy A')
-plt.subplot(2,3,5)
+plt.title('CUR of noisy A')
+plt.subplot(2,4,6)
 plt.imshow(Ar)
 plt.title('Exact svd of noisy A')
-plt.subplot(2,3,6)
+plt.subplot(2,4,7)
 plt.imshow(Arsvd)
 plt.title('Double pass rsvd of noisy A')
 
-plt.figure()
-plt.plot(A0[:,10])
-plt.plot(A[:,10])
-plt.plot(A2[:,10])
-plt.plot(Ax[:,10])
 
 
-a_reg = 1e3
-x0 = x
+k1 = 10
+k2 = 53
+plt.figure(figsize=(12,8))
+plt.subplot(2,3,1)
+plt.plot(A0[:,k1])
+plt.plot(Ax[:,k1])
+plt.title('CUR 1')
+
+plt.subplot(2,3,2)
+plt.plot(A0[:,k1])
+plt.plot(projected_Ax[:,k1])
+plt.title('projected CUR 1')
+
+plt.subplot(2,3,3)
+plt.plot(A0[:,k1])
+plt.plot(A2[:,k1])
+plt.title('Optimization 1')
+
+plt.subplot(2,3,4)
+plt.plot(A0[:,k2])
+plt.plot(Ax[:,k2])
+plt.title('CUR 2')
+
+plt.subplot(2,3,5)
+plt.plot(A0[:,k2])
+plt.plot(projected_Ax[:,k2])
+plt.title('projected CUR 2')
+
+plt.subplot(2,3,6)
+plt.plot(A0[:,k2])
+plt.plot(A2[:,k2])
+plt.title('Optimization 2')
+
+
+#
+
+# a_reg = 1e2
+# x0 = x
+#
+# RL = a_reg * ML
+# RR = a_reg * MR
+#
+# iRL = np.linalg.inv(RL)
+# iRR = np.linalg.inv(RR)
+#
+# apply_R = lambda b: (RL @ b[0], b[1] @ RR)
+# solve_R = lambda b: (iRL @ b[0], b[1] @ iRR)
 
 #
 
