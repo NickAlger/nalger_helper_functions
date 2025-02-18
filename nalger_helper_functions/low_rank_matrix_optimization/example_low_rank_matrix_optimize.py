@@ -76,8 +76,8 @@ print('svals=', svals)
 
 #### Create true matrix by drawing rows and columns from a distribution
 
-N = 100
-M = 89
+N = 200
+M = 189
 noise_level = 3e-1
 num_samples = 10
 
@@ -126,9 +126,9 @@ inputs = (Omega, Omega_r)
 true_outputs = (Ytrue, Ytrue_r)
 
 
-rank = 5
+rank = 9
 
-a_reg = 1e-3 #1e3
+a_reg = 1e-3
 
 # RL = a_reg * laplacian(N)
 # RR = a_reg * laplacian(M)
@@ -170,7 +170,7 @@ x0 = left_orthogonalize_low_rank(x0)
 x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
     inputs, true_outputs, x0,
     apply_R=apply_R,
-    newton_max_iter=50, newton_rtol=1e-4,
+    newton_max_iter=50, newton_rtol=1e-2,
     cg_rtol_power=0.5,
     # cg_rtol_power=1.0,
 )
@@ -206,8 +206,11 @@ Ursvd, ssrsvd, Vtrsvd = rsvd_double_pass(
     (N, M), lambda X: A @ X, lambda Z: Z @ A, rank, num_samples-rank,
 )
 
-single_rsvd_err = np.linalg.norm(Ax - A0) / np.linalg.norm(A0)
-print('single_rsvd_err=', single_rsvd_err)
+cur_err = np.linalg.norm(Ax - A0) / np.linalg.norm(A0)
+print('cur_err=', cur_err)
+
+projected_cur_err = np.linalg.norm(projected_Ax - A0) / np.linalg.norm(A0)
+print('projected_cur_err=', projected_cur_err)
 
 Arsvd = Ursvd @ np.diag(ssrsvd) @ Vtrsvd
 
@@ -246,35 +249,51 @@ plt.title('Double pass rsvd of noisy A')
 
 k1 = 10
 k2 = 53
-plt.figure(figsize=(12,8))
-plt.subplot(2,3,1)
+k3 = 26
+plt.figure(figsize=(12,12))
+plt.subplot(3,3,1)
 plt.plot(A0[:,k1])
 plt.plot(Ax[:,k1])
 plt.title('CUR 1')
 
-plt.subplot(2,3,2)
+plt.subplot(3,3,2)
 plt.plot(A0[:,k1])
 plt.plot(projected_Ax[:,k1])
 plt.title('projected CUR 1')
 
-plt.subplot(2,3,3)
+plt.subplot(3,3,3)
 plt.plot(A0[:,k1])
 plt.plot(A2[:,k1])
 plt.title('Optimization 1')
 
-plt.subplot(2,3,4)
+plt.subplot(3,3,4)
 plt.plot(A0[:,k2])
 plt.plot(Ax[:,k2])
 plt.title('CUR 2')
 
-plt.subplot(2,3,5)
+plt.subplot(3,3,5)
 plt.plot(A0[:,k2])
 plt.plot(projected_Ax[:,k2])
 plt.title('projected CUR 2')
 
-plt.subplot(2,3,6)
+plt.subplot(3,3,6)
 plt.plot(A0[:,k2])
 plt.plot(A2[:,k2])
+plt.title('Optimization 2')
+
+plt.subplot(3,3,7)
+plt.plot(A0[k3,:])
+plt.plot(Ax[k3,:])
+plt.title('CUR 2')
+
+plt.subplot(3,3,8)
+plt.plot(A0[k3,:])
+plt.plot(projected_Ax[k3,:])
+plt.title('projected CUR 2')
+
+plt.subplot(3,3,9)
+plt.plot(A0[k3,:])
+plt.plot(A2[k3,:])
 plt.title('Optimization 2')
 
 
