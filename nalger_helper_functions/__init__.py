@@ -351,3 +351,8 @@ try:
     from .rsvd import rsvd_double_pass
 except Exception:
     print('rsvd_double_pass not loaded')
+
+try:
+    from .laplacian_on_box import *
+except Exception:
+    print('laplacian_on_box not loaded')
