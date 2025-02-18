@@ -116,42 +116,54 @@ def trust_region_optimize(
         cg_preconditioner_solve = lambda w: preconditioner_solve(w, x, x_aux, J_aux, g_aux)
 
         cg_max_iter2 = cg_max_iter
-        if newton_iter == 1:
-            cg_max_iter2 = 1
-            trust_region_radius = np.inf
+        # if newton_iter == 1:
+        #     cg_max_iter2 = 1
+        #     trust_region_radius = np.inf
 
         cg_rtol = np.maximum(np.minimum(0.5, np.power(np.sqrt(g_iM_g / g0_iM_g0), cg_rtol_power)), newton_rtol / 3.0)
-        # if newton_iter == 1:
-        #     norm_g = tla.norm(g)
-        #     r = tla.scale(g, -1.0 / norm_g)
-        #     print('|r|=', tla.norm(r))
-        #
-        #     z = cg_preconditioner_solve(r)
-        #     norm_z = tla.norm(z)
-        #     print('|z|=', norm_z)
-        #
-        #     Hz = hvp_func(z)
-        #     norm_Hz = tla.norm(Hz)
-        #     print('|Hz|=', tla.norm(norm_Hz))
-        #     Hz = tla.scale(Hz, 1.0 / norm_g)
-        #
-        #     a = cg_dual_pairing(r, z) / cg_dual_pairing(Hz, z)
-        #     print('a=', a)
-        #     a = a * norm_Hz / norm_g
-        #
-        #     p = cg_scale_vector(z, a)
-        #     print('|p|=', tla.norm(p))
-        #     p = tla.scale(p, norm_g)
-        #     termination_reason = 'first_iteration'
-        #     num_cg_iter = 1
-        #     cg_rtol = jnp.array(1.0)
-        #     M_p = cg_preconditioner_apply(p)
-        #     print('|M_p|=', tla.norm(M_p))
-        #     trust_region_radius = np.sqrt(cg_dual_pairing(M_p, p))
-        #     print('ASDF trust_region_radius=', trust_region_radius)
-        #     min_trust_region_radius = trust_region_min_radius_factor * trust_region_radius
-        # else:
-        if True:
+        if newton_iter == 1:
+            r = cg_scale_vector(g, -1.0)
+            print('|r|=', tla.norm(r))
+            z = cg_preconditioner_solve(r)
+            print('|z|=', tla.norm(z))
+            Hz = hvp_func(z)
+            print('|Hz|=', tla.norm(Hz))
+            a = cg_dual_pairing(r, z) / cg_dual_pairing(Hz, z)
+            print('a=', a)
+            p = cg_scale_vector(z, a)
+            print('|p|=', tla.norm(p))
+
+            # norm_g = tla.norm(g)
+            # r = tla.scale(g, -1.0 / norm_g)
+            # print('|r|=', tla.norm(r))
+            #
+            # z = cg_preconditioner_solve(r)
+            # norm_z = tla.norm(z)
+            # print('|z|=', norm_z)
+            #
+            # Hz = hvp_func(z)
+            # norm_Hz = tla.norm(Hz)
+            # print('|Hz|=', tla.norm(norm_Hz))
+            # Hz = tla.scale(Hz, 1.0 / norm_g)
+            #
+            # a = cg_dual_pairing(r, z) / cg_dual_pairing(Hz, z)
+            # print('a=', a)
+            # a = a * norm_Hz / norm_g
+            #
+            # p = cg_scale_vector(z, a)
+            # print('|p|=', tla.norm(p))
+            # p = tla.scale(p, norm_g)
+
+            termination_reason = 'first_iteration'
+            num_cg_iter = 1
+            cg_rtol = jnp.array(1.0)
+            M_p = cg_preconditioner_apply(p)
+            print('|M_p|=', tla.norm(M_p))
+            trust_region_radius = np.sqrt(cg_dual_pairing(M_p, p))
+            print('ASDF trust_region_radius=', trust_region_radius)
+            min_trust_region_radius = trust_region_min_radius_factor * trust_region_radius
+        else:
+        # if True:
             p, (num_cg_iter, termination_reason) = cg_steihaug(
                 hvp_func, g, trust_region_radius, cg_rtol,
                 preconditioner_apply=cg_preconditioner_apply,
@@ -164,13 +176,13 @@ def trust_region_optimize(
                 max_iter=cg_max_iter2, display=cg_display, callback=cg_callback,
             )
 
-        if newton_iter == 1:
-            termination_reason = 'first_iteration'
-            num_cg_iter = 1
-            cg_rtol = jnp.array(1.0)
-            M_p = cg_preconditioner_apply(p)
-            trust_region_radius = cg_dual_pairing(M_p, p)
-            min_trust_region_radius = trust_region_min_radius_factor * trust_region_radius
+        # if newton_iter == 1:
+        #     termination_reason = 'first_iteration'
+        #     num_cg_iter = 1
+        #     cg_rtol = jnp.array(1.0)
+        #     M_p = cg_preconditioner_apply(p)
+        #     trust_region_radius = cg_dual_pairing(M_p, p)
+        #     min_trust_region_radius = trust_region_min_radius_factor * trust_region_radius
 
         s = '{:<12s}'.format('trust size') + '{:<10s}'.format('CG rtol') + '{:<10s}'.format('#CG') + 'CG termination reason' + '\n'
         s += '{:<12.1E}'.format(trust_region_radius) + '{:<10.1E}'.format(cg_rtol) + '{:<10d}'.format(num_cg_iter) + termination_reason + '\n'

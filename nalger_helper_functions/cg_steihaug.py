@@ -7,6 +7,7 @@ Vec    = typ.TypeVar('Vec')
 Covec  = typ.TypeVar('Covec')
 Scalar = typ.TypeVar('Scalar')
 
+
 def cg_steihaug(
         hessian_matvec:         typ.Callable[[Vec], Covec], # u_vec -> H @ u_vec
         gradient:               Covec,
@@ -57,6 +58,7 @@ def cg_steihaug(
     atol_squared = rtol**2 * r0_iM_r0
 
     x_vec = scale_vector(iM_r_vec, 0.0)
+
     p_vec = iM_r_vec
 
     r_iM_r = r0_iM_r0
@@ -90,16 +92,32 @@ def cg_steihaug(
             m2 = dual_pairing(g_covec, x2_vec) + 0.5 * dual_pairing(x2_vec, hessian_matvec(x2_vec))
             if m1 <= m2:
                 tau = tau1
-                x_vec = x1_vec
+                new_x_vec = x1_vec
+                if tla.isbad(new_x_vec):
+                    print('INF or NAN detected. Terminating CG-Steihaug early')
+                    return x_vec, (jj + 1, 'INF OR NAN')
+                else:
+                    x_vec = new_x_vec
             else:
                 tau = tau2
-                x_vec = x2_vec
+                proposed_x_vec = x2_vec
+                if tla.isbad(new_x_vec):
+                    print('INF or NAN detected. Terminating CG-Steihaug early')
+                    return x_vec, (jj + 1, 'INF OR NAN')
+                else:
+                    x_vec = proposed_x_vec
             _print('m1=' + str(m1) + ', m2=' + str(m2))
             _print('Iterate ' + str(jj) + ' encountered negative curvature. tau=' + str(tau))
             return x_vec, (jj+1, 'encountered_negative_curvature')
 
         alpha = r_iM_r / pHp
-        x_vec = add_vectors(x_vec, scale_vector(p_vec, alpha)) # x <- x + alpha*p
+        new_x_vec = add_vectors(x_vec, scale_vector(p_vec, alpha)) # x <- x + alpha*p
+        if tla.isbad(new_x_vec):
+            print('INF or NAN detected. Terminating CG-Steihaug early')
+            return x_vec, (jj + 1, 'INF OR NAN')
+        else:
+            x_vec = new_x_vec
+
         x_M_x = dual_pairing(preconditioner_apply(x_vec), x_vec)
 
         if x_M_x >= trust_region_radius ** 2:
@@ -108,7 +126,13 @@ def cg_steihaug(
             p_M_x = dual_pairing(Mp_covec, x_vec)
             tau, _ = _interpolate_to_trust_region_boundary(x_M_x, p_M_p, p_M_x, trust_region_radius, display=True)
 
-            x_vec = add_vectors(x_vec, scale_vector(p_vec, tau)) # p = z + tau*d
+            new_x_vec = add_vectors(x_vec, scale_vector(p_vec, tau)) # p = z + tau*d
+            if tla.isbad(new_x_vec):
+                print('INF or NAN detected. Terminating early')
+                return x_vec, (jj + 1, 'INF OR NAN')
+            else:
+                x_vec = new_x_vec
+
             _print(
                 'Iterate ' + str(jj)
                 + ' exited trust region. trust_region_radius=' + str(trust_region_radius)
@@ -120,6 +144,8 @@ def cg_steihaug(
         iM_r_vec = preconditioner_solve(r_covec)
         r_iM_r_previous = r_iM_r
         r_iM_r = dual_pairing(r_covec, iM_r_vec) # scalar, shape=()
+        # print('ASDF r0_iM_r0=', r0_iM_r0)
+        # print('ASDF r_iM_r=', r_iM_r)
         _print(
             'CG Iter:' + str(jj)
             + ', ||r||_iM / ||r0||_iM=' + str(np.sqrt(r_iM_r / r0_iM_r0))

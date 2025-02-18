@@ -13,6 +13,8 @@ from nalger_helper_functions.low_rank_matrix_optimization.low_rank_matrix_optimi
 import nalger_helper_functions.tree_linalg as tla
 
 # jax.config.update("jax_enable_x64", True) # enable double precision
+# from jax.config import config
+# config.update('jax_disable_jit', True)
 
 
 #### Use trust region method to solve low rank fit problem
@@ -76,15 +78,26 @@ print('svals=', svals)
 
 N = 100
 M = 89
-noise_level = 2e-1
+noise_level = 3e-1
 num_samples = 10
 
 def laplacian(n):
-    return np.diag(2*np.ones(n), 0) + np.diag(-np.ones(n-1), -1) + np.diag(-np.ones(n-1), 1)
+    L0 = np.diag(-np.ones(n-1), -1) + np.diag(2*np.ones(n), 0) + np.diag(-np.ones(n-1), 1)
+    L0[0, 0] = 1 # neumann B.C.'s
+    L0[-1, -1] = 1
+    h = 1.0/n
+    return L0 / h**2
 
-ML = 3e-2 * np.eye(N) + laplacian(N)
+def mass_matrix(n):
+    M0 = np.diag(np.ones(n), 0)
+    h = 1.0/n
+    return M0 * h
+
+
+ML = 1e-2 * (1e4 * mass_matrix(N) + laplacian(N))
 CL = np.linalg.inv(ML)
-MR = 3e-2 * np.eye(M) + laplacian(M)
+
+MR = 1e-2 * (1e4 * mass_matrix(M) + laplacian(M))
 CR = np.linalg.inv(MR)
 
 K = np.minimum(N,M)
@@ -95,8 +108,14 @@ noise = np.random.randn(*A0.shape)
 noise = noise * noise_level * np.linalg.norm(A0) / np.linalg.norm(noise)
 A = A0 + noise
 
-Omega = jnp.array(np.random.randn(M, num_samples))
-Omega_r = jnp.array(np.random.randn(num_samples, N))
+row_inds = np.random.permutation(N)[:num_samples]
+col_inds = np.random.permutation(M)[:num_samples]
+
+Omega = np.eye(M)[:, col_inds]
+Omega_r = np.eye(N)[row_inds, :]
+
+# Omega = jnp.array(np.random.randn(M, num_samples))
+# Omega_r = jnp.array(np.random.randn(num_samples, N))
 
 Omega = Omega / jnp.linalg.norm(Omega, axis=0).reshape((1,-1))
 Omega_r = Omega_r / jnp.linalg.norm(Omega_r, axis=1).reshape((-1,1))
@@ -109,12 +128,12 @@ true_outputs = (Ytrue, Ytrue_r)
 
 rank = 5
 
-a_reg = 1e0
+a_reg = 1e-1 #1e3
 
-RL = a_reg * laplacian(N)
-RR = a_reg * laplacian(M)
-# RL = a_reg * ML
-# RR = a_reg * MR
+# RL = a_reg * laplacian(N)
+# RR = a_reg * laplacian(M)
+RL = a_reg * ML
+RR = a_reg * MR
 # RL = ML
 # RR = MR
 
@@ -130,6 +149,12 @@ Ax_Y = U[:,:rank].T @ Ytrue_r
 Ax = Ax_X @ Ax_Y
 # Ax_smooth = low_rank_to_full(solve_R((Ax_X, Ax_Y)))
 
+B, B_r = solve_R((Ytrue, Ytrue_r))
+Q = np.linalg.qr(B, mode='reduced')[0]
+Q_r = np.linalg.qr(B_r.T, mode='reduced')[0].T
+
+# x0 = (Q @ Q.T @ Ax_X, Ax_Y @ Q_r.T @ Q_r)
+
 x0 = (Ax_X, Ax_Y)
 # x0 = solve_R((Ax_X, Ax_Y))
 # x0 = svd_initial_guess(solve_R(true_outputs), rank)
@@ -141,8 +166,8 @@ x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
     inputs, true_outputs, x0,
     apply_R=apply_R,
     newton_max_iter=50, newton_rtol=1e-2,
-    cg_rtol_power=0.5,
-    # cg_rtol_power=1.0,
+    # cg_rtol_power=0.5,
+    cg_rtol_power=1.0,
 )
 
 # inputs_hat = (iRR @ Omega, Omega_r @ iRL)
@@ -155,8 +180,8 @@ x, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank(
 #     apply_R = lambda b: (b[0], b[1]),
 #     apply_P = lambda b: (iRL @ b[0], b[1] @ iRR),
 #     newton_max_iter=50, newton_rtol=1e-2,
-#     cg_rtol_power=0.5,
-#     # cg_rtol_power=1.0,
+#     # cg_rtol_power=0.5,
+#     cg_rtol_power=1.0,
 # )
 # x = (iRL @ xhat[0], xhat[1] @ iRR)
 
@@ -208,6 +233,17 @@ plt.title('Exact svd of noisy A')
 plt.subplot(2,3,6)
 plt.imshow(Arsvd)
 plt.title('Double pass rsvd of noisy A')
+
+plt.figure()
+plt.plot(A0[:,10])
+plt.plot(A[:,10])
+plt.plot(A2[:,10])
+plt.plot(Ax[:,10])
+
+
+a_reg = 1e3
+x0 = x
+
 #
 
 if False:

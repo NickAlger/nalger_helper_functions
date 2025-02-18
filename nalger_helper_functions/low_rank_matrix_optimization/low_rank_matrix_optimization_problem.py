@@ -164,7 +164,9 @@ def loss(
     relerrs = rsq_num / rsq_den
     relerrs_r = rsq_num_r / rsq_den_r
 
-    J = 0.5 * jnp.sum(rsq_num) + 0.5 * jnp.sum(rsq_num_r)
+    # J = 0.5 * jnp.sum(rsq_num) + 0.5 * jnp.sum(rsq_num_r)
+    J = 0.5 * jnp.sum(relerrs) + 0.5 * jnp.sum(relerrs_r)
+    # J = 0.5 * jnp.sum(rsq_num) / py.size + 0.5 * jnp.sum(rsq_num_r) / py_r.size
     return J, (relerrs, relerrs_r)
 
 

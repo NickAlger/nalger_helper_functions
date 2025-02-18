@@ -103,7 +103,16 @@ leaf_normsquared     = lambda U:     leaf_dot(U, U)
 leaf_norm            = lambda U:     tree_elementwise_operation(lambda u: np.sqrt(u), leaf_normsquared(U))
 
 ones = lambda U: tree_elementwise_operation(lambda u: np.ones(np.array(u).shape), U)
+zeros = lambda U: tree_elementwise_operation(lambda u: np.zeros(np.array(u).shape), U)
 randn = lambda U: tree_elementwise_operation(lambda u: np.random.randn(*np.array(u).shape), U)
+rand = lambda U: tree_elementwise_operation(lambda u: np.random.rand(*np.array(u).shape), U)
+
+isnan = lambda U: tree_elementwise_operation(lambda u: np.isnan(np.array(u)), U)
+isinf = lambda U: tree_elementwise_operation(lambda u: np.isinf(np.array(u)), U)
+
+logical_or = lambda U, V: tree_binary_operation(lambda u, v: np.logical_or(u, v), U, V)
+logical_and = lambda U, V: tree_binary_operation(lambda u, v: np.logical_and(u, v), U, V)
+logical_not = lambda U, V: tree_elementwise_operation(lambda u: np.logical_not(u), U)
 
 sum            = lambda U:     tree_reduce(np.sum, lambda u, v: u + v, U)
 dot            = lambda U, V:  sum(mult(U, V))
@@ -112,6 +121,8 @@ norm           = lambda U:     np.sqrt(normsquared(U))
 
 all = lambda U: tree_reduce(np.all, lambda u, v: np.logical_and(u, v), U)
 any = lambda U: tree_reduce(np.any, lambda u, v: np.logical_or(u, v), U)
+
+isbad = lambda U: any(logical_or(isnan(U), isinf(U)))
 
 eq = lambda U, V: tree_binary_operation(lambda u, v: u == v, U, V)
 lt = lambda U, V: tree_binary_operation(lambda u, v: u < v, U, V)
