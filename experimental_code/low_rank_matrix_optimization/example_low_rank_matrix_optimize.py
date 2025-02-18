@@ -78,7 +78,7 @@ print('svals=', svals)
 
 N = 200
 M = 189
-noise_level = 5e-1
+noise_level = 3e-1
 
 def laplacian(n):
     L0 = np.diag(-np.ones(n-1), -1) + np.diag(2*np.ones(n), 0) + np.diag(-np.ones(n-1), 1)
@@ -108,6 +108,18 @@ CR = np.linalg.inv(MR)
 K = np.minimum(N,M)
 
 A0 = (CL @ np.random.randn(N,K)) @ (np.random.randn(K,M) @ CR)
+
+num_first_eigs = 10
+
+U, ss, Vt = np.linalg.svd(A0, full_matrices=False)
+# A0 = U @ np.diag(np.power(ss, 0.5)) @ Vt
+first_ss = np.power(ss[:num_first_eigs], 0.75)
+last_ss = np.power(ss[num_first_eigs:], 0.25)
+last_ss = last_ss * first_ss[-1] / last_ss[0]
+new_ss = np.concatenate([first_ss, last_ss])
+A0 = U @ np.diag(new_ss) @ Vt
+plt.figure()
+plt.semilogy(new_ss)
 
 # # tt = np.linspace(-np.pi, np.pi, N)
 # row_multiplier = np.exp(-0.5 * tt**2 / 2)
@@ -167,7 +179,7 @@ Ax_Y = U[:,:rank].T @ Ytrue_r
 Ax = Ax_X @ Ax_Y
 # Ax_smooth = low_rank_to_full(solve_R((Ax_X, Ax_Y)))
 
-extra_basis = 5
+extra_basis = 5 # 5
 
 # B, B_r = solve_R((Ytrue, Ytrue_r))
 B, B_r = solve_R((np.random.randn(N,num_samples+extra_basis), np.random.randn(num_samples+extra_basis, M)))
