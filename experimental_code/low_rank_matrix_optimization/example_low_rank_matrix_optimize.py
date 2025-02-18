@@ -78,7 +78,7 @@ print('svals=', svals)
 
 N = 200
 M = 189
-noise_level = 3e-1
+noise_level = 5e-1
 
 def laplacian(n):
     L0 = np.diag(-np.ones(n-1), -1) + np.diag(2*np.ones(n), 0) + np.diag(-np.ones(n-1), 1)
@@ -153,7 +153,7 @@ true_outputs = (Ytrue, Ytrue_r)
 
 rank = 10
 
-a_reg = 1e-3 # 1e-6
+a_reg = 1e-3
 
 # RL = a_reg * laplacian(N)
 # RR = a_reg * laplacian(M)
@@ -179,7 +179,7 @@ Ax_Y = U[:,:rank].T @ Ytrue_r
 Ax = Ax_X @ Ax_Y
 # Ax_smooth = low_rank_to_full(solve_R((Ax_X, Ax_Y)))
 
-extra_basis = 5 # 5
+extra_basis = 10
 
 # B, B_r = solve_R((Ytrue, Ytrue_r))
 B, B_r = solve_R((np.random.randn(N,num_samples+extra_basis), np.random.randn(num_samples+extra_basis, M)))
@@ -227,6 +227,7 @@ optimization_err = np.linalg.norm(A2 - A0) / np.linalg.norm(A0)
 print('rank=', rank)
 print('optimization_err=', optimization_err)
 
+# U, ss, Vt = np.linalg.svd(A0)
 U, ss, Vt = np.linalg.svd(A)
 Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
 
