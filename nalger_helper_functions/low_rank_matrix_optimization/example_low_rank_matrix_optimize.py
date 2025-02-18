@@ -78,7 +78,7 @@ print('svals=', svals)
 
 N = 200
 M = 189
-noise_level = 3e-1
+noise_level = 4e-1
 
 def laplacian(n):
     L0 = np.diag(-np.ones(n-1), -1) + np.diag(2*np.ones(n), 0) + np.diag(-np.ones(n-1), 1)
@@ -93,10 +93,16 @@ def mass_matrix(n):
     return M0 * h
 
 
-ML = 1e-2 * (4e4 * mass_matrix(N) + laplacian(N))
+ML0 = 4e4 * mass_matrix(N) + laplacian(N)
+ML1 = ML0 @ ML0
+ML = 1e-2 * ML0
+ML2 = 1e-2 * ML1
 CL = np.linalg.inv(ML)
 
-MR = 1e-2 * (4e4 * mass_matrix(M) + laplacian(M))
+MR0 = 4e4 * mass_matrix(M) + laplacian(M)
+MR1 = MR0 @ MR0
+MR = 1e-2 * MR0
+MR2 = 1e-2 * MR1
 CR = np.linalg.inv(MR)
 
 K = np.minimum(N,M)
@@ -130,12 +136,17 @@ true_outputs = (Ytrue, Ytrue_r)
 
 rank = 10
 
-a_reg = 1e-3
+a_reg = 1e-6 #1e-3
 
 # RL = a_reg * laplacian(N)
 # RR = a_reg * laplacian(M)
-RL = a_reg * ML
-RR = a_reg * MR
+
+# RL = a_reg * ML # <-- Standard
+# RR = a_reg * MR
+
+RL = a_reg * ML2 # <-- extra smoothing
+RR = a_reg * MR2
+
 # RL = ML
 # RR = MR
 
@@ -152,7 +163,7 @@ Ax = Ax_X @ Ax_Y
 # Ax_smooth = low_rank_to_full(solve_R((Ax_X, Ax_Y)))
 
 # B, B_r = solve_R((Ytrue, Ytrue_r))
-B, B_r = solve_R((np.random.randn(N,num_samples+5), np.random.randn(num_samples+5, M)))
+B, B_r = solve_R((np.random.randn(N,num_samples+10), np.random.randn(num_samples+10, M)))
 # B, B_r = solve_R((np.random.randn(N, rank), np.random.randn(rank, M)))
 Q = np.linalg.qr(B, mode='reduced')[0]
 Q_r = np.linalg.qr(B_r.T, mode='reduced')[0].T
