@@ -79,7 +79,6 @@ print('svals=', svals)
 N = 200
 M = 189
 noise_level = 3e-1
-num_samples = 10
 
 def laplacian(n):
     L0 = np.diag(-np.ones(n-1), -1) + np.diag(2*np.ones(n), 0) + np.diag(-np.ones(n-1), 1)
@@ -94,10 +93,10 @@ def mass_matrix(n):
     return M0 * h
 
 
-ML = 1e-2 * (1e4 * mass_matrix(N) + laplacian(N))
+ML = 1e-2 * (4e4 * mass_matrix(N) + laplacian(N))
 CL = np.linalg.inv(ML)
 
-MR = 1e-2 * (1e4 * mass_matrix(M) + laplacian(M))
+MR = 1e-2 * (4e4 * mass_matrix(M) + laplacian(M))
 CR = np.linalg.inv(MR)
 
 K = np.minimum(N,M)
@@ -107,6 +106,9 @@ A0 = (CL @ np.random.randn(N,K)) @ (np.random.randn(K,M) @ CR)
 noise = np.random.randn(*A0.shape)
 noise = noise * noise_level * np.linalg.norm(A0) / np.linalg.norm(noise)
 A = A0 + noise
+
+
+num_samples = 15
 
 row_inds = np.random.permutation(N)[:num_samples]
 col_inds = np.random.permutation(M)[:num_samples]
@@ -126,7 +128,7 @@ inputs = (Omega, Omega_r)
 true_outputs = (Ytrue, Ytrue_r)
 
 
-rank = 9
+rank = 10
 
 a_reg = 1e-3
 
