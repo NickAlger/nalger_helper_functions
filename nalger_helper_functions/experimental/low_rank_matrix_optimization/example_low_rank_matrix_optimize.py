@@ -11,6 +11,7 @@ from nalger_helper_functions.rsvd import rsvd_double_pass
 from nalger_helper_functions.experimental.low_rank_matrix_optimization.low_rank_matrix_optimization_problem import *
 from nalger_helper_functions.experimental.low_rank_matrix_optimization.low_rank_matrix_optimizers import *
 import nalger_helper_functions.tree_linalg as tla
+from nalger_helper_functions import laplacian_nd, mass_matrix_nd
 
 # jax.config.update("jax_enable_x64", True) # enable double precision
 # from jax.config import config
@@ -80,26 +81,13 @@ N = 200
 M = 189
 noise_level = 5e-1
 
-def laplacian(n):
-    L0 = np.diag(-np.ones(n-1), -1) + np.diag(2*np.ones(n), 0) + np.diag(-np.ones(n-1), 1)
-    L0[0, 0] = 1 # neumann B.C.'s
-    L0[-1, -1] = 1
-    h = 1.0/n
-    return L0 / h**2
-
-def mass_matrix(n):
-    M0 = np.diag(np.ones(n), 0)
-    h = 1.0/n
-    return M0 * h
-
-
-ML0 = 1e4 * mass_matrix(N) + laplacian(N)
+ML0 = (1e4 * mass_matrix_nd([N], [1.0]) + laplacian_nd([N], [1.0], ['N'], ['N'])).toarray()
 ML1 = ML0 @ ML0
 ML = 1e-2 * ML0
 ML2 = 1e-2 * ML1
 CL = np.linalg.inv(ML)
 
-MR0 = 1e4 * mass_matrix(M) + laplacian(M)
+MR0 = (1e4 * mass_matrix_nd([M], [1.0]) + laplacian_nd([M], [1.0], ['N'], ['N'])).toarray()
 MR1 = MR0 @ MR0
 MR = 1e-2 * MR0
 MR2 = 1e-2 * MR1

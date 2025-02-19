@@ -356,3 +356,8 @@ try:
     from .laplacian_on_box import *
 except Exception:
     print('laplacian_on_box not loaded')
+
+try:
+    from .mass_matrix_on_box import *
+except Exception:
+    print('mass_matrix_on_box not loaded')
