@@ -6,6 +6,8 @@ import functools as ft
 import scipy.linalg as sla
 import matplotlib.pyplot as plt
 
+from jax.experimental import sparse
+
 from nalger_helper_functions.experimental.low_rank_matrix_optimization.low_rank_matrix_manifold import *
 from nalger_helper_functions.rsvd import rsvd_double_pass
 from nalger_helper_functions.experimental.low_rank_matrix_optimization.low_rank_matrix_optimization_problem import *
@@ -81,20 +83,27 @@ N = 200
 M = 189
 noise_level = 5e-1
 
-ML0 = (1e4 * mass_matrix_nd([N], [1.0]) + laplacian_nd([N], [1.0], ['N'], ['N'])).toarray()
-ML1 = ML0 @ ML0
-ML = 1e-2 * ML0
-ML2 = 1e-2 * ML1
+ML0_sparse = (1e4 * mass_matrix_nd([N], [1.0]) + laplacian_nd([N], [1.0], ['N'], ['N']))
+ML0 = ML0_sparse.toarray()
+# ML1 = ML0 @ ML0
+ML_sparse = 1e-2 * ML0_sparse
+ML_sparse_jax = sparse.BCOO.from_scipy_sparse(ML_sparse)
+ML = ML_sparse.toarray()
+# ML2 = 1e-2 * ML1
 CL = np.linalg.inv(ML)
 
-MR0 = (1e4 * mass_matrix_nd([M], [1.0]) + laplacian_nd([M], [1.0], ['N'], ['N'])).toarray()
-MR1 = MR0 @ MR0
-MR = 1e-2 * MR0
-MR2 = 1e-2 * MR1
+MR0_sparse = (1e4 * mass_matrix_nd([M], [1.0]) + laplacian_nd([M], [1.0], ['N'], ['N']))
+MR0 = MR0_sparse.toarray()
+# MR1 = MR0 @ MR0
+MR_sparse = 1e-2 * MR0_sparse
+MR_sparse_jax = sparse.BCOO.from_scipy_sparse(MR_sparse)
+MR = MR_sparse.toarray()
+# MR2 = 1e-2 * MR1
 CR = np.linalg.inv(MR)
 
 K = np.minimum(N,M)
 
+# X @ Y where cols of X drawn N(0, ML^2), rows of Y are drawn from N(0, MR^2)
 A0 = (CL @ np.random.randn(N,K)) @ (np.random.randn(K,M) @ CR)
 
 num_first_eigs = 10
@@ -130,8 +139,8 @@ Omega_r = np.eye(N)[row_inds, :]
 # Omega = jnp.array(np.random.randn(M, num_samples))
 # Omega_r = jnp.array(np.random.randn(num_samples, N))
 
-Omega = Omega / jnp.linalg.norm(Omega, axis=0).reshape((1,-1))
-Omega_r = Omega_r / jnp.linalg.norm(Omega_r, axis=1).reshape((-1,1))
+# Omega = Omega / jnp.linalg.norm(Omega, axis=0).reshape((1,-1))
+# Omega_r = Omega_r / jnp.linalg.norm(Omega_r, axis=1).reshape((-1,1))
 
 Ytrue = A @ Omega
 Ytrue_r = Omega_r @ A
@@ -146,8 +155,13 @@ a_reg = 1e-3
 # RL = a_reg * laplacian(N)
 # RR = a_reg * laplacian(M)
 
-RL = a_reg * ML # <-- Standard
-RR = a_reg * MR
+
+RL_sparse_jax = a_reg * ML_sparse_jax
+RR_sparse_jax = a_reg * MR_sparse_jax
+RL = a_reg * ML_sparse.toarray()
+RR = a_reg * MR_sparse.toarray()
+# RL = a_reg * ML # <-- Standard
+# RR = a_reg * MR
 
 # RL = a_reg * ML2 # <-- extra smoothing
 # RR = a_reg * MR2
@@ -155,16 +169,20 @@ RR = a_reg * MR
 # RL = ML
 # RR = MR
 
+# min 0.5*||Y - Y_true||^2 + a_reg*0.5*||RL @ X @ Y||^2 + a_reg*0.5*||X @ Y @ RR||^2 + a_reg^2*0.5*||RL @ X @ Y @ RR||^2
+
 iRL = np.linalg.inv(RL)
 iRR = np.linalg.inv(RR)
 
-apply_R = lambda b: (RL @ b[0], b[1] @ RR)
+# apply_R = lambda b: (RL @ b[0], b[1] @ RR)
+apply_R = lambda b: (RL_sparse_jax @ b[0], b[1] @ RR_sparse_jax)
 solve_R = lambda b: (iRL @ b[0], b[1] @ iRR)
 
+# Doing CUR VVVV
 U, ss, Vt = np.linalg.svd(0.5 * (Omega_r @ Ytrue + Ytrue_r @ Omega), full_matrices=False)
 Ax_X = Ytrue @ Vt[:rank,:].T @ np.diag(1.0 / ss[:rank])
 Ax_Y = U[:,:rank].T @ Ytrue_r
-Ax = Ax_X @ Ax_Y
+Ax = Ax_X @ Ax_Y # CUR approx
 # Ax_smooth = low_rank_to_full(solve_R((Ax_X, Ax_Y)))
 
 extra_basis = 10
