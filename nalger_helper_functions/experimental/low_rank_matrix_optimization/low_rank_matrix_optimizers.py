@@ -16,7 +16,138 @@ from nalger_helper_functions.rsvd import rsvd_double_pass
 __all__ = [
     'low_rank_manifold_trust_region_optimize_fixed_rank',
     'svd_initial_guess',
+    'low_rank_manifold_trust_region_optimize_fixed_rank_nonlinear',
 ]
+
+
+Inputs  = typ.TypeVar('Inputs')
+Outputs = typ.TypeVar('Outputs')
+Param   = typ.TypeVar('Param')
+Scalar  = typ.TypeVar('Scalar')
+
+def low_rank_manifold_trust_region_optimize_fixed_rank_nonlinear(
+        inputs:         Inputs,
+        true_outputs:   Outputs,
+        m0:             Param,
+        forward_map: typ.Callable[[Param, Inputs], Outputs],
+        loss_func: typ.Callable[
+            [
+                Outputs, # y
+                Outputs, # y_true
+            ],
+            typ.Tuple[
+                Scalar, # Jd
+                typ.Tuple[
+                    jnp.ndarray, # relerrs
+                    jnp.ndarray, # relerrs_r
+                ],
+            ]
+        ],
+        regularization_func: typ.Callable[
+            [Param], # m
+            Scalar,  # Jr
+        ],
+        **kwargs,
+):
+    @jax.jit
+    def _J_func(
+            m: Param,
+            m_aux, # not used
+    ):
+        y: Outputs = forward_map(m, inputs)
+        Jd, (relerrs, relerrs_r) = loss_func(y, true_outputs)
+        Jr = regularization_func(m)
+        J = Jd + Jr
+        return J, (Jd, Jr, y, (relerrs, relerrs_r))
+
+    _g0d_func = jax.grad(_J_func, argnums=0, has_aux=True)
+    _g0r_func = jax.grad(regularization_func)
+
+    @jax.jit
+    def _g_func(
+            m: Param,
+            m_aux,
+            J_aux,
+    ):
+        g0d, g_aux = _g0d_func(m, m_aux)
+        g0r = _g0r_func(m)
+        g0 = tla.add(g0d, g0r)
+        g1 = lrmm.tangent_orthogonal_projection(m, g0)
+        return g1, (g0d, g0r, g_aux)
+
+    _forward_map2 = lambda q: forward_map(q, inputs)
+
+    @jax.jit
+    def _forward_map_jvp(
+            p: Param,
+            m: Param,
+    ):
+        return jax.jvp(_forward_map2, (m,), (p,))[1]
+
+    _forward_map_vjp = jax.jit(lambda dy: jax.vjp(_forward_map2, m0)[1](dy)[0])
+
+    _loss2 = lambda y: loss_func(y, true_outputs)[0]
+
+    _loss2_grad = jax.grad(_loss2, argnums=0, has_aux=False)
+
+    @jax.jit
+    def _loss_hvp(
+            dy:     Outputs,
+            y:      Outputs,
+    ):
+        return jax.jvp(_loss2_grad, (y,), (dy,))[1]
+
+    _reg_grad = jax.grad(regularization_func, argnums=0, has_aux=False)
+
+    @jax.jit
+    def _reg_hvp(
+            p: Param,
+            m: Param,
+    ):
+        return jax.jvp(_reg_grad, (m,), (p,))[1]
+
+    @jax.jit
+    def _H_matvec_func(
+            p: Param,
+            m: Param,
+            x_aux,
+            J_aux1,
+            g_aux,
+    ):
+        _, _, y, _ = J_aux1
+        p2 = lrmm.tangent_orthogonal_projection(m, p)
+
+        dy = _forward_map_jvp(p, m)
+        dy2 = _loss_hvp(dy, y)
+        Hd_p = _forward_map_vjp(dy2)
+
+        Hr_p = _reg_hvp(p2, m)
+
+        H_p0 = tla.add(Hd_p, Hr_p)
+
+        H_p1 = lrmm.tangent_orthogonal_projection(m, H_p0)
+        return H_p1
+
+    _apply_M_func   = lambda p, m,      m_aux, J_aux, g_aux:    preconditioner_apply(p, m, m_aux)
+    _solve_M_func   = lambda p, m,      m_aux, J_aux, g_aux:    preconditioner_solve(p, m, m_aux)
+    _retract_func   = lambda m, p,      m_aux:                  projected_retract(m, p)
+
+    def _J_aux_callback(J_aux):
+        Jd, Jr, y, (relerrs, relerrs_r) = J_aux
+        print_relerrs(Jd, Jr, relerrs, relerrs_r)
+
+    return trust_region_optimize(
+        _J_func,
+        _g_func,
+        _H_matvec_func,
+        m0,
+        retract=_retract_func,
+        preconditioner_apply=_apply_M_func,
+        preconditioner_solve=_solve_M_func,
+        compute_x_aux=compute_x_aux,
+        J_aux_callback=_J_aux_callback,
+        **kwargs,
+    )
 
 
 def low_rank_manifold_trust_region_optimize_fixed_rank(
@@ -103,10 +234,7 @@ projected_retract = lambda x, p: projected_retract_arbitrary_rank(x, p, None)
 preconditioner_apply = lambda u, x, x_aux: lrmm.apply_tangent_mass_matrix(u, x_aux[0])
 preconditioner_solve = lambda u, x, x_aux: lrmm.apply_tangent_mass_matrix(u, x_aux[1])
 
-def J_aux_callback(J_aux):
-    Jd, Jr, outputs, Jd_aux = J_aux
-    relerrs, relerrs_r = Jd_aux
-
+def print_relerrs(Jd, Jr, relerrs, relerrs_r):
     s = '\n'
     s += 'Jd=' + "{:<10.2e}".format(Jd)
     s += ', Jr=' + "{:<10.2e}".format(Jr)
@@ -118,6 +246,10 @@ def J_aux_callback(J_aux):
         s += "{:<10.2e}".format(relerrs_r[ii])
     s += '\n'
     print(s)
+
+def J_aux_callback(J_aux):
+    Jd, Jr, outputs, (relerrs, relerrs_r) = J_aux
+    print_relerrs(Jd, Jr, relerrs, relerrs_r)
 
 
 
