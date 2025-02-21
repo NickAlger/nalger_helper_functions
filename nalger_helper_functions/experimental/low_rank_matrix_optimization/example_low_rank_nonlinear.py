@@ -39,7 +39,7 @@ def forward_map(
     Omega, Omega_r = x
 
     A = X @ Y # slow. just for testing
-    B = jnp.cos(A) * A
+    B = A**2 # jnp.cos(A) * A
 
     Y = B @ Omega
     Y_r = Omega_r @ B
@@ -99,7 +99,7 @@ num_samples = 10
 U, _, Vt = np.linalg.svd(np.random.randn(N, M), full_matrices=False)
 ss = 1.0 / np.arange(1, np.minimum(N, M)+1)**2
 A = U @ np.diag(ss) @ Vt
-B = jnp.cos(A) * A # A**2
+B = A**2 #jnp.cos(A) * A
 
 inputs = (jnp.array(np.random.randn(M, num_samples)), jnp.array(np.random.randn(num_samples, N)))
 true_outputs = (B @ inputs[0], inputs[1] @ B)
@@ -115,11 +115,14 @@ noise = tla.randn(m0)
 noise = tla.scale(tla.scale(noise, tla.div(tla.norm(m0), tla.norm(noise))), noise_level)
 m0 = tla.add(m0, noise)
 
+# m0 = (U[:,:rank], ss[0]*Vt[:rank,:])
+
 # m0 = (jnp.array(np.random.randn(N, rank)), jnp.array(np.random.randn(rank, M)))
 # m0 = svd_initial_guess(true_outputs, rank)
 # m0 = (jnp.sqrt(jnp.abs(m0[0])), jnp.sqrt(jnp.abs(m0[1])))
 
-aa = [1e0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
+aa = [1e-5]
+# aa = [1e0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
 errs = []
 for a_reg in aa:
     m0 = left_orthogonalize_low_rank(m0)
@@ -131,7 +134,7 @@ for a_reg in aa:
     )
 
     A2 = low_rank_to_full(m)
-    B2 = np.cos(A2) * A2
+    B2 = A2**2 # np.cos(A2) * A2
     computed_err = np.linalg.norm(B2 - B) / np.linalg.norm(B)
     print('rank=', rank)
     print('computed_err=', computed_err)
@@ -139,8 +142,9 @@ for a_reg in aa:
 
     U, ss, Vt = np.linalg.svd(A)
     Ar = U[:, :rank] @ np.diag(ss[:rank]) @ Vt[:rank, :]
+    Br = Ar**2
 
-    ideal_err = np.linalg.norm(Ar - A) / np.linalg.norm(A)
+    ideal_err = np.linalg.norm(Br - B) / np.linalg.norm(B)
     print('ideal_err=', ideal_err)
 
     Ursvd, ssrsvd, Vtrsvd = rsvd_double_pass(
@@ -148,8 +152,9 @@ for a_reg in aa:
     )
 
     Arsvd = Ursvd @ np.diag(ssrsvd) @ Vtrsvd
+    Brsvd = Arsvd**2
 
-    rsvd_err = np.linalg.norm(Arsvd - A) / np.linalg.norm(A)
+    rsvd_err = np.linalg.norm(Brsvd - B) / np.linalg.norm(B)
     print('rsvd_err=', rsvd_err)
 
     svals = np.linalg.svd(m[1])[1]
