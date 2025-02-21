@@ -121,14 +121,14 @@ m0 = tla.add(m0, noise)
 # m0 = svd_initial_guess(true_outputs, rank)
 # m0 = (jnp.sqrt(jnp.abs(m0[0])), jnp.sqrt(jnp.abs(m0[1])))
 
-aa = [1e-5]
+aa = [1e-8]
 # aa = [1e0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5, 1e-6]
 errs = []
 for a_reg in aa:
     m0 = left_orthogonalize_low_rank(m0)
     m, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank_nonlinear(
         inputs, true_outputs, m0, forward_map, loss_func, lambda m: regularization0_func(m, a_reg),
-        newton_max_iter=50, newton_rtol=1e-2,
+        newton_max_iter=200, newton_rtol=1e-8,
         cg_rtol_power=0.5,
         # cg_rtol_power=1.0,
     )
