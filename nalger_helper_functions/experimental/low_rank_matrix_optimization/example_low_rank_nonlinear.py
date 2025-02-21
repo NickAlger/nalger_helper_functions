@@ -128,7 +128,7 @@ for a_reg in aa:
     m0 = left_orthogonalize_low_rank(m0)
     m, previous_step = low_rank_manifold_trust_region_optimize_fixed_rank_nonlinear(
         inputs, true_outputs, m0, forward_map, loss_func, lambda m: regularization0_func(m, a_reg),
-        newton_max_iter=200, newton_rtol=1e-8,
+        newton_max_iter=50, newton_rtol=1e-2,
         cg_rtol_power=0.5,
         # cg_rtol_power=1.0,
     )
