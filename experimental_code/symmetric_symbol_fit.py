@@ -296,6 +296,8 @@ A       = np.sum([np.diag(W[ii,:]) @ FH @ np.diag(Phi[ii,:]) @ F @ np.diag(W[ii,
 err_row_rescaling = np.linalg.norm(A - A_true) / np.linalg.norm(A_true)
 print('err_row_rescaling=', err_row_rescaling)
 
+n_basis = np.linalg.svd(jfft.fft(np.eye(n, dtype=complex) - 1/n))[0]
+
 all_tangents = []
 k=0
 for aa in range(r):
@@ -306,6 +308,9 @@ for aa in range(r):
         dPhi[k] = 1.0
         dPhi = dPhi.reshape((r,n))
 
+        # dPhi = np.zeros((r,n), dtype=complex)
+        # dPhi[aa,:] = n_basis[:,ii]
+
         v1 = np.sum([np.diag(W[ii,:]) @ FH @ np.diag(Phi[ii,:]) @ F @ np.diag(dW[ii,:]) for ii in range(r)], axis=0)
         v2 = np.sum([np.diag(dW[ii,:]) @ FH @ np.diag(Phi[ii,:]) @ F @ np.diag(W[ii,:]) for ii in range(r)], axis=0)
         v3 = np.sum([np.diag(W[ii, :]) @ FH @ np.diag(dPhi[ii, :]) @ F @ np.diag(W[ii, :]) for ii in range(r)], axis=0)
@@ -314,9 +319,6 @@ for aa in range(r):
         all_tangents.append(tangent)
 
         k += 1
-
-
-n_basis = np.linalg.svd(np.eye(n) - 1/n)[0]
 
 k=0
 for aa in range(r):
@@ -331,7 +333,7 @@ for aa in range(r):
         #
         # dW = dW0 - dW_rowsums / n
 
-        dW = np.zeros((r,n))
+        dW = np.zeros((r,n), dtype=complex)
         dW[aa,:] = n_basis[:,ii]
 
         v1 = np.sum([np.diag(W[ii,:]) @ FH @ np.diag(Phi[ii,:]) @ F @ np.diag(dW[ii,:]) for ii in range(r)], axis=0)
@@ -350,6 +352,13 @@ dim_tangent_space = np.sum(ss > 1e-12)
 print('dim_tangent_space=', dim_tangent_space)
 
 print('2*n*r-r=', 2*n*r-r)
+
+M = TTT.reshape((-1, n*n)).T.conj() @ TTT.reshape((-1, n*n))
+
+plt.semilogy(ss)
+# plt.plot(np.sort(M.sum(axis=1).real)[::-1])
+
+plt.matshow((TTT.reshape((-1, n*n)).T.conj() @ TTT.reshape((-1, n*n))).real)
 
 
 ########
