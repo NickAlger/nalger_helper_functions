@@ -355,6 +355,13 @@ class BlockClusterTree:
     def is_leaf(me) -> bool:
         return len(me.children) == 0
 
+    @ft.cached_property
+    def num_blocks(me) -> int:
+        if me.is_leaf:
+            return 1
+        else:
+            return sum([c.num_blocks for c in me.children])
+
     @cached_property
     def slices(me) -> typ.Tuple[slice, slice]:
         return me.row_inds.slice, me.col_inds.slice

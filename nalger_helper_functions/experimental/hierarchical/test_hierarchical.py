@@ -30,8 +30,8 @@ N = 1000
 M = 1500
 row_pointcloud = np.random.rand(N, d)
 col_pointcloud = np.random.rand(M, d)
-row_perm_e2i, row_perm_i2e, row_ct2 = hi.build_cluster_tree_geometric(row_pointcloud, min_cluster_size=4)
-col_perm_e2i, col_perm_i2e, col_ct2 = hi.build_cluster_tree_geometric(col_pointcloud, min_cluster_size=4)
+row_perm_e2i, row_perm_i2e, row_ct2 = hi.build_cluster_tree_geometric(row_pointcloud, min_cluster_size=16)
+col_perm_e2i, col_perm_i2e, col_ct2 = hi.build_cluster_tree_geometric(col_pointcloud, min_cluster_size=16)
 
 hi.visualize_cluster_tree_2d(row_perm_e2i, row_ct2, row_pointcloud)
 hi.visualize_cluster_tree_2d(col_perm_e2i, col_ct2, col_pointcloud)
