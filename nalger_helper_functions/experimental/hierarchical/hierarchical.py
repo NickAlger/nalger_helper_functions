@@ -8,21 +8,17 @@ from functools import cached_property
 from dataclasses import dataclass
 import collections
 import itertools
+import functools as ft
 
-
-# from jax.config import config
-# config.update("jax_enable_x64", True)
-# import jax.numpy as jnp
-# import jax
+import jax.numpy as jnp
+import jax
 
 
 # Want: Permutation is a 1D array of ints
-Permutation = npt.ArrayLike  # shape=(num_points_total,)
+Permutation = typ.Sequence[int]  # shape=(num_points_total,)
 
 
-def check_permutation(P: Permutation) -> bool:
-    assert (len(P.shape) == 1)
-    assert (P.dtype == int)
+def check_permutation(P: Permutation):
     assert (np.all(np.sort(P) == np.arange(len(P))))
 
 
@@ -30,13 +26,14 @@ def invert_permutation(P: Permutation) -> Permutation:
     inv_P = np.argsort(P)
     assert (np.all(inv_P[P] == np.arange(len(P))))
     assert (np.all(P[inv_P] == np.arange(len(P))))
-    return inv_P
+    return tuple(list(inv_P))
 
 
+@jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
 class ContiguousIndexSet:
-    start: int
-    stop: int
+    start:  int
+    stop:   int
 
     def __post_init__(me):
         assert (me.start >= 0)
@@ -56,17 +53,29 @@ class ContiguousIndexSet:
     def __contains__(me, x: int):
         return (me.start <= x) and (x < me.stop)
 
+    @ft.cached_property
+    def data(me) -> typ.Tuple[int, int]:
+        return me.start, me.stop
 
+    def tree_flatten(me):
+        return (me.data, None)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(*children)
+
+
+@jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
 class ClusterTree:
-    children: typ.List['ClusterTree']  # OK
-    inds: ContiguousIndexSet
+    children:   typ.List['ClusterTree']  # OK
+    inds:       ContiguousIndexSet
 
     def __post_init__(me):
         if me.children:
-            starts = np.array(sorted([c.inds.start for c in me.children]))
-            stops = np.array(sorted([c.inds.stop for c in me.children]))
-            assert (np.all(stops[:-1] == starts[1:]))  # child index sets partition an interval
+            starts = jnp.array(sorted([c.inds.start for c in me.children]))
+            stops = jnp.array(sorted([c.inds.stop for c in me.children]))
+            assert (jnp.all(stops[:-1] == starts[1:]))  # child index sets partition an interval
             assert (starts[0] == me.inds.start)
             assert (stops[-1] == me.inds.stop)
 
@@ -78,30 +87,44 @@ class ClusterTree:
     def is_leaf(me) -> bool:
         return len(me.children) == 0
 
+    @ft.cached_property
+    def data(me) -> typ.Tuple[typ.List['ClusterTree'], ContiguousIndexSet]:
+        return me.children, me.inds
 
-def index_set_subset(A: ContiguousIndexSet,  # proposed subset
-                     B: ContiguousIndexSet  # proposed superset
-                     ) -> bool:
+    def tree_flatten(me):
+        return (me.data, None)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(*children)
+
+
+def index_set_subset(
+        A: ContiguousIndexSet,  # proposed subset
+        B: ContiguousIndexSet  # proposed superset
+) -> bool:
     '''True iff A is a subset of B'''
     return (B.start <= A.start) and (A.stop <= B.stop)
 
 
-def index_sets_intersect(A: ContiguousIndexSet,
-                         B: ContiguousIndexSet
-                         ) -> bool:
+def index_sets_intersect(
+        A: ContiguousIndexSet,
+        B: ContiguousIndexSet
+) -> bool:
     '''True iff A and B intersect'''
     return (A.start < B.stop) and (B.start < A.stop)
 
 
+@jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
 class Box:
-    min_pt: npt.ArrayLike
-    max_pt: npt.ArrayLike
+    min_pt: jnp.ndarray
+    max_pt: jnp.ndarray
 
     def __post_init__(me):
         assert (len(me.min_pt.shape) == 1)
         assert (len(me.max_pt.shape) == 1)
-        assert (np.all(me.max_pt >= me.min_pt))
+        assert (jnp.all(me.max_pt >= me.min_pt))
 
     @cached_property
     def d(me) -> int:
@@ -113,15 +136,26 @@ class Box:
 
     @cached_property
     def widest_dimension(me) -> int:
-        return np.argmax(me.widths)
+        return jnp.argmax(me.widths)
 
     @cached_property
     def narrowest_dimension(me) -> int:
-        return np.argmin(me.widths)
+        return jnp.argmin(me.widths)
 
     @cached_property
     def diameter(me) -> float:
-        return np.linalg.norm(me.max_pt - me.min_pt)
+        return jnp.linalg.norm(me.max_pt - me.min_pt)
+
+    @ft.cached_property
+    def data(me) -> typ.Tuple[jnp.ndarray, jnp.ndarray]:
+        return me.min_pt, me.max_pt
+
+    def tree_flatten(me):
+        return (me.data, None)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(*children)
 
 
 def boxes_distance(A: Box, B: Box):
@@ -133,32 +167,35 @@ def boxes_distance(A: Box, B: Box):
     return dist
 
 
-def cluster_pointcloud(cluster_inds: ContiguousIndexSet,  # "sigma", "tau"
-                       pointcloud: npt.ArrayLike,  # shape=(num_points_total, spatial_dimension)
-                       perm_e2i: Permutation,  # len=(num_points_total)
-                       ) -> npt.ArrayLike:
+def cluster_pointcloud(
+        cluster_inds:   ContiguousIndexSet,  # "sigma", "tau"
+        pointcloud:     jnp.ndarray,  # shape=(num_points_total, spatial_dimension)
+        perm_e2i:       Permutation,  # len=(num_points_total)
+) -> jnp.ndarray:
     _, d = pointcloud.shape
     return pointcloud[perm_e2i[cluster_inds.slice], :].reshape((-1, d))  # reshape in case there are one or zero points
 
 
-def pointcloud_bounding_box(pointcloud: npt.ArrayLike,  # shape=(num_points, spatial_dimension)
-                            ) -> Box:
-    min_pt = np.min(pointcloud, axis=0).reshape(-1)
-    max_pt = np.max(pointcloud, axis=0).reshape(-1)
+def pointcloud_bounding_box(
+        pointcloud: jnp.ndarray,  # shape=(num_points, spatial_dimension)
+) -> Box:
+    min_pt = jnp.min(pointcloud, axis=0).reshape(-1)
+    max_pt = jnp.max(pointcloud, axis=0).reshape(-1)
     return Box(min_pt, max_pt)
 
 
-def subdivide_cluster_index_set(cluster_inds: ContiguousIndexSet,
-                                pointcloud: npt.ArrayLike,  # shape=(num_points_total, spatial_dimension)
-                                perm_e2i: Permutation,  # len=(num_points_total) GETS MODIFIED!
-                                ) -> typ.Tuple[ContiguousIndexSet, ContiguousIndexSet]:  # (left, right)
+def subdivide_cluster_index_set(
+        cluster_inds:   ContiguousIndexSet,
+        pointcloud:     jnp.ndarray,  # shape=(num_points_total, spatial_dimension)
+        perm_e2i:       Permutation,  # len=(num_points_total) GETS MODIFIED!
+) -> typ.Tuple[ContiguousIndexSet, ContiguousIndexSet]:  # (left, right)
     n = cluster_inds.size
     N, d = pointcloud.shape
 
     pp = cluster_pointcloud(cluster_inds, pointcloud, perm_e2i)
     B = pointcloud_bounding_box(pp)
     split_direction = B.widest_dimension
-    sort_inds = np.argsort(pp[:, split_direction].reshape(-1))
+    sort_inds = jnp.argsort(pp[:, split_direction].reshape(-1))
 
     left_sort = sort_inds[: int(n / 2)]
     right_sort = sort_inds[int(n / 2):]
@@ -179,11 +216,12 @@ def subdivide_cluster_index_set(cluster_inds: ContiguousIndexSet,
     return left_inds, right_inds
 
 
-def build_cluster_tree_helper(inds: ContiguousIndexSet,
-                              pointcloud: npt.ArrayLike,
-                              perm_e2i: Permutation,
-                              min_cluster_size: int
-                              ) -> ClusterTree:
+def build_cluster_tree_helper(
+        inds:               ContiguousIndexSet,
+        pointcloud:         jnp.ndarray,
+        perm_e2i:           Permutation,
+        min_cluster_size:   int
+) -> ClusterTree:
     if inds.size > min_cluster_size:
         inds0, inds1 = subdivide_cluster_index_set(inds, pointcloud, perm_e2i)
         child0 = build_cluster_tree_helper(inds0, pointcloud,
@@ -198,9 +236,10 @@ def build_cluster_tree_helper(inds: ContiguousIndexSet,
     return ClusterTree(children, inds)
 
 
-def build_cluster_tree_geometric(pointcloud: npt.ArrayLike,  # shape=(num_pts_N, geometric_dimension_d)
-                                 min_cluster_size: int = 16,  # do not subdivide cluster if it is smaller than this
-                                 ) -> typ.Tuple[Permutation, Permutation, ClusterTree]:  # e2i, i2e, ct
+def build_cluster_tree_geometric(
+        pointcloud:         jnp.ndarray,  # shape=(num_pts_N, geometric_dimension_d)
+        min_cluster_size:   int = 16,  # do not subdivide cluster if it is smaller than this
+) -> typ.Tuple[Permutation, Permutation, ClusterTree]:  # e2i, i2e, ct
     assert (min_cluster_size > 1)
     N, d = pointcloud.shape
     root_inds = ContiguousIndexSet(0, N)
@@ -216,10 +255,12 @@ def build_cluster_tree_geometric(pointcloud: npt.ArrayLike,  # shape=(num_pts_N,
     return perm_e2i, perm_i2e, root
 
 
-def visualize_cluster_tree_2d(perm_e2i: Permutation,
-                              ct: ClusterTree,
-                              pointcloud: npt.ArrayLike,
-                              fig_max_size=8):
+def visualize_cluster_tree_2d(
+        perm_e2i:   Permutation,
+        ct:         ClusterTree,
+        pointcloud: jnp.ndarray,
+        fig_max_size=8
+):
     N, d = pointcloud.shape
     assert (d == 2)
 
@@ -255,12 +296,13 @@ def visualize_cluster_tree_2d(perm_e2i: Permutation,
     plt.show()
 
 
+@jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
 class BlockClusterTree:
-    children: typ.List['BlockCluster']
-    row_ct: 'ClusterTree'
-    col_ct: 'ClusterTree'
-    is_admissible: bool
+    children:       typ.List['BlockClusterTree']
+    row_ct:         'ClusterTree'
+    col_ct:         'ClusterTree'
+    is_admissible:  bool
 
     def __post_init__(me):
         if me.is_admissible:
@@ -317,15 +359,26 @@ class BlockClusterTree:
     def slices(me) -> typ.Tuple[slice, slice]:
         return me.row_inds.slice, me.col_inds.slice
 
+    @ft.cached_property
+    def data(me) -> typ.Tuple[typ.List['BlockClusterTree'], ClusterTree, ClusterTree, bool]:
+        return me.children, me.row_ct, me.col_ct, me.is_admissible
 
-def standard_admissibility(row_inds: ContiguousIndexSet,
-                           col_inds: ContiguousIndexSet,
-                           row_pointcloud: npt.ArrayLike,
-                           col_pointcloud: npt.ArrayLike,
-                           row_perm_e2i: Permutation,
-                           col_perm_e2i: Permutation,
-                           eta: float
-                           ) -> bool:
+    def tree_flatten(me):
+        return (me.data, None)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(*children)
+
+
+def standard_admissibility(row_inds:        ContiguousIndexSet,
+                           col_inds:        ContiguousIndexSet,
+                           row_pointcloud:  jnp.ndarray,
+                           col_pointcloud:  jnp.ndarray,
+                           row_perm_e2i:    Permutation,
+                           col_perm_e2i:    Permutation,
+                           eta:             float,
+) -> bool:
     pp_row = cluster_pointcloud(row_inds, row_pointcloud, row_perm_e2i)
     pp_col = cluster_pointcloud(col_inds, col_pointcloud, col_perm_e2i)
     R = pointcloud_bounding_box(pp_row)
@@ -333,13 +386,15 @@ def standard_admissibility(row_inds: ContiguousIndexSet,
     return boxes_distance(R, C) >= eta * np.min([R.diameter, C.diameter])
 
 
-def build_block_cluster_tree(row_ct: ClusterTree,
-                             col_ct: ClusterTree,
-                             row_pointcloud: npt.ArrayLike,
-                             col_pointcloud: npt.ArrayLike,
-                             row_perm_e2i: Permutation,
-                             col_perm_e2i: Permutation,
-                             admissibility_eta: float = 1.0) -> BlockClusterTree:
+def build_block_cluster_tree(
+        row_ct:         ClusterTree,
+        col_ct:         ClusterTree,
+        row_pointcloud: jnp.ndarray,
+        col_pointcloud: jnp.ndarray,
+        row_perm_e2i:   Permutation,
+        col_perm_e2i:   Permutation,
+        admissibility_eta: float = 1.0
+) -> BlockClusterTree:
     assert (admissibility_eta > 0.0)
     assert (len(row_perm_e2i) == row_pointcloud.shape[0])
     assert (len(col_perm_e2i) == col_pointcloud.shape[0])
@@ -398,9 +453,10 @@ def visualize_block_cluster_tree(bct: BlockClusterTree):
     plt.matshow(A)
 
 
-def polynomial_pointcloud_basis(pointcloud: npt.ArrayLike,  # shape=(N, d)
-                                polynomial_order_k: int  # 2x^2 + xyz + 3y + 1: k=3
-                                ) -> npt.ArrayLike:  # shape=(N, d^num_polys)
+def polynomial_pointcloud_basis(
+        pointcloud:         jnp.ndarray,  # shape=(N, d)
+        polynomial_order_k: int  # 2x^2 + xyz + 3y + 1: k=3
+) -> jnp.ndarray:  # shape=(N, d^num_polys)
     N, d = pointcloud.shape
     k = np.min([N - 1, polynomial_order_k])
     center = 0.5 * (np.max(pointcloud, axis=0) + np.min(pointcloud, axis=0))

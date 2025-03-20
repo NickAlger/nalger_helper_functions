@@ -8,15 +8,20 @@ import scipy.sparse.linalg as spla
 import scipy.special as spsc
 import scipy.optimize as sopt
 
+import nalger_helper_functions.experimental.hierarchical.hierarchical as hi
 
-import nalger_helper_functions.experimental.hierarchical.hierarchical as hrc
+from jax.config import config
+config.update("jax_enable_x64", True)
+
+
+#
 
 N = 50
 d = 2
 pointcloud = np.random.randn(N, d)
-perm_e2i, perm_i2e, ct = hrc.build_cluster_tree_geometric(pointcloud, min_cluster_size=4)
+perm_e2i, perm_i2e, ct = hi.build_cluster_tree_geometric(pointcloud, min_cluster_size=4)
 
-hrc.visualize_cluster_tree_2d(perm_e2i, ct, pointcloud)
+hi.visualize_cluster_tree_2d(perm_e2i, ct, pointcloud)
 
 #
 
@@ -25,44 +30,44 @@ N = 1000
 M = 1500
 row_pointcloud = np.random.rand(N, d)
 col_pointcloud = np.random.rand(M, d)
-row_perm_e2i, row_perm_i2e, row_ct2 = hrc.build_cluster_tree_geometric(row_pointcloud, min_cluster_size=4)
-col_perm_e2i, col_perm_i2e, col_ct2 = hrc.build_cluster_tree_geometric(col_pointcloud, min_cluster_size=4)
+row_perm_e2i, row_perm_i2e, row_ct2 = hi.build_cluster_tree_geometric(row_pointcloud, min_cluster_size=4)
+col_perm_e2i, col_perm_i2e, col_ct2 = hi.build_cluster_tree_geometric(col_pointcloud, min_cluster_size=4)
 
-hrc.visualize_cluster_tree_2d(row_perm_e2i, row_ct2, row_pointcloud)
-hrc.visualize_cluster_tree_2d(col_perm_e2i, col_ct2, col_pointcloud)
+hi.visualize_cluster_tree_2d(row_perm_e2i, row_ct2, row_pointcloud)
+hi.visualize_cluster_tree_2d(col_perm_e2i, col_ct2, col_pointcloud)
 
 #
 
-bct = hrc.build_block_cluster_tree(
+bct = hi.build_block_cluster_tree(
     row_ct2, col_ct2,
     row_pointcloud, col_pointcloud,
     row_perm_e2i, col_perm_e2i,
     admissibility_eta=0.5
 )
 
-hrc.visualize_block_cluster_tree(bct)
+hi.visualize_block_cluster_tree(bct)
 
 #
 
-bct = hrc.build_block_cluster_tree(
+bct = hi.build_block_cluster_tree(
     col_ct2, col_ct2,
     col_pointcloud, col_pointcloud,
     col_perm_e2i, col_perm_e2i,
     admissibility_eta=0.5
 )
 
-hrc.visualize_block_cluster_tree(bct)
+hi.visualize_block_cluster_tree(bct)
 
 #
 
-bct = hrc.build_block_cluster_tree(
+bct = hi.build_block_cluster_tree(
     row_ct2, row_ct2,
     row_pointcloud, row_pointcloud,
     row_perm_e2i, row_perm_e2i,
     admissibility_eta=1e-10
 )
 
-hrc.visualize_block_cluster_tree(bct)
+hi.visualize_block_cluster_tree(bct)
 
 #
 
@@ -128,9 +133,9 @@ plt.scatter(pp2[:,0], pp2[:,1])
 
 k=3
 
-Q1 = hrc.polynomial_pointcloud_basis(pp1, k)
-Q2 = hrc.polynomial_pointcloud_basis(pp2, k)
-Q = hrc.polynomial_pointcloud_basis(pp, k)
+Q1 = hi.polynomial_pointcloud_basis(pp1, k)
+Q2 = hi.polynomial_pointcloud_basis(pp2, k)
+Q = hi.polynomial_pointcloud_basis(pp, k)
 
 Q1_x = Q[:pp1.shape[0]]
 Q2_x = Q[pp1.shape[0]:]
