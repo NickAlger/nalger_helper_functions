@@ -71,73 +71,85 @@ hi.visualize_block_cluster_tree(bct)
 
 #
 
-pp = np.random.randn(5,2)
-mu = np.mean(pp, axis=0)
-print(mu)
-S = 0.5*(np.max(pp, axis=0) - np.min(pp, axis=0))
-print(S)
-
-#
-
-pointcloud = np.random.randn(6,2)
-center = 0.5*(np.max(pointcloud, axis=0) + np.min(pointcloud, axis=0))
-scale = 0.5*(np.max(pointcloud, axis=0) - np.min(pointcloud, axis=0))
-xx = (pointcloud - center)/scale
-print(xx)
-
-#
-
-pointcloud = np.random.randn(1000,2)
-polynomial_order_k = 3
-
-N, d = pointcloud.shape
-assert(N > 1)
-center = 0.5*(np.max(pointcloud, axis=0) + np.min(pointcloud, axis=0))
-scale = 0.5*(np.max(pointcloud, axis=0) - np.min(pointcloud, axis=0))
-xx = (pointcloud - center)/scale
-polys = list()
-for exponents in itertools.product(range(polynomial_order_k+1), repeat=d):
-    if np.sum(exponents) <= polynomial_order_k:
-        kk = np.array(exponents).reshape((1,d))
-        poly = np.prod(np.power(xx, kk), axis=1)
-        polys.append(poly)
-B = np.array(polys).T
-
-print('B.shape=', B.shape)
-
-#
-
-for ii in range(B.shape[1]):
-    plt.figure()
-    plt.scatter(pointcloud[:,0], pointcloud[:,1], c=B[:,ii])
-    plt.colorbar()
-
-#
-
-np.linalg.svd(B)[1]
-Q,_,_ = np.linalg.svd(B,0)
-Q.shape
-
-for ii in range(Q.shape[1]):
-    plt.figure()
-    plt.scatter(pointcloud[:,0], pointcloud[:,1], c=Q[:,ii])
-    plt.colorbar()
-
-#
-
 pp1 = np.random.randn(1000,2) + np.array([[-1.5, 0.0]])
 pp2 = np.random.randn(1000,2) + np.array([[1.5, 0.0]])
-pp = np.vstack([pp1, pp2])
+pp3 = np.random.randn(1000,2) + np.array([[0.0, 1.5]])
+pp = np.vstack([pp1, pp2, pp3])
 plt.scatter(pp1[:,0], pp1[:,1])
 plt.scatter(pp2[:,0], pp2[:,1])
+plt.scatter(pp3[:,0], pp3[:,1])
 
 k=3
 
 Q1 = hi.polynomial_pointcloud_basis(pp1, k)
 Q2 = hi.polynomial_pointcloud_basis(pp2, k)
+Q3 = hi.polynomial_pointcloud_basis(pp3, k)
 Q = hi.polynomial_pointcloud_basis(pp, k)
 
-Q1_x = Q[:pp1.shape[0]]
-Q2_x = Q[pp1.shape[0]:]
+transfer_matrices = hi.make_transfer_matrices(Q, [Q1, Q2, Q3])
 
-np.linalg.norm(Q1 @ (Q1.T @ Q1_x) - Q1_x)
+Q2 = np.vstack([Qi @ T for Qi, T  in zip([Q1, Q2, Q3], transfer_matrices)])
+
+err_transfer = np.linalg.norm(Q2 - Q) / np.linalg.norm(Q)
+print('err_transfer=', err_transfer)
+
+if False:
+    Q1_x = Q[:pp1.shape[0]]
+    Q2_x = Q[pp1.shape[0]:]
+
+    np.linalg.norm(Q1 @ (Q1.T @ Q1_x) - Q1_x)
+
+    pp = np.random.randn(5, 2)
+    mu = np.mean(pp, axis=0)
+    print(mu)
+    S = 0.5 * (np.max(pp, axis=0) - np.min(pp, axis=0))
+    print(S)
+
+    #
+
+    pointcloud = np.random.randn(6, 2)
+    center = 0.5 * (np.max(pointcloud, axis=0) + np.min(pointcloud, axis=0))
+    scale = 0.5 * (np.max(pointcloud, axis=0) - np.min(pointcloud, axis=0))
+    xx = (pointcloud - center) / scale
+    print(xx)
+
+    #
+
+    pointcloud = np.random.randn(1000, 2)
+    polynomial_order_k = 3
+
+    N, d = pointcloud.shape
+    assert (N > 1)
+    center = 0.5 * (np.max(pointcloud, axis=0) + np.min(pointcloud, axis=0))
+    scale = 0.5 * (np.max(pointcloud, axis=0) - np.min(pointcloud, axis=0))
+    xx = (pointcloud - center) / scale
+    polys = list()
+    for exponents in itertools.product(range(polynomial_order_k + 1), repeat=d):
+        if np.sum(exponents) <= polynomial_order_k:
+            kk = np.array(exponents).reshape((1, d))
+            poly = np.prod(np.power(xx, kk), axis=1)
+            polys.append(poly)
+    B = np.array(polys).T
+
+    print('B.shape=', B.shape)
+
+    #
+
+    for ii in range(B.shape[1]):
+        plt.figure()
+        plt.scatter(pointcloud[:, 0], pointcloud[:, 1], c=B[:, ii])
+        plt.colorbar()
+
+    #
+
+    np.linalg.svd(B)[1]
+    Q, _, _ = np.linalg.svd(B, 0)
+    Q.shape
+
+    for ii in range(Q.shape[1]):
+        plt.figure()
+        plt.scatter(pointcloud[:, 0], pointcloud[:, 1], c=Q[:, ii])
+        plt.colorbar()
+
+    #
+

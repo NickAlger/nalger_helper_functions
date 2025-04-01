@@ -65,6 +65,8 @@ class ContiguousIndexSet:
         return cls(*children)
 
 
+
+
 @jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True)
 class ClusterTree:
@@ -391,6 +393,7 @@ def standard_admissibility(row_inds:        ContiguousIndexSet,
     R = pointcloud_bounding_box(pp_row)
     C = pointcloud_bounding_box(pp_col)
     return boxes_distance(R, C) >= eta * np.min([R.diameter, C.diameter])
+    # return boxes_distance(R, C) >= eta * np.max([R.diameter, C.diameter])
 
 
 def build_block_cluster_tree(
@@ -475,7 +478,33 @@ def polynomial_pointcloud_basis(
             ee = np.array(exponents).reshape((1, d))
             poly = np.prod(np.power(xx, ee), axis=1)
             polys.append(poly)
-    B = np.array(polys).reshape((N, -1)).T
+    B = np.array(polys).T
     Q, _, _ = np.linalg.svd(B, 0)
     return Q
+
+
+def make_transfer_matrices(
+        basis_B:        jnp.ndarray, # shape=(M,r)
+        subbases_Bi:    typ.Sequence[jnp.ndarray], # len=num_subgroups, elm_shapes=(mi,ri), m1 + m2 + ... = M
+) -> typ.Tuple[jnp.ndarray, ...]: # (T1, T2, ...). Ti.shape=(M, mi), B = [T1 @ B1; T2 @ B2; ...]
+    assert(len(basis_B.shape) == 2)
+    for Bi in subbases_Bi:
+        assert(len(Bi.shape) == 2)
+    transfer_matrices = []
+    start = 0
+    for Bi in subbases_Bi:
+        mi = Bi.shape[0]
+        stop = start + mi
+        A = Bi
+        Y = basis_B[start:stop, :]
+        T = jnp.array(np.linalg.lstsq(A, Y, rcond=None)[0])
+        transfer_matrices.append(T)
+        start = stop
+    return tuple(transfer_matrices)
+
+
+
+
+
+
 
