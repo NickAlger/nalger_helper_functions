@@ -110,45 +110,42 @@ plt.title('LU_true_interior')
 
 # Wave timestepping
 
-RegularGrid = typ.Tuple[
-    jnp.ndarray, # min_point = (xmin, ymin)
-    jnp.ndarray, # max_point = (xmax, ymax)
-    typ.Tuple[int, ...],  # nn = (nx, ny) number of gridpoints per dimension (number of cells+1)
-]
-
-def grid_spacings(grid: RegularGrid) -> jnp.ndarray: # hh = (hx, hy)
-    min_point, max_point, nn = grid
-    hh = (max_point - min_point) / (jnp.array(nn) - 1)
-    return hh
-
-TimestepCarry = typ.Tuple[
-    jnp.ndarray, # U_cur,  shape=(nx, ny)
-    jnp.ndarray, # U_prev, shape=(nx, ny)
-    RegularGrid,
-    jnp.ndarray, # soundspeed, shape=(nx, ny)
-    float, # dt, timestep size
-    float, # t_cur, current time
-]
-
 source_in_x = jnp.exp(-0.5 * ((X-1.0)**2 + (Y-0.5)**2) / 0.05**2)
 
-def one_timestep(carry: TimestepCarry, unused):
-    U_cur, U_prev, grid, soundspeed, dt, t_cur = carry
-    hh = grid_spacings(grid)
+def one_timestep(carry, unused):
+    U1, U0, min_point, max_point, soundspeed, dt, t_cur = carry
+    min_point, max_point, nn = grid
+    nx, ny = U1.shape
+    hh = (max_point - min_point) / (jnp.array(nn) - 1)
+
     source = jnp.sin(40*t_cur) * jnp.exp(-0.5 * t_cur**2 / 0.25**2) * source_in_x
 
-    U_next = 2 * U_cur - U_prev + dt ** 2 * soundspeed ** 2 * laplacian2d(U_cur, hh[0], hh[1]) + source
+    LU1_int = ((U1[2:,1:-1] - 2 * U1[1:-1,1:-1] + U1[:-2,1:-1]) / hx**2 +
+               (U1[1:-1,2:] - 2 * U1[1:-1,1:-1] + U1[1:-1,:-2]) / hy**2)
+
+    U2_int = 2 * U1[1:-1,1:-1] - U0[1:-1,1:-1] + dt ** 2 * soundspeed[1:-1,1:-1] ** 2 * LU1_int + source[1:-1,1:-1]
+
+    U2_top = jnp.zeros((nx,1)) # Dirichlet zero top
+    # U2_top = U1[:,-2].reshape((nx,1)) # Neumann zero top
+
+
+    U2_bot = (U1[:,0] + soundspeed[:,0] * (dt / hh[1]) * (U1[:,1] - U1[:,0])).reshape((nx,1)) # c u_y = u_t ABC
+
+    U2_left = (U1[0,1:-1] + soundspeed[0,1:-1] * (dt / hh[0]) * (U1[1,1:-1] - U1[0,1:-1])).reshape((1, ny-2)) # c u_x = u_t ABC
+    U2_right = (U1[-1, 1:-1] + soundspeed[-1, 1:-1] * (dt / hh[0]) * (U1[-2, 1:-1] - U1[-1, 1:-1])).reshape((1, ny-2)) # c u_x = u_t ABC
+
+    U2 = jnp.hstack([U2_bot, jnp.vstack([U2_left, U2_int, U2_right]), U2_top])
+
     t_next = t_cur + dt
 
-    obs_next = U_next
-    carry_next = (U_next, U_cur, grid, soundspeed, dt, t_next)
+    obs_next = U2
+    carry_next = (U2, U1, min_point, max_point, soundspeed, dt, t_next)
 
     return carry_next, obs_next
 
 
 observe_everywhere = lambda U: U
 
-# soundspeed = 1.1 * jnp.ones((nx, ny))
 soundspeed = 1.1 + X + Y
 
 dt = 0.5 * np.minimum(hx, hy) / np.max(soundspeed) # CFL condition
@@ -159,47 +156,25 @@ U0 = jnp.zeros((nx, ny))
 
 grid = (jnp.array([xmin, ymin]), jnp.array([xmax, ymax]), (nx, ny))
 
-carry_init = (U0, U0, grid, soundspeed, dt, 0.0)
-U_final, UU = jax.lax.scan(one_timestep, carry_init, None, length=400)
+min_point = jnp.array([xmin, ymin])
+max_point = jnp.array([xmax, ymax])
 
-# U_final, UU = jax.lax.scan(scan_func, (U0, U0, hx, hy, soundspeed, dt), None, length=300)
+carry_init = (U0, U0, min_point, max_point, soundspeed, dt, 0.0)
+U_final, UU = jax.lax.scan(one_timestep, carry_init, None, length=600)
+
 
 vmax = np.max(UU)
 vmin = np.min(UU)
 frames = [] # for storing the generated images
 fig = plt.figure()
 for U in UU:
-    frames.append([plt.imshow(U, origin='lower', extent=(xmin, xmax, ymin, ymax), vmin=vmin, vmax=vmax,
+    frames.append([plt.imshow(U.T, origin='lower', extent=(xmin, xmax, ymin, ymax), vmin=vmin, vmax=vmax,
                               cmap=cm.Greys_r, animated=True)])
 
 ani = animation.ArtistAnimation(fig, frames, interval=50, blit=True,
-                                repeat_delay=1000)
+                                repeat_delay=1)
 # ani.save('wave1.mp4')
 plt.show()
-
-# inhomogeneous soundspeed
-
-if False:
-    soundspeed = 1.1 + X + Y
-
-    dt = 0.5 * np.minimum(hx, hy) / np.max(soundspeed) # CFL condition
-
-    U0 = jnp.exp(-0.5 * ((X-1.0)**2 + (Y-0.5)**2) / 0.05**2)
-
-    U_final, UU = jax.lax.scan(scan_func, (U0, U0, hx, hy, soundspeed, dt), None, length=300)
-
-    vmax = np.max(UU)
-    vmin = np.min(UU)
-    frames = [] # for storing the generated images
-    fig = plt.figure()
-    for U in UU:
-        frames.append([plt.imshow(U, origin='lower', extent=(xmin, xmax, ymin, ymax), vmin=vmin, vmax=vmax,
-                                  cmap=cm.Greys_r, animated=True)])
-
-    ani = animation.ArtistAnimation(fig, frames, interval=50, blit=True,
-                                    repeat_delay=1000)
-    # ani.save('wave1.mp4')
-    plt.show()
 
 
 
