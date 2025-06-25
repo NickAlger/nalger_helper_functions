@@ -126,7 +126,7 @@ def one_timestep(carry, unused):
     U2_int = 2 * U1[1:-1,1:-1] - U0[1:-1,1:-1] + dt ** 2 * soundspeed[1:-1,1:-1] ** 2 * LU1_int + source[1:-1,1:-1]
 
     U2_top = jnp.zeros((nx,1)) # Dirichlet zero top
-    # U2_top = U1[:,-2].reshape((nx,1)) # Neumann zero top
+    # U2_top = U1[:,-2].reshape((nx,1)) # Neumann zero top (maybe bad? timestep lag)
 
 
     U2_bot = (U1[:,0] + soundspeed[:,0] * (dt / hh[1]) * (U1[:,1] - U1[:,0])).reshape((nx,1)) # c u_y = u_t ABC
