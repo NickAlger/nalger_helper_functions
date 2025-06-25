@@ -110,14 +110,15 @@ plt.title('LU_true_interior')
 
 # Wave timestepping
 
-def one_timestep(carry, unused):
-    U1, U0, min_point, max_point, soundspeed, dt, ii, source_in_x, source_in_t = carry
+@jax.jit
+def one_timestep(carry, source_magnitude):
+    U1, U0, min_point, max_point, soundspeed, dt, source_in_x = carry
     nx, ny = U1.shape
     hh = (max_point - min_point) / (jnp.array([nx, ny]) - 1)
     hx = hh[0]
     hy = hh[1]
 
-    source = source_in_t[ii] * source_in_x
+    source = source_magnitude * source_in_x
 
     LU1_int = ((U1[2:,1:-1] - 2 * U1[1:-1,1:-1] + U1[:-2,1:-1]) / hx**2 +
                (U1[1:-1,2:] - 2 * U1[1:-1,1:-1] + U1[1:-1,:-2]) / hy**2)
@@ -135,8 +136,8 @@ def one_timestep(carry, unused):
 
     U2 = jnp.hstack([U2_bot, jnp.vstack([U2_left, U2_int, U2_right]), U2_top])
 
-    obs_next = U2
-    carry_next = (U2, U1, min_point, max_point, soundspeed, dt, ii+1, source_in_x, source_in_t)
+    obs_next = (U2, U1[int(nx/3), int(ny/10)])
+    carry_next = (U2, U1, min_point, max_point, soundspeed, dt, source_in_x)
 
     return carry_next, obs_next
 
@@ -191,8 +192,8 @@ plt.title('source_in_t')
 
 U0 = jnp.zeros((nx, ny))
 
-carry_init = (U0, U0, min_point, max_point, soundspeed, dt, 0, source_in_x, source_in_t)
-U_final, UU = jax.lax.scan(one_timestep, carry_init, None, length=num_timesteps)
+carry_init = (U0, U0, min_point, max_point, soundspeed, dt, source_in_x)
+U_final, (UU, seismogram) = jax.lax.scan(one_timestep, carry_init, source_in_t)
 
 
 vmax = np.max(UU)
@@ -208,6 +209,10 @@ ani = animation.ArtistAnimation(fig, frames, interval=50, blit=True,
 # ani.save('wave1.mp4')
 plt.show()
 
+
+plt.figure()
+plt.plot(tt, seismogram)
+plt.title('obs at point near top')
 
 
 
