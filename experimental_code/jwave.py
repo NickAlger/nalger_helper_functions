@@ -114,6 +114,8 @@ def one_timestep(carry, unused):
     U1, U0, min_point, max_point, soundspeed, dt, ii, source_in_x, source_in_t = carry
     nx, ny = U1.shape
     hh = (max_point - min_point) / (jnp.array([nx, ny]) - 1)
+    hx = hh[0]
+    hy = hh[1]
 
     source = source_in_t[ii] * source_in_x
 
@@ -126,10 +128,10 @@ def one_timestep(carry, unused):
     # U2_top = U1[:,-2].reshape((nx,1)) # Neumann zero top (maybe bad? timestep lag)
 
 
-    U2_bot = (U1[:,0] + soundspeed[:,0] * (dt / hh[1]) * (U1[:,1] - U1[:,0])).reshape((nx,1)) # c u_y = u_t ABC
+    U2_bot = (U1[:,0] + soundspeed[:,0] * (dt / hy) * (U1[:,1] - U1[:,0])).reshape((nx,1)) # c u_y = u_t ABC
 
-    U2_left = (U1[0,1:-1] + soundspeed[0,1:-1] * (dt / hh[0]) * (U1[1,1:-1] - U1[0,1:-1])).reshape((1, ny-2)) # c u_x = u_t ABC
-    U2_right = (U1[-1, 1:-1] + soundspeed[-1, 1:-1] * (dt / hh[0]) * (U1[-2, 1:-1] - U1[-1, 1:-1])).reshape((1, ny-2)) # c u_x = u_t ABC
+    U2_left = (U1[0,1:-1] + soundspeed[0,1:-1] * (dt / hx) * (U1[1,1:-1] - U1[0,1:-1])).reshape((1, ny-2)) # c u_x = u_t ABC
+    U2_right = (U1[-1, 1:-1] + soundspeed[-1, 1:-1] * (dt / hx) * (U1[-2, 1:-1] - U1[-1, 1:-1])).reshape((1, ny-2)) # c u_x = u_t ABC
 
     U2 = jnp.hstack([U2_bot, jnp.vstack([U2_left, U2_int, U2_right]), U2_top])
 
@@ -137,6 +139,12 @@ def one_timestep(carry, unused):
     carry_next = (U2, U1, min_point, max_point, soundspeed, dt, ii+1, source_in_x, source_in_t)
 
     return carry_next, obs_next
+
+
+def cfl_max_timestep(min_point, max_point, soundspeed):
+    hh = (max_point - min_point) / (jnp.array(soundspeed.shape) - 1)
+    dt_max = np.min(hh) / np.max(soundspeed)  # CFL condition
+    return dt_max
 
 
 observe_everywhere = lambda U: U
@@ -149,11 +157,10 @@ ymax = 1.0
 min_point = jnp.array([xmin, ymin])
 max_point = jnp.array([xmax, ymax])
 
-nx = 160
-ny = 80
+grid_shape = (160, 80)
 
-xx = np.linspace(xmin, xmax, nx)
-yy = np.linspace(ymin, ymax, ny)
+xx = np.linspace(xmin, xmax, grid_shape[0])
+yy = np.linspace(ymin, ymax, grid_shape[1])
 X, Y = np.meshgrid(xx, yy, indexing='ij')
 
 
@@ -165,7 +172,7 @@ plt.title('soundspeed')
 
 t_final = 1.0
 
-dt0 = 0.5 * np.minimum(hx, hy) / np.max(soundspeed) # CFL condition
+dt0 = 0.5 * cfl_max_timestep(min_point, max_point, soundspeed)
 num_timesteps = int(np.ceil(t_final / dt0))
 tt = jnp.linspace(0.0, t_final, num_timesteps + 1)
 
