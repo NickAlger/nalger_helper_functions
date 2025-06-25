@@ -206,7 +206,7 @@ for U in UU:
 
 ani = animation.ArtistAnimation(fig, frames, interval=50, blit=True,
                                 repeat_delay=1)
-# ani.save('wave1.mp4')
+ani.save('wave1.gif')
 plt.show()
 
 
