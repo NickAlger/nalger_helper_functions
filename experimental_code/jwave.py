@@ -110,15 +110,12 @@ plt.title('LU_true_interior')
 
 # Wave timestepping
 
-source_in_x = jnp.exp(-0.5 * ((X-1.0)**2 + (Y-0.5)**2) / 0.05**2)
-
 def one_timestep(carry, unused):
-    U1, U0, min_point, max_point, soundspeed, dt, t_cur = carry
-    min_point, max_point, nn = grid
+    U1, U0, min_point, max_point, soundspeed, dt, ii, source_in_x, source_in_t = carry
     nx, ny = U1.shape
-    hh = (max_point - min_point) / (jnp.array(nn) - 1)
+    hh = (max_point - min_point) / (jnp.array([nx, ny]) - 1)
 
-    source = jnp.sin(40*t_cur) * jnp.exp(-0.5 * t_cur**2 / 0.25**2) * source_in_x
+    source = source_in_t[ii] * source_in_x
 
     LU1_int = ((U1[2:,1:-1] - 2 * U1[1:-1,1:-1] + U1[:-2,1:-1]) / hx**2 +
                (U1[1:-1,2:] - 2 * U1[1:-1,1:-1] + U1[1:-1,:-2]) / hy**2)
@@ -136,31 +133,59 @@ def one_timestep(carry, unused):
 
     U2 = jnp.hstack([U2_bot, jnp.vstack([U2_left, U2_int, U2_right]), U2_top])
 
-    t_next = t_cur + dt
-
     obs_next = U2
-    carry_next = (U2, U1, min_point, max_point, soundspeed, dt, t_next)
+    carry_next = (U2, U1, min_point, max_point, soundspeed, dt, ii+1, source_in_x, source_in_t)
 
     return carry_next, obs_next
 
 
 observe_everywhere = lambda U: U
 
-soundspeed = 1.1 + X + Y
-
-dt = 0.5 * np.minimum(hx, hy) / np.max(soundspeed) # CFL condition
-
-# U0 = jnp.exp(-0.5 * ((X-1.0)**2 + (Y-0.5)**2) / 0.05**2)
-
-U0 = jnp.zeros((nx, ny))
-
-grid = (jnp.array([xmin, ymin]), jnp.array([xmax, ymax]), (nx, ny))
+xmin = 0.0
+ymin = 0.0
+xmax = 2.0
+ymax = 1.0
 
 min_point = jnp.array([xmin, ymin])
 max_point = jnp.array([xmax, ymax])
 
-carry_init = (U0, U0, min_point, max_point, soundspeed, dt, 0.0)
-U_final, UU = jax.lax.scan(one_timestep, carry_init, None, length=600)
+nx = 160
+ny = 80
+
+xx = np.linspace(xmin, xmax, nx)
+yy = np.linspace(ymin, ymax, ny)
+X, Y = np.meshgrid(xx, yy, indexing='ij')
+
+
+soundspeed = 1.1 + X + Y
+
+plt.figure()
+plt.imshow(soundspeed.T, origin='lower', extent=(xmin, xmax, ymin, ymax))
+plt.title('soundspeed')
+
+t_final = 1.0
+
+dt0 = 0.5 * np.minimum(hx, hy) / np.max(soundspeed) # CFL condition
+num_timesteps = int(np.ceil(t_final / dt0))
+tt = jnp.linspace(0.0, t_final, num_timesteps + 1)
+
+dt = t_final / num_timesteps
+
+source_in_x = jnp.exp(-0.5 * ((X-1.0)**2 + (Y-0.5)**2) / 0.025**2)
+source_in_t = jnp.sin(60*tt) * jnp.exp(-0.5 * tt**2 / 0.075**2)
+
+plt.figure()
+plt.imshow(source_in_x.T, origin='lower', extent=(xmin, xmax, ymin, ymax))
+plt.title('source_in_x')
+
+plt.figure()
+plt.plot(tt, source_in_t)
+plt.title('source_in_t')
+
+U0 = jnp.zeros((nx, ny))
+
+carry_init = (U0, U0, min_point, max_point, soundspeed, dt, 0, source_in_x, source_in_t)
+U_final, UU = jax.lax.scan(one_timestep, carry_init, None, length=num_timesteps)
 
 
 vmax = np.max(UU)
