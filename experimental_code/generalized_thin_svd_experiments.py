@@ -19,6 +19,34 @@ k = 4
 
 #
 
+
+bigA = np.bmat([[np.zeros((n,n)), A], [A.T, np.zeros((m,m))]])
+bigM = np.bmat([[np.linalg.inv(N), np.zeros((n,m))], [np.zeros((m,n)), M]])
+
+sigmas_big, ZV = sla.eigh(bigA, bigM)
+
+sigmas_big = sigmas_big[::-1]
+ZV = ZV[:,::-1]
+
+k0 = np.minimum(n,m)
+Z = ZV[:n,:k0]
+V = ZV[n:,:k0]
+sigmas = sigmas_big[:k0]
+
+U = np.linalg.solve(N, Z)
+
+np.linalg.norm(U.T @ N @ U - 0.5*np.eye(U.shape[1])) # what is this 0.5 from?
+np.linalg.norm(V.T @ M @ V - 0.5*np.eye(V.shape[1]))
+
+
+np.linalg.norm(A @ V - U @ np.diag(sigmas))
+np.linalg.norm(A.T @ N @ U - M @ V @ np.diag(sigmas))
+
+np.linalg.norm(U @ np.diag(sigmas) @ V.T @ M - 0.5 * A) / np.linalg.norm(A)
+
+
+#
+
 bigA = np.bmat([[np.zeros((n,n)), A], [A.T, np.zeros((m,m))]])
 bigM = np.bmat([[N, np.zeros((n,m))], [np.zeros((m,n)), M]])
 
