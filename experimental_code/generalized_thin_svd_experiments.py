@@ -19,210 +19,227 @@ k = 4
 
 #
 
+lambdas, V = sla.eigh(A.T @ N @ A, M)
+sigmas = np.sqrt(lambdas)
+U = (A @ V) / sigmas.reshape((1,-1))
 
-bigA = np.bmat([[np.zeros((n,n)), A], [A.T, np.zeros((m,m))]])
-bigM = np.bmat([[np.linalg.inv(N), np.zeros((n,m))], [np.zeros((m,n)), M]])
+Sigma = np.diag(sigmas)
 
-sigmas_big, ZV = sla.eigh(bigA, bigM)
+print('||U.T N U - I||', np.linalg.norm(U.T @ N @ U - np.eye(U.shape[1])))
+print('||V.T M V - I||', np.linalg.norm(V.T @ M @ V - np.eye(V.shape[1])))
 
-sigmas_big = sigmas_big[::-1]
-ZV = ZV[:,::-1]
-
-k0 = np.minimum(n,m)
-Z = ZV[:n,:k0]
-V = ZV[n:,:k0]
-sigmas = sigmas_big[:k0]
-
-U = np.linalg.solve(N, Z)
-
-np.linalg.norm(U.T @ N @ U - 0.5*np.eye(U.shape[1])) # what is this 0.5 from?
-np.linalg.norm(V.T @ M @ V - 0.5*np.eye(V.shape[1]))
-
-
-np.linalg.norm(A @ V - U @ np.diag(sigmas))
-np.linalg.norm(A.T @ N @ U - M @ V @ np.diag(sigmas))
-
-np.linalg.norm(U @ np.diag(sigmas) @ V.T @ M - 0.5 * A) / np.linalg.norm(A)
+print('||A V - U S||', np.linalg.norm(A @ V - U @ Sigma))
+print('||A.T N U - M V S||', np.linalg.norm(A.T @ N @ U - M @ V @ Sigma))
+print('||U S V.T M - A||', np.linalg.norm(U @ Sigma @ V.T @ M - A))
 
 
 #
 
-bigA = np.bmat([[np.zeros((n,n)), A], [A.T, np.zeros((m,m))]])
-bigM = np.bmat([[N, np.zeros((n,m))], [np.zeros((m,n)), M]])
+if False:
 
-sigmas_big, UV = sla.eigh(bigA, bigM)
+    bigA = np.bmat([[np.zeros((n,n)), A], [A.T, np.zeros((m,m))]])
+    bigM = np.bmat([[np.linalg.inv(N), np.zeros((n,m))], [np.zeros((m,n)), M]])
 
-sigmas_big = sigmas_big[::-1]
-UV = UV[:,::-1]
+    sigmas_big, ZV = sla.eigh(bigA, bigM)
 
-k0 = np.minimum(n,m)
-U = UV[:n,:k0]
-V = UV[n:,:k0]
-sigmas = sigmas_big[:k0]
+    sigmas_big = sigmas_big[::-1]
+    ZV = ZV[:,::-1]
 
-np.linalg.norm(U.T @ N @ U - 0.5*np.eye(U.shape[1])) # what is this 0.5 from?
-np.linalg.norm(V.T @ M @ V - 0.5*np.eye(V.shape[1]))
+    k0 = np.minimum(n,m)
+    Z = ZV[:n,:k0]
+    V = ZV[n:,:k0]
+    sigmas = sigmas_big[:k0]
 
+    U = np.linalg.solve(N, Z)
 
-np.linalg.norm(A @ V - N @ U @ np.diag(sigmas))
-np.linalg.norm(A.T @ U - M @ V @ np.diag(sigmas))
+    np.linalg.norm(U.T @ N @ U - 0.5*np.eye(U.shape[1])) # what is this 0.5 from?
+    np.linalg.norm(V.T @ M @ V - 0.5*np.eye(V.shape[1]))
 
-np.linalg.norm(N @ U @ np.diag(sigmas) @ V.T @ M - 0.5*A) / np.linalg.norm(A)
 
-#
+    np.linalg.norm(A @ V - U @ np.diag(sigmas))
+    np.linalg.norm(A.T @ N @ U - M @ V @ np.diag(sigmas))
 
-bigA = spla.LinearOperator((n+m, n+m), matvec=apply_bigA)
-bigM = spla.LinearOperator((n+m, n+m), matvec=apply_bigM)
-bigMinv = spla.LinearOperator((n+m, n+m), matvec=solve_bigM)
+    np.linalg.norm(U @ np.diag(sigmas) @ V.T @ M - 0.5 * A) / np.linalg.norm(A)
 
-lambdas, UV = spla.eigsh(bigA, 7, M=bigM, Minv=bigMinv, which='LM')
 
-U = UV[:n,:]
-V = UV[n:,:]
+    #
 
-plt.matshow(U.T @ N @ U)
-plt.matshow(V.T @ M @ V)
+    bigA = np.bmat([[np.zeros((n,n)), A], [A.T, np.zeros((m,m))]])
+    bigM = np.bmat([[N, np.zeros((n,m))], [np.zeros((m,n)), M]])
 
-U @ np.diag(lambdas) @ V.T
+    sigmas_big, UV = sla.eigh(bigA, bigM)
 
-print(np.linalg.norm(U.T @ N @ U - np.eye(U.shape[1])))
-print(V.T @ M @ V - np.eye(V.shape[1]))
+    sigmas_big = sigmas_big[::-1]
+    UV = UV[:,::-1]
 
-U @ np.diag(lambdas) @ V.T - A
+    k0 = np.minimum(n,m)
+    U = UV[:n,:k0]
+    V = UV[n:,:k0]
+    sigmas = sigmas_big[:k0]
 
-#
+    np.linalg.norm(U.T @ N @ U - 0.5*np.eye(U.shape[1])) # what is this 0.5 from?
+    np.linalg.norm(V.T @ M @ V - 0.5*np.eye(V.shape[1]))
 
-def alternative_svd(A, N, M, k):
-    lambdas1, P = sla.eigh(A.T @ N @ A)
-    inds = np.argsort(lambdas1)[::-1]
-    Pk = P[:,inds]
-    B = (A @ Pk)
-    lambdas, Q = sla.eigh(B.T @ N @ B)
-    sigmas = np.sqrt(lambdas)
-    U = (B @ Q) / sigmas.reshape((1, -1))
-    V = P @ Q
-    return U, ss, V.T
 
+    np.linalg.norm(A @ V - N @ U @ np.diag(sigmas))
+    np.linalg.norm(A.T @ U - M @ V @ np.diag(sigmas))
 
-#
+    np.linalg.norm(N @ U @ np.diag(sigmas) @ V.T @ M - 0.5*A) / np.linalg.norm(A)
 
-lambdas1, P = sla.eigh(A.T @ N @ A, M)
+    #
 
-sort_inds1 = np.argsort(lambdas1)[::-1]
-lambdas1 = lambdas1[sort_inds1]
-P = P[:, sort_inds1]
+    bigA = spla.LinearOperator((n+m, n+m), matvec=apply_bigA)
+    bigM = spla.LinearOperator((n+m, n+m), matvec=apply_bigM)
+    bigMinv = spla.LinearOperator((n+m, n+m), matvec=solve_bigM)
 
-Pk = P[:, :k]
-B = (A @ M @ Pk)
-# lambdas2, Qk = sla.eigh(B.T @ N @ B, Pk.T @ M @ Pk)
-lambdas2, Qk = sla.eigh(B.T @ N @ B)
+    lambdas, UV = spla.eigsh(bigA, 7, M=bigM, Minv=bigMinv, which='LM')
 
-sort_inds2 = np.argsort(lambdas2)[::-1]
-lambdas2 = lambdas2[sort_inds2]
-Qk = Qk[:, sort_inds2]
+    U = UV[:n,:]
+    V = UV[n:,:]
 
-# sigmas = np.sqrt(lambdas2)
-# Uk = (B @ Qk) / sigmas.reshape((1, -1))
-# Vk = Pk @ Qk
-sigmas = np.sqrt(lambdas1[:k])
+    plt.matshow(U.T @ N @ U)
+    plt.matshow(V.T @ M @ V)
 
-Uk = (A @ Pk) / sigmas.reshape((1, -1))
-Sigmak = np.diag(sigmas)
+    U @ np.diag(lambdas) @ V.T
 
-# Vk = (Pk.T @ Pk @ Sigmak @ Pk.T).T
-Vk = Pk
+    print(np.linalg.norm(U.T @ N @ U - np.eye(U.shape[1])))
+    print(V.T @ M @ V - np.eye(V.shape[1]))
 
+    U @ np.diag(lambdas) @ V.T - A
 
-Uk @ Sigmak @ Pk.T - A
+    #
 
-# X = Uk.T @ A @ Pk
-#
-# Uk @ X @ Pk.T - A
+    def alternative_svd(A, N, M, k):
+        lambdas1, P = sla.eigh(A.T @ N @ A)
+        inds = np.argsort(lambdas1)[::-1]
+        Pk = P[:,inds]
+        B = (A @ Pk)
+        lambdas, Q = sla.eigh(B.T @ N @ B)
+        sigmas = np.sqrt(lambdas)
+        U = (B @ Q) / sigmas.reshape((1, -1))
+        V = P @ Q
+        return U, ss, V.T
 
-np.linalg.norm(Uk.T @ N @ Uk - np.eye(Uk.shape[1]))
-np.linalg.norm(Pk.T @ M @ Pk - np.eye(Pk.shape[1]))
-np.linalg.norm(Uk @ Sigmak @ Pk.T - A) / np.linalg.norm(A)
 
-#
+    #
 
-lambda1, P = sla.eigh(A.T @ N @ A)
+    lambdas1, P = sla.eigh(A.T @ N @ A, M)
 
-B = (A @ P)
+    sort_inds1 = np.argsort(lambdas1)[::-1]
+    lambdas1 = lambdas1[sort_inds1]
+    P = P[:, sort_inds1]
 
-print(np.linalg.norm(B @ P.T - A)) # A = B V1.T
-print(np.linalg.norm(P.T @ P - np.eye(P.shape[1]))) # V1.T M V1 = I
+    Pk = P[:, :k]
+    B = (A @ M @ Pk)
+    # lambdas2, Qk = sla.eigh(B.T @ N @ B, Pk.T @ M @ Pk)
+    lambdas2, Qk = sla.eigh(B.T @ N @ B)
 
-lambda2, Q = sla.eigh(B.T @ M @ B)
+    sort_inds2 = np.argsort(lambdas2)[::-1]
+    lambdas2 = lambdas2[sort_inds2]
+    Qk = Qk[:, sort_inds2]
 
-print(np.linalg.norm(Q.T @ Q - np.eye(Q.shape[1]))) # V2.T V2 = I
+    # sigmas = np.sqrt(lambdas2)
+    # Uk = (B @ Qk) / sigmas.reshape((1, -1))
+    # Vk = Pk @ Qk
+    sigmas = np.sqrt(lambdas1[:k])
 
-U1 = (B @ Q) / np.sqrt(lambda2).reshape((1,-1))
+    Uk = (A @ Pk) / sigmas.reshape((1, -1))
+    Sigmak = np.diag(sigmas)
 
-B2 = U1 @ np.diag(np.sqrt(lambda2)) @ Q.T
+    # Vk = (Pk.T @ Pk @ Sigmak @ Pk.T).T
+    Vk = Pk
 
-print(np.linalg.norm(B2 - B))
-print(np.linalg.norm(U1.T @ N @ U1 - np.eye(U1.shape[1])))
 
-V3 = P @ Q
-A2 = U1 @ np.diag(np.sqrt(lambda2)) @ V3.T
-np.linalg.norm(A2 - A)
+    Uk @ Sigmak @ Pk.T - A
 
-#
+    # X = Uk.T @ A @ Pk
+    #
+    # Uk @ X @ Pk.T - A
 
+    np.linalg.norm(Uk.T @ N @ Uk - np.eye(Uk.shape[1]))
+    np.linalg.norm(Pk.T @ M @ Pk - np.eye(Pk.shape[1]))
+    np.linalg.norm(Uk @ Sigmak @ Pk.T - A) / np.linalg.norm(A)
 
+    #
 
-U = (B @ M @ V2) / np.sqrt(lambda2).reshape((1,-1))
-V = V2 @ V1
+    lambda1, P = sla.eigh(A.T @ N @ A)
 
-Sigma = np.diag(np.sqrt(lambda2))
+    B = (A @ P)
 
-A2 = U @ Sigma @ V.T
+    print(np.linalg.norm(B @ P.T - A)) # A = B V1.T
+    print(np.linalg.norm(P.T @ P - np.eye(P.shape[1]))) # V1.T M V1 = I
 
-err_factorization = np.linalg.norm(A2 - A) / np.linalg.norm(A)
-print('err_factorization=', err_factorization)
+    lambda2, Q = sla.eigh(B.T @ M @ B)
 
-err_N = np.linalg.norm(U.T @ N @ U - np.eye(U.shape[1]))
-print('err_N=', err_N)
+    print(np.linalg.norm(Q.T @ Q - np.eye(Q.shape[1]))) # V2.T V2 = I
 
-err_M = np.linalg.norm(V.T @ M @ V - np.eye(V.shape[1]))
-print('err_M=', err_M)
+    U1 = (B @ Q) / np.sqrt(lambda2).reshape((1,-1))
 
-#
+    B2 = U1 @ np.diag(np.sqrt(lambda2)) @ Q.T
 
-sqrtM = sla.sqrtm(M)
+    print(np.linalg.norm(B2 - B))
+    print(np.linalg.norm(U1.T @ N @ U1 - np.eye(U1.shape[1])))
 
-#
+    V3 = P @ Q
+    A2 = U1 @ np.diag(np.sqrt(lambda2)) @ V3.T
+    np.linalg.norm(A2 - A)
 
-U_true_hat, ss_true, VT_true = np.linalg.svd(sqrtM @ Y, full_matrices=False)
+    #
 
-U_true = np.linalg.solve(sqrtM, U_true_hat)
 
-print(np.linalg.norm(U_true.T @ M @ U_true - np.eye(r)))
-print(np.linalg.norm(Y - U_true @ np.diag(ss_true) @ VT_true))
 
-#
+    U = (B @ M @ V2) / np.sqrt(lambda2).reshape((1,-1))
+    V = V2 @ V1
 
-ss_squared, V = np.linalg.eigh(Y.T @ M @ Y)
+    Sigma = np.diag(np.sqrt(lambda2))
 
-idx = ss_squared.argsort()[::-1]
-ss_squared = ss_squared[idx]
-V = V[:,idx]
+    A2 = U @ Sigma @ V.T
 
-ss = np.sqrt(ss_squared)
+    err_factorization = np.linalg.norm(A2 - A) / np.linalg.norm(A)
+    print('err_factorization=', err_factorization)
 
-err_ss = np.linalg.norm(ss - ss_true)
-print('err_ss=', err_ss)
+    err_N = np.linalg.norm(U.T @ N @ U - np.eye(U.shape[1]))
+    print('err_N=', err_N)
 
-plt.matshow(VT_true @ V)
-plt.title('VT_true @ V')
+    err_M = np.linalg.norm(V.T @ M @ V - np.eye(V.shape[1]))
+    print('err_M=', err_M)
 
-U = (Y @ V) / ss.reshape((1,-1))
+    #
 
-Y2 = U @ np.diag(ss) @ V.T
+    sqrtM = sla.sqrtm(M)
 
-err_factorization = np.linalg.norm(Y2 - Y)
-print('err_factorization=', err_factorization)
+    #
 
-err_inner = np.linalg.norm(U.T @ M @ U - np.eye(r))
-print('err_inner=', err_inner)
+    U_true_hat, ss_true, VT_true = np.linalg.svd(sqrtM @ Y, full_matrices=False)
+
+    U_true = np.linalg.solve(sqrtM, U_true_hat)
+
+    print(np.linalg.norm(U_true.T @ M @ U_true - np.eye(r)))
+    print(np.linalg.norm(Y - U_true @ np.diag(ss_true) @ VT_true))
+
+    #
+
+    ss_squared, V = np.linalg.eigh(Y.T @ M @ Y)
+
+    idx = ss_squared.argsort()[::-1]
+    ss_squared = ss_squared[idx]
+    V = V[:,idx]
+
+    ss = np.sqrt(ss_squared)
+
+    err_ss = np.linalg.norm(ss - ss_true)
+    print('err_ss=', err_ss)
+
+    plt.matshow(VT_true @ V)
+    plt.title('VT_true @ V')
+
+    U = (Y @ V) / ss.reshape((1,-1))
+
+    Y2 = U @ np.diag(ss) @ V.T
+
+    err_factorization = np.linalg.norm(Y2 - Y)
+    print('err_factorization=', err_factorization)
+
+    err_inner = np.linalg.norm(U.T @ M @ U - np.eye(r))
+    print('err_inner=', err_inner)
 
